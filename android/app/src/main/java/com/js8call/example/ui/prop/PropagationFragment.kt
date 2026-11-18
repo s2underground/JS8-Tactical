@@ -18,19 +18,30 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.slider.Slider
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.js8call.example.R
+import com.js8call.example.prop.Antenna
 import com.js8call.example.prop.Band
+import com.js8call.example.prop.Js8Speed
+import com.js8call.example.prop.NetPath
 import com.js8call.example.prop.Observation
 import com.js8call.example.prop.ObservationStore
+import com.js8call.example.prop.Predictor
 import com.js8call.example.prop.PropagationModel
 import com.js8call.example.prop.SpaceWeather
 import com.js8call.example.prop.SpaceWeatherRepository
+import com.js8call.example.prop.StationModel
+import com.js8call.example.prop.StationProfile
+import com.js8call.example.prop.Sun
+import com.js8call.example.prop.WeightedObservation
 import com.js8call.example.reports.Geo
 import com.js8call.example.reports.LatLon
+import com.js8call.example.reports.Reports
 import com.js8call.example.ui.map.myPosition
 import com.js8call.example.ui.traffic.TrafficViewModel
 import com.js8call.example.ui.traffic.zuluTime
@@ -62,11 +73,12 @@ import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 /**
- * Propagation tab: where your signal is likely to reach on a band at a given
- * hour (a simple ionospheric model fed by solar flux and K index), overlaid
- * with what was actually heard on that band. The heard layer needs no
- * internet: it is built from the traffic this station has decoded, and for
- * other hours of the day from what was heard at that hour on previous days.
+ * Propagation tab. Predictions come from [Predictor]: a sky model fitted to
+ * real reception reports, adjusted for this station's power, speed and
+ * antenna, corrected by what this station has learned from its own log, and
+ * tuned by the last few hours of traffic. Everything works offline; solar
+ * numbers fall back to NOAA's saved outlook, a 27-day repeat, or values
+ * relayed by other stations.
  */
 class PropagationFragment : Fragment() {
 
@@ -78,13 +90,19 @@ class PropagationFragment : Fragment() {
 
     private var band: Band = Band.B40
     private var hoursAhead = 0f
-    private var wx: SpaceWeather? = null
     private var me: LatLon? = null
     private var centered = false
+    /** Latest predictor (built off the main thread); used for taps and the detail layer. */
+    @Volatile private var predictor: Predictor? = null
+    /** What was learned, reused while the logs and settings haven't changed (re-learned at most every 5 min). */
+    @Volatile private var learned: Pair<String, Predictor>? = null
+    @Volatile private var learnedAtMs = 0L
 
     private val worker = Executors.newSingleThreadExecutor()
+    private val detailWorker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var generation = 0
+    @Volatile private var detailGeneration = 0
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         MapLibre.getInstance(requireContext().applicationContext)
@@ -93,8 +111,7 @@ class PropagationFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         traffic = ViewModelProvider(requireActivity())[TrafficViewModel::class.java]
-        weather = SpaceWeatherRepository(requireContext())
-        wx = weather.current()
+        weather = traffic.weather
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         band = traffic.currentBand()
             ?: prefs.getString(PREF_BAND, null)?.let { runCatching { Band.valueOf(it) }.getOrNull() }
@@ -116,6 +133,7 @@ class PropagationFragment : Fragment() {
                 render()
             }
             m.addOnMapClickListener { latLng -> onTap(latLng); true }
+            m.addOnCameraIdleListener { renderDetail() }
         }
 
         buildBandChips(view)
@@ -125,12 +143,13 @@ class PropagationFragment : Fragment() {
             render()
         }
         view.findViewById<Chip>(R.id.prop_show_predicted).setOnCheckedChangeListener { _, on ->
-            setVisible(on, L_COVERAGE)
+            setVisible(on, L_COVERAGE, L_DETAIL)
         }
         view.findViewById<Chip>(R.id.prop_show_heard).setOnCheckedChangeListener { _, on ->
-            setVisible(on, L_HEARD_HEAT, L_HEARD_DOTS, L_HEARD_LABELS)
+            setVisible(on, L_HEARD_HEAT, L_HEARD_DOTS, L_HEARD_LABELS, L_NET)
         }
         view.findViewById<Chip>(R.id.prop_solar).setOnClickListener { showSolarDialog() }
+        view.findViewById<Chip>(R.id.prop_station).setOnClickListener { showStationDialog() }
 
         val chartCard = view.findViewById<View>(R.id.prop_chart_card)
         chartCard.isVisible = prefs.getBoolean(PREF_CHART, resources.getBoolean(R.bool.prop_chart_open_default))
@@ -179,7 +198,14 @@ class PropagationFragment : Fragment() {
             PropertyFactory.rasterResampling(Property.RASTER_RESAMPLING_LINEAR),
             PropertyFactory.rasterFadeDuration(0f),
         ))
-        listOf(S_NIGHT, S_TERMINATOR, S_HEARD, S_ME).forEach { st.addSource(GeoJsonSource(it)) }
+        st.addSource(ImageSource(S_DETAIL, WORLD_QUAD, Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)))
+        st.addLayer(RasterLayer(L_DETAIL, S_DETAIL).withProperties(
+            PropertyFactory.rasterOpacity(0.85f),
+            PropertyFactory.rasterResampling(Property.RASTER_RESAMPLING_LINEAR),
+            PropertyFactory.rasterFadeDuration(0f),
+            PropertyFactory.visibility(Property.NONE),
+        ))
+        listOf(S_NIGHT, S_TERMINATOR, S_NET, S_HEARD, S_ME).forEach { st.addSource(GeoJsonSource(it)) }
         st.addLayer(FillLayer(L_NIGHT, S_NIGHT).withProperties(
             PropertyFactory.fillColor("#000000"),
             PropertyFactory.fillOpacity(0.28f),
@@ -189,6 +215,11 @@ class PropagationFragment : Fragment() {
             PropertyFactory.lineWidth(1f),
             PropertyFactory.lineOpacity(0.45f),
             PropertyFactory.lineDasharray(arrayOf(3f, 3f)),
+        ))
+        st.addLayer(LineLayer(L_NET, S_NET).withProperties(
+            PropertyFactory.lineColor("#7FD3FA"),
+            PropertyFactory.lineWidth(1.2f),
+            PropertyFactory.lineOpacity(Expression.get("o")),
         ))
         st.addLayer(HeatmapLayer(L_HEARD_HEAT, S_HEARD).withProperties(
             PropertyFactory.heatmapWeight(Expression.get("w")),
@@ -240,18 +271,22 @@ class PropagationFragment : Fragment() {
 
     private fun setVisible(on: Boolean, vararg layers: String) {
         layers.forEach { style?.getLayer(it)?.setProperties(PropertyFactory.visibility(if (on) Property.VISIBLE else Property.NONE)) }
+        if (on && L_DETAIL in layers) renderDetail()
     }
 
     // ------------------------------------------------------------- render
+
+    private fun selectedTime(now: Long = System.currentTimeMillis()) = now + (hoursAhead * 3_600_000L).toLong()
 
     private fun render() {
         val v = view ?: return
         val ctx = context ?: return
         val now = System.currentTimeMillis()
-        val t = now + (hoursAhead * 3_600_000L).toLong()
-        val wx = this.wx ?: weather.current().also { this.wx = it }
+        val t = selectedTime(now)
+        val wx = weather.effective(t, now)
         me = myPosition(ctx)
         val me = this.me
+        val profile = StationProfile.load(ctx)
 
         v.findViewById<TextView>(R.id.prop_time).text = if (hoursAhead == 0f) {
             getString(R.string.prop_now, zuluTime(t))
@@ -259,15 +294,16 @@ class PropagationFragment : Fragment() {
             getString(R.string.prop_ahead, fmtHours(hoursAhead), zuluTime(t))
         }
         renderSolar(v, wx, me != null)
+        v.findViewById<Chip>(R.id.prop_station).text = stationLabel(profile)
 
-        // Things that are cheap: night side, my marker.
+        // Cheap layers straight away: night side, terminator, my marker.
         val st = style
         if (st != null) {
             val line = PropagationModel.terminator(t)
             (st.getSource(S_TERMINATOR) as? GeoJsonSource)?.setGeoJson(
                 Feature.fromGeometry(LineString.fromLngLats(line.map { Point.fromLngLat(it.lon, it.lat) })),
             )
-            val nightPole = if (com.js8call.example.prop.Sun.subsolarPoint(t).lat >= 0) -MAX_LAT else MAX_LAT
+            val nightPole = if (Sun.subsolarPoint(t).lat >= 0) -MAX_LAT else MAX_LAT
             val ring = line.map { Point.fromLngLat(it.lon, it.lat.coerceIn(-MAX_LAT, MAX_LAT)) } +
                 listOf(Point.fromLngLat(180.0, nightPole), Point.fromLngLat(-180.0, nightPole), Point.fromLngLat(line.first().lon, line.first().lat.coerceIn(-MAX_LAT, MAX_LAT)))
             (st.getSource(S_NIGHT) as? GeoJsonSource)?.setGeoJson(Feature.fromGeometry(Polygon.fromLngLats(listOf(ring))))
@@ -280,41 +316,58 @@ class PropagationFragment : Fragment() {
             }
         }
 
-        // The rest goes to a background thread; only the newest request is drawn.
+        // Learning and painting run off the main thread; only the newest request is drawn.
         val gen = ++generation
         val band = this.band
         val all = traffic.observationStore.all()
-        val gridFor = HashMap<String, String?>().also { m -> all.forEach { o -> m[o.call] = traffic.gridFor(o.call) } }
+        val listening = traffic.listeningLog.hours()
+        val listenedHours = traffic.listeningLog.totalHours()
+        val grids = HashMap<String, String?>().also { m ->
+            all.forEach { o -> m[o.call] = o.grid ?: traffic.gridFor(o.call); o.by?.let { b -> m[b] = traffic.gridFor(b) } }
+        }
+        val gridFor: (String) -> String? = { grids[it] }
         worker.execute {
             if (gen != generation) return@execute
-            val heard = ObservationStore.relevant(all, band, t, now) { gridFor[it] }
+            val key = "${all.size}|${listening.size}|$profile|$me"
+            val cached = learned
+            val p = if (cached != null && cached.first == key && now - learnedAtMs < 5 * 60_000L) {
+                Predictor(me, wx, profile, cached.second.correction, cached.second.nowcast)
+            } else {
+                Predictor.build(me, wx, profile, all, listening, gridFor, now).also {
+                    learned = key to it
+                    learnedAtMs = now
+                }
+            }
+            predictor = p
+            val heard = ObservationStore.relevant(all, band, t, now, gridFor)
                 .groupBy { it.obs.call }
                 .map { (_, list) -> list.maxBy { it.weight }.copy(weight = list.sumOf { it.weight }.coerceAtMost(1.5)) }
             val heardMe = heard.count { w -> all.any { it.call == w.obs.call && it.kind == Observation.Kind.HEARD_ME && it.band == band } }
+            val net = ObservationStore.relevantPaths(all, band, t, now, gridFor)
             val rows = Band.entries.map { b ->
-                val predicted = me?.let { PropagationModel.stoplight(it, b, t, wx, PropagationModel.CHART_BUCKETS_KM) }
                 val counts = IntArray(PropagationModel.CHART_BUCKETS_KM.size)
                 if (me != null) {
-                    ObservationStore.relevant(all, b, t, now) { gridFor[it] }.map { it.obs.call to it.position }.distinctBy { it.first }
-                        .forEach { (_, pos) ->
-                            val km = Geo.distanceKm(me, pos)
-                            counts[PropagationModel.CHART_EDGES_KM.indexOfFirst { km < it }]++
-                        }
+                    ObservationStore.relevant(all, b, t, now, gridFor).map { it.obs.call to it.position }.distinctBy { it.first }
+                        .forEach { (_, pos) -> counts[PropagationModel.CHART_EDGES_KM.indexOfFirst { Geo.distanceKm(me, pos) < it }]++ }
                 }
-                StoplightView.Row(b, predicted, counts.toList())
+                StoplightView.Row(b, p.stoplight(b, t), counts.toList())
             }
-            val bitmap = me?.let { coverageBitmap(it, band, t, wx) }
+            val grid = p.coverage(band, t, GRID_W, GRID_H, MAX_LAT, -MAX_LAT, -180.0, 180.0)
+            val bitmap = grid?.let { toBitmap(it, GRID_W, GRID_H) }
             if (gen != generation) return@execute
-            main.post { if (gen == generation) deliver(heard, heardMe, rows, bitmap, t) }
+            main.post { if (gen == generation) deliver(heard, heardMe, net, rows, bitmap, t, p, listenedHours) }
         }
     }
 
     private fun deliver(
-        heard: List<com.js8call.example.prop.WeightedObservation>,
+        heard: List<WeightedObservation>,
         heardMe: Int,
+        net: List<NetPath>,
         rows: List<StoplightView.Row>,
         bitmap: Bitmap?,
         t: Long,
+        p: Predictor,
+        listenedHours: Double,
     ) {
         val v = view ?: return
         val st = style
@@ -327,87 +380,242 @@ class PropagationFragment : Fragment() {
                     addBooleanProperty("me", w.obs.call in meCalls)
                 }
             }))
+            (st.getSource(S_NET) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(net.map { n ->
+                Feature.fromGeometry(LineString.fromLngLats(listOf(Point.fromLngLat(n.from.lon, n.from.lat), Point.fromLngLat(n.to.lon, n.to.lat)))).apply {
+                    addNumberProperty("o", (0.25 + 0.5 * n.weight).coerceAtMost(0.8))
+                }
+            }))
             (st.getSource(S_COVERAGE) as? ImageSource)?.setImage(bitmap ?: Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
         }
-        v.findViewById<TextView>(R.id.prop_heard_count).text =
-            if (heard.isEmpty()) getString(R.string.prop_heard_none)
-            else getString(R.string.prop_heard_summary, heard.size, heardMe)
+        v.findViewById<TextView>(R.id.prop_heard_count).text = when {
+            heard.isEmpty() && net.isEmpty() -> getString(R.string.prop_heard_none)
+            else -> getString(R.string.prop_heard_summary_net, heard.size, heardMe, net.size)
+        }
+        v.findViewById<TextView>(R.id.prop_learning).text = learningText(p, listenedHours)
         v.findViewById<StoplightView>(R.id.prop_chart).apply {
             this.rows = rows
             selected = band
         }
         v.findViewById<TextView>(R.id.prop_chart_title).text = getString(R.string.prop_chart_title,
             if (hoursAhead == 0f) getString(R.string.prop_now, zuluTime(t)) else zuluTime(t))
+        renderDetail()
+    }
+
+    /** Sharper heatmap for the area on screen once zoomed in past a whole-world view. */
+    private fun renderDetail() {
+        val m = map ?: return
+        val st = style ?: return
+        val p = predictor ?: return
+        val showPredicted = view?.findViewById<Chip>(R.id.prop_show_predicted)?.isChecked != false
+        val bounds = m.projection.visibleRegion.latLngBounds
+        val north = bounds.latitudeNorth.coerceIn(-MAX_LAT, MAX_LAT)
+        val south = bounds.latitudeSouth.coerceIn(-MAX_LAT, MAX_LAT)
+        val west = bounds.longitudeWest
+        val east = bounds.longitudeEast
+        val layer = st.getLayer(L_DETAIL)
+        if (!showPredicted || m.cameraPosition.zoom < 2.6 || east <= west || east - west > 200 || north <= south) {
+            layer?.setProperties(PropertyFactory.visibility(Property.NONE))
+            return
+        }
+        val gen = ++detailGeneration
+        val band = this.band
+        val t = selectedTime()
+        detailWorker.execute {
+            if (gen != detailGeneration) return@execute
+            val grid = p.coverage(band, t, DETAIL_W, DETAIL_H, north, south, west, east) ?: return@execute
+            val bmp = toBitmap(grid, DETAIL_W, DETAIL_H)
+            main.post {
+                if (gen != detailGeneration) return@post
+                val s = style ?: return@post
+                (s.getSource(S_DETAIL) as? ImageSource)?.apply {
+                    setCoordinates(LatLngQuad(LatLng(north, west), LatLng(north, east), LatLng(south, east), LatLng(south, west)))
+                    setImage(bmp)
+                }
+                s.getLayer(L_DETAIL)?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
+            }
+        }
+    }
+
+    private fun learningText(p: Predictor, listenedHours: Double): String {
+        val c = p.correction
+        val parts = mutableListOf<String>()
+        parts += when {
+            !p.profile.learn -> getString(R.string.prop_learning_off)
+            c.pairs == 0 -> getString(R.string.prop_learning_start, listenedHours.roundToInt())
+            else -> getString(R.string.prop_learning_status, c.heard, c.pairs, String.format(Locale.US, "%.1f", c.days.coerceAtLeast(0.1)))
+        }
+        if (p.nowcast.evidence >= 15 && kotlin.math.abs(p.nowcast.phi - 1.0) > 0.01) {
+            parts += getString(R.string.prop_live_tune, String.format(Locale.US, "%+d%%", ((p.nowcast.phi - 1) * 100).roundToInt()), p.nowcast.evidence)
+        }
+        return parts.joinToString(" · ")
     }
 
     private fun renderSolar(v: View, wx: SpaceWeather, haveMe: Boolean) {
-        val age = ageText(wx.updatedMs)
-        val src = when (wx.source) {
-            SpaceWeatherRepository.SOURCE_NOAA -> getString(R.string.prop_src_noaa, age)
-            SpaceWeatherRepository.SOURCE_MANUAL -> getString(R.string.prop_src_manual, age)
-            SpaceWeatherRepository.SOURCE_FIT -> getString(R.string.prop_src_fit, age)
-            else -> getString(R.string.prop_src_default)
-        }
-        v.findViewById<Chip>(R.id.prop_solar).text = getString(R.string.prop_solar_chip, wx.sfi.roundToInt(), fmtK(wx.kIndex), src)
+        v.findViewById<Chip>(R.id.prop_solar).text = getString(R.string.prop_solar_chip, wx.sfi.roundToInt(), fmtK(wx.kIndex), sourceText(wx))
         val notice = v.findViewById<TextView>(R.id.prop_notice)
-        val stale = wx.updatedMs > 0 && System.currentTimeMillis() - wx.updatedMs > 36 * 3_600_000L
         notice.text = when {
             !haveMe -> getString(R.string.prop_no_position)
             wx.source == SpaceWeatherRepository.SOURCE_DEFAULT -> getString(R.string.prop_default_wx)
-            stale -> getString(R.string.prop_stale, age)
             else -> null
         }
-        notice.isVisible = notice.text.isNotEmpty()
+        notice.isVisible = !notice.text.isNullOrEmpty()
     }
 
-    /** Predicted reliability painted into a Web-Mercator bitmap covering the world. */
-    private fun coverageBitmap(me: LatLon, band: Band, t: Long, wx: SpaceWeather): Bitmap {
-        val grid = PropagationModel.coverageGrid(me, band, t, wx, GRID_W, GRID_H, MAX_LAT)
+    private fun sourceText(wx: SpaceWeather): String {
+        val age = ageText(wx.updatedMs)
+        return when {
+            wx.source == SpaceWeatherRepository.SOURCE_NOAA -> getString(R.string.prop_src_noaa, age)
+            wx.source == SpaceWeatherRepository.SOURCE_MANUAL -> getString(R.string.prop_src_manual, age)
+            wx.source == SpaceWeatherRepository.SOURCE_FORECAST -> getString(R.string.prop_src_forecast)
+            wx.source == SpaceWeatherRepository.SOURCE_RECURRENCE -> getString(R.string.prop_src_recurrence)
+            wx.source.startsWith(SpaceWeatherRepository.SOURCE_RELAY_PREFIX) ->
+                getString(R.string.prop_src_relay, wx.source.removePrefix(SpaceWeatherRepository.SOURCE_RELAY_PREFIX), age)
+            else -> getString(R.string.prop_src_default)
+        }
+    }
+
+    private fun toBitmap(grid: FloatArray, w: Int, h: Int): Bitmap {
         val pixels = IntArray(grid.size) { colorFor(grid[it]) }
-        return Bitmap.createBitmap(pixels, GRID_W, GRID_H, Bitmap.Config.ARGB_8888)
+        return Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888)
     }
 
     private fun onTap(latLng: LatLng) {
+        val p = predictor ?: return
         val me = this.me ?: return
-        val wx = this.wx ?: return
         val v = view ?: return
-        val t = System.currentTimeMillis() + (hoursAhead * 3_600_000L).toLong()
+        val t = selectedTime()
         val to = LatLon(latLng.latitude, latLng.longitude)
-        val path = PropagationModel.path(me, to, t, wx)
-        val r = PropagationModel.reliability(path, band.mhz)
+        val path = p.path(to, t) ?: return
+        val sky = PropagationModel.Sky(t)
+        val r = p.score(to, sky, band)
         val verdict = when {
             r >= 0.66 -> "likely"
             r >= 0.33 -> "possible"
             r >= 0.10 -> "marginal"
             else -> "unlikely"
         }
-        val best = Band.entries.maxBy { PropagationModel.reliability(path, it.mhz) }
+        val best = Band.entries.maxBy { p.score(to, sky, it) }
         val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
         val dir = dirs[(((Geo.bearingDeg(me, to) + 22.5) % 360) / 45).toInt()]
+        val margin = StationModel.marginDb(p.profile, path, band)
         val text = String.format(
-            Locale.US, "%,d km %s on %s: %s · MUF %.1f MHz · best band %s",
-            path.distanceKm.roundToInt(), dir, band.label, verdict, path.medianMufMHz, best.label,
+            Locale.US, "%,d km %s on %s: %s · MUF %.1f MHz · best %s · your margin %+.0f dB",
+            path.distanceKm.roundToInt(), dir, band.label, verdict, path.medianMufMHz, best.label, margin,
         )
         Snackbar.make(v, text, Snackbar.LENGTH_LONG).show()
+    }
+
+    // ------------------------------------------------------------- station profile
+
+    private fun stationLabel(s: StationProfile): String {
+        val w = if (s.powerW >= 10) s.powerW.roundToInt().toString() else String.format(Locale.US, "%.1f", s.powerW)
+        val ant = if (s.antenna == Antenna.AVERAGE) getString(R.string.prop_station_no_antenna) else s.antenna.label
+        return getString(R.string.prop_station_chip, w, s.speed.label, ant)
+    }
+
+    private fun showStationDialog() {
+        val ctx = requireContext()
+        val cur = StationProfile.load(ctx)
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad / 2, pad, 0) }
+
+        val powerLayout = TextInputLayout(ctx).apply { hint = getString(R.string.prop_station_power) }
+        val powerEdit = TextInputEditText(powerLayout.context).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(if (cur.powerW % 1.0 == 0.0) cur.powerW.toInt().toString() else cur.powerW.toString())
+        }
+        powerLayout.addView(powerEdit)
+        box.addView(powerLayout)
+
+        fun label(res: Int) = TextView(ctx).apply {
+            text = getString(res); setPadding(0, pad / 2, 0, pad / 4)
+            setTextColor(ctx.getColor(R.color.tac_text_dim)); textSize = 13f
+        }
+        box.addView(label(R.string.prop_station_speed))
+        val speedGroup = ChipGroup(ctx).apply { isSingleSelection = true; isSelectionRequired = true }
+        val speedOptions: List<Js8Speed?> = listOf(null) + Js8Speed.entries
+        speedOptions.forEach { sp ->
+            val chip = layoutInflater.inflate(R.layout.item_prop_band_chip, speedGroup, false) as Chip
+            chip.id = View.generateViewId()
+            chip.text = sp?.label ?: getString(R.string.prop_station_follow_tx, cur.txSpeed.label)
+            chip.tag = sp?.name ?: "FOLLOW"
+            chip.isChecked = sp == cur.speedOverride
+            speedGroup.addView(chip)
+        }
+        box.addView(speedGroup)
+
+        box.addView(label(R.string.prop_station_antenna))
+        val antGroup = ChipGroup(ctx).apply { isSingleSelection = true; isSelectionRequired = true }
+        Antenna.entries.forEach { a ->
+            val chip = layoutInflater.inflate(R.layout.item_prop_band_chip, antGroup, false) as Chip
+            chip.id = View.generateViewId()
+            chip.text = a.label
+            chip.tag = a
+            chip.isChecked = a == cur.antenna
+            antGroup.addView(chip)
+        }
+        box.addView(antGroup)
+        val antDetail = TextView(ctx).apply { textSize = 12f; setTextColor(ctx.getColor(R.color.tac_text_quiet)); text = cur.antenna.detail }
+        box.addView(antDetail)
+        antGroup.setOnCheckedStateChangeListener { g, ids ->
+            (ids.firstOrNull()?.let { g.findViewById<Chip>(it)?.tag } as? Antenna)?.let { antDetail.text = it.detail }
+        }
+
+        val adjust = MaterialSwitch(ctx).apply { text = getString(R.string.prop_station_adjust); isChecked = cur.adjust }
+        val learn = MaterialSwitch(ctx).apply { text = getString(R.string.prop_station_learn); isChecked = cur.learn }
+        box.addView(adjust)
+        box.addView(learn)
+
+        val scroll = androidx.core.widget.NestedScrollView(ctx).apply { addView(box) }
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.prop_station_title)
+            .setView(scroll)
+            .setPositiveButton(R.string.prop_solar_save) { _, _ ->
+                val power = powerEdit.text?.toString()?.toDoubleOrNull()?.coerceIn(0.01, 2000.0) ?: cur.powerW
+                val speedTag = speedGroup.findViewById<Chip>(speedGroup.checkedChipId)?.tag as? String
+                val speed = speedTag?.takeIf { it != "FOLLOW" }?.let { Js8Speed.valueOf(it) }
+                val ant = antGroup.findViewById<Chip>(antGroup.checkedChipId)?.tag as? Antenna ?: cur.antenna
+                StationProfile.save(ctx, cur.copy(powerW = power, speedOverride = speed, antenna = ant, adjust = adjust.isChecked, learn = learn.isChecked))
+                render()
+            }
+            .setNeutralButton(R.string.prop_station_reset) { _, _ -> confirmReset() }
+            .setNegativeButton(R.string.prop_solar_cancel, null)
+            .show()
+    }
+
+    private fun confirmReset() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.prop_station_reset)
+            .setMessage(R.string.prop_station_reset_body)
+            .setPositiveButton(R.string.prop_station_reset_yes) { _, _ ->
+                traffic.observationStore.clear()
+                traffic.listeningLog.clear()
+                render()
+            }
+            .setNegativeButton(R.string.prop_solar_cancel, null)
+            .show()
     }
 
     // ------------------------------------------------------------- solar data
 
     private fun showSolarDialog() {
-        val wx = weather.current()
-        val src = when (wx.source) {
-            SpaceWeatherRepository.SOURCE_NOAA -> getString(R.string.prop_src_noaa, ageText(wx.updatedMs))
-            SpaceWeatherRepository.SOURCE_MANUAL -> getString(R.string.prop_src_manual, ageText(wx.updatedMs))
-            SpaceWeatherRepository.SOURCE_FIT -> getString(R.string.prop_src_fit, ageText(wx.updatedMs))
-            else -> getString(R.string.prop_src_default)
-        }
+        val wx = weather.effective(selectedTime())
+        val forecastDays = weather.forecast().count { it.date >= SpaceWeatherRepository.dateKey(System.currentTimeMillis()) }
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.prop_solar_title)
-            .setMessage(getString(R.string.prop_solar_body, wx.sfi.roundToInt(), fmtK(wx.kIndex), src))
+            .setMessage(getString(R.string.prop_solar_body2, wx.sfi.roundToInt(), fmtK(wx.kIndex), sourceText(wx), forecastDays))
             .setPositiveButton(R.string.prop_solar_refresh) { _, _ -> refresh(announce = true) }
             .setNegativeButton(R.string.prop_solar_manual) { _, _ -> showManualDialog(wx) }
-            .setNeutralButton(R.string.prop_solar_fit) { _, _ -> fitFromTraffic() }
+            .setNeutralButton(R.string.prop_solar_share) { _, _ -> shareSolar(wx) }
             .show()
+    }
+
+    /** Put a #SWX line in the Traffic compose box so the operator can send it to the net. */
+    private fun shareSolar(wx: SpaceWeather) {
+        val at = if (wx.updatedMs > 0) wx.updatedMs else System.currentTimeMillis()
+        val line = Reports.encode(Reports.SWX, mapOf("F" to wx.sfi.roundToInt().toString(), "K" to fmtK(wx.kIndex), "T" to Reports.dtg(at)))
+        traffic.requestCompose(line)
+        activity?.findViewById<NavigationBarView>(R.id.bottom_navigation)?.selectedItemId = R.id.navigation_traffic
     }
 
     private fun showManualDialog(current: SpaceWeather) {
@@ -436,39 +644,18 @@ class PropagationFragment : Fragment() {
             .setPositiveButton(R.string.prop_solar_save) { _, _ ->
                 val sfi = sfiEdit.text?.toString()?.toDoubleOrNull()?.coerceIn(50.0, 400.0) ?: current.sfi
                 val k = kEdit.text?.toString()?.toDoubleOrNull()?.coerceIn(0.0, 9.0) ?: current.kIndex
-                this.wx = weather.setManual(sfi, k)
+                weather.setManual(sfi, k)
                 render()
             }
             .setNegativeButton(R.string.prop_solar_cancel, null)
             .show()
     }
 
-    private fun fitFromTraffic() {
-        val v = view ?: return
-        val me = this.me
-        val since = System.currentTimeMillis() - 6 * 3_600_000L
-        val evidence = traffic.observationStore.all().filter { it.timeMs >= since }.mapNotNull { o ->
-            val grid = o.grid ?: traffic.gridFor(o.call) ?: return@mapNotNull null
-            Geo.maidenheadToLatLon(grid)?.let { o to it }
-        }
-        val sfi = me?.let { ObservationStore.fitSfi(it, evidence, weather.current()) }
-        if (sfi == null) {
-            Snackbar.make(v, R.string.prop_fit_none, Snackbar.LENGTH_LONG).show()
-            return
-        }
-        this.wx = weather.setEstimated(sfi)
-        Snackbar.make(v, getString(R.string.prop_fit_done, sfi.roundToInt(), evidence.size), Snackbar.LENGTH_LONG).show()
-        render()
-    }
-
     private fun refresh(announce: Boolean) {
         weather.refresh { result ->
             main.post {
                 if (!isAdded) return@post
-                if (result != null) {
-                    wx = result
-                    render()
-                }
+                if (result != null) render()
                 if (announce) view?.let { v ->
                     val msg = if (result != null) getString(R.string.prop_refresh_ok, result.sfi.roundToInt(), fmtK(result.kIndex))
                     else getString(R.string.prop_refresh_failed)
@@ -512,6 +699,7 @@ class PropagationFragment : Fragment() {
 
     override fun onDestroyView() {
         generation++
+        detailGeneration++
         mapView?.onDestroy()
         mapView = null
         map = null
@@ -521,6 +709,7 @@ class PropagationFragment : Fragment() {
 
     override fun onDestroy() {
         worker.shutdownNow()
+        detailWorker.shutdownNow()
         super.onDestroy()
     }
 
@@ -529,6 +718,8 @@ class PropagationFragment : Fragment() {
         private const val PREF_CHART = "prop_chart_open"
         private const val GRID_W = 240
         private const val GRID_H = 180
+        private const val DETAIL_W = 200
+        private const val DETAIL_H = 150
         private const val MAX_LAT = 85.0
 
         private val WORLD_QUAD = LatLngQuad(
@@ -537,13 +728,17 @@ class PropagationFragment : Fragment() {
         )
 
         private const val S_COVERAGE = "prop-coverage"
+        private const val S_DETAIL = "prop-detail"
         private const val S_NIGHT = "prop-night"
         private const val S_TERMINATOR = "prop-terminator"
+        private const val S_NET = "prop-net"
         private const val S_HEARD = "prop-heard"
         private const val S_ME = "prop-me"
         private const val L_COVERAGE = "prop-coverage"
+        private const val L_DETAIL = "prop-detail"
         private const val L_NIGHT = "prop-night"
         private const val L_TERMINATOR = "prop-terminator"
+        private const val L_NET = "prop-net"
         private const val L_HEARD_HEAT = "prop-heard-heat"
         private const val L_HEARD_DOTS = "prop-heard-dots"
         private const val L_HEARD_LABELS = "prop-heard-labels"

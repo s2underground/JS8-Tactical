@@ -218,6 +218,8 @@ class MainActivity : AppCompatActivity() {
         decodeViewModel.loadPersistedDecodesIfEnabled()
         // Propagation observations are tagged with the band in use.
         monitorViewModel.radioFrequency.observe(this) { hz -> trafficViewModel.setDialFrequency(hz) }
+        // Listening time per band lets the propagation model learn from what was *not* heard.
+        monitorViewModel.isRunning.observe(this) { running -> trafficViewModel.setListening(running == true) }
 
         // Observe unread count for badge on Messages tab
         messagesViewModel.totalUnreadCount.observe(this) { count ->

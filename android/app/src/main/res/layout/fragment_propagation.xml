@@ -100,6 +100,15 @@
                 tools:text="SFI 142 · K2 · NOAA 2h" />
         </LinearLayout>
 
+        <com.google.android.material.chip.Chip
+            android:id="@+id/prop_station"
+            style="@style/Widget.Material3.Chip.Assist"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            app:chipIcon="@drawable/ic_cell_tower"
+            tools:text="20 W · Normal · Low dipole (NVIS)" />
+
         <TextView
             android:id="@+id/prop_notice"
             android:layout_width="wrap_content"
@@ -180,7 +189,17 @@
             android:layout_height="wrap_content"
             android:textColor="@color/tac_text_quiet"
             android:textSize="11sp"
-            tools:text="7 stations · 2 heard you" />
+            tools:text="7 stations · 2 heard you · 3 net paths" />
+
+        <TextView
+            android:id="@+id/prop_learning"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:maxWidth="300dp"
+            android:textColor="@color/tac_info_text"
+            android:textSize="11.5sp"
+            tools:text="Learned from 214 of 960 checks over 3.2 days · live tune +5% MUF (37 reports)" />
     </LinearLayout>
 
     <!-- Band × distance chart -->

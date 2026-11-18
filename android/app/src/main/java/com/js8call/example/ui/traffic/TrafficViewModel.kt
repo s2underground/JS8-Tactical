@@ -8,6 +8,8 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.preference.PreferenceManager
 import com.js8call.example.prop.Band
+import com.js8call.example.prop.ListeningLog
+import com.js8call.example.prop.SpaceWeatherRepository
 import com.js8call.example.prop.Observation
 import com.js8call.example.prop.ObservationStore
 import com.js8call.example.reports.Geo
@@ -98,14 +100,36 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     /** Set while the demo loads: its made-up stations are shown but never saved. */
     private var demoBand: Band? = null
 
+    /** Hours spent listening per band: what makes "not heard" count as evidence. */
+    val listeningLog = ListeningLog(File(application.filesDir, "listening.csv"))
+    val weather = SpaceWeatherRepository(application)
+    private var listening = false
+    private var lastFlushMs = 0L
+
+    private val _pendingCompose = MutableLiveData<String?>(null)
+    /** Text another screen wants put in the compose box (e.g. a #SWX line from the Prop tab). */
+    val pendingCompose: LiveData<String?> = _pendingCompose
+
     private val handler = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
-            engine.tick(System.currentTimeMillis())
+            val now = System.currentTimeMillis()
+            engine.tick(now)
+            if (listening) currentBand()?.let { listeningLog.add(now, it, TICK_MS / 60_000.0) }
+            if (now - lastFlushMs > 60_000L) { listeningLog.flush(); lastFlushMs = now }
             publish()
             handler.postDelayed(this, TICK_MS)
         }
     }
+
+    /** Receiver running or not (from the Radio screen's state). */
+    fun setListening(on: Boolean) {
+        listening = on
+        if (!on) listeningLog.flush()
+    }
+
+    fun requestCompose(text: String) { _pendingCompose.value = text }
+    fun composeConsumed() { _pendingCompose.value = null }
 
     init {
         handler.postDelayed(ticker, TICK_MS)
@@ -113,6 +137,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     override fun onCleared() {
         handler.removeCallbacks(ticker)
+        listeningLog.flush()
     }
 
     /** One decoded frame from the engine service. */
@@ -160,19 +185,52 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         if (observationStore.all().size != before) _observationsVersion.value = (_observationsVersion.value ?: 0) + 1
     }
 
-    /** Someone sent us a signal report ("CALL: MYCALL SNR -12"): proof our signal reached them. */
-    private fun noteSignalReports(messages: List<RolledMessage>) {
+    /**
+     * Propagation evidence in other people's traffic, all usable offline:
+     *  - "A: B SNR -12"   A heard B (if B is us: our signal reached A)
+     *  - "A: B HEARING C D"  A is hearing C and D
+     *  - "#SWX F:116 K:1 T:181900Z"  solar numbers relayed by another station
+     */
+    private fun noteNetEvidence(messages: List<RolledMessage>) {
         val me = PreferenceManager.getDefaultSharedPreferences(getApplication())
-            .getString("callsign", "").orEmpty().trim().uppercase()
-        if (me.isEmpty()) return
-        val band = currentBand() ?: return
+            .getString("callsign", "").orEmpty().trim().uppercase().substringBefore('/')
+        val band = currentBand()
         messages.forEach { m ->
-            if (m.recipient?.uppercase()?.substringBefore('/') != me.substringBefore('/')) return@forEach
-            val sender = m.sender ?: return@forEach
-            val snr = snrReport.find(m.bodyText.uppercase())?.groupValues?.get(1)?.toIntOrNull() ?: return@forEach
             if (m.id in reportedIds) return@forEach
-            reportedIds += m.id
-            observe(Observation(m.lastHeardMs, sender, heard[sender]?.grid, band, snr, Observation.Kind.HEARD_ME))
+            val sender = m.sender ?: return@forEach
+            val body = m.bodyText.uppercase()
+            val to = m.recipient?.uppercase()
+            var used = false
+            if (band != null && to != null && !to.startsWith("@")) {
+                snrReport.find(body)?.groupValues?.get(1)?.toIntOrNull()?.let { snr ->
+                    used = true
+                    if (me.isNotEmpty() && to.substringBefore('/') == me) {
+                        observe(Observation(m.lastHeardMs, sender, heard[sender]?.grid, band, snr, Observation.Kind.HEARD_ME))
+                    } else {
+                        observe(Observation(m.lastHeardMs, to, heard[to]?.grid, band, snr, Observation.Kind.PATH, by = sender))
+                    }
+                }
+            }
+            if (band != null) {
+                hearingList.find(body)?.groupValues?.get(1)?.split(Regex("\\s+"))?.filter { looksLikeCall(it) }?.forEach { call ->
+                    used = true
+                    if (me.isEmpty() || call.substringBefore('/') != me) {
+                        observe(Observation(m.lastHeardMs, call, heard[call]?.grid, band, 0, Observation.Kind.PATH, by = sender))
+                    }
+                }
+            }
+            if (m.isComplete) Reports.parse(m.bodyText)?.takeIf { it.type == Reports.SWX }?.let { r ->
+                used = true
+                val sfi = r.values["F"]?.toDoubleOrNull()
+                val k = r.values["K"]?.toDoubleOrNull()
+                if (sfi != null && k != null) {
+                    val at = r.values["T"]?.let { Reports.dtgToMs(it) } ?: m.lastHeardMs
+                    if (weather.offerRelayed(sfi, k, at, sender) != null) {
+                        _observationsVersion.value = (_observationsVersion.value ?: 0) + 1
+                    }
+                }
+            }
+            if (used && m.isComplete) reportedIds += m.id
         }
     }
 
@@ -249,7 +307,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val now = System.currentTimeMillis()
         lastViewedMs[selectedKey] = now
         val messages = engine.messages().filterNot { isBeacon(it) }
-        noteSignalReports(messages)
+        noteNetEvidence(messages)
         val live = engine.live()
         val myGroups = myGroups()
 
@@ -359,6 +417,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         }
 
         private val snrReport = Regex("""\bSNR\s+([+-]?\d{1,2})\b""")
+        private val hearingList = Regex("""\bHEARING\s+([A-Z0-9/ ]+)""")
         private val gridRegex = Regex("""\b([A-R]{2}[0-9]{2}(?:[A-X]{2})?)\b""")
         private fun gridIn(text: String): String? =
             gridRegex.findAll(text.uppercase()).map { it.groupValues[1] }.lastOrNull()

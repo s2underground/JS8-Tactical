@@ -3,7 +3,6 @@ package com.js8call.example.prop
 import com.js8call.example.reports.Geo
 import com.js8call.example.reports.LatLon
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,7 +27,7 @@ class ObservationsAndWeatherTest {
         val dir = Files.createTempDirectory("obs").toFile()
         val f = File(dir, "o.csv")
         val now = System.currentTimeMillis()
-        f.writeText(Observation(now - 9 * day, "OLD1", "EM70", Band.B40, -10, Observation.Kind.HEARD).encode() + "\n")
+        f.writeText(Observation(now - 40 * day, "OLD1", "EM70", Band.B40, -10, Observation.Kind.HEARD).encode() + "\n")
         val store = ObservationStore(f)
         store.add(Observation(now, "N0DEF", "EM74", Band.B40, -15, Observation.Kind.HEARD))
         store.add(Observation(now + 60_000, "N0DEF", "EM74", Band.B40, -12, Observation.Kind.HEARD)) // same window
@@ -58,18 +57,15 @@ class ObservationsAndWeatherTest {
     }
 
     @Test
-    fun fitSfiMovesUpWhenHighBandsAreClearlyOpen() {
-        val me = Geo.maidenheadToLatLon("EM73")!!
-        val noonUtc = 1_763_470_800_000L // 2025-11-18 13:00Z, daytime over North America
-        val prior = SpaceWeather(70.0, 2.0, 0, "default")
-        // 10 m contacts at 2-6k km in daytime only work with a high flux.
-        val evidence = listOf("JO62", "IO91", "GG66", "FF46", "KN41").map { g ->
-            Observation(noonUtc, "X$g", g, Band.B10, -8, Observation.Kind.HEARD) to Geo.maidenheadToLatLon(g)!!
-        }
-        val fit = ObservationStore.fitSfi(me, evidence, prior)
-        assertNotNull(fit)
-        assertTrue("fit $fit", fit!! > 120)
-        assertNull(ObservationStore.fitSfi(me, evidence.take(2), prior))
+    fun pathObservationsRoundTripAndStayOffTheHeardLayer() {
+        val o = Observation(1_700_000_000_000L, "K1ABC", "FN42", Band.B40, -10, Observation.Kind.PATH, by = "N0DEF")
+        assertEquals(o, Observation.decode(o.encode()))
+        val now = o.timeMs + 600_000
+        val grids = mapOf("N0DEF" to "EM74")
+        assertTrue(ObservationStore.relevant(listOf(o), Band.B40, now, now) { grids[it] }.isEmpty())
+        val paths = ObservationStore.relevantPaths(listOf(o), Band.B40, now, now) { grids[it] }
+        assertEquals(1, paths.size)
+        assertTrue(paths[0].from.lat < paths[0].to.lat) // EM74 is south of FN42
     }
 
     @Test

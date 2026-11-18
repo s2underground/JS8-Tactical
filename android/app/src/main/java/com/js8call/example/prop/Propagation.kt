@@ -168,7 +168,8 @@ object PropagationModel {
 
     fun path(tx: LatLon, rx: LatLon, timeMs: Long, wx: SpaceWeather): Path = path(tx, rx, Sky(timeMs), wx)
 
-    fun path(tx: LatLon, rx: LatLon, sky: Sky, wx: SpaceWeather): Path {
+    /** [phi] scales the MUF: the live tune-up learned from recent traffic (1.0 = model as fitted). */
+    fun path(tx: LatLon, rx: LatLon, sky: Sky, wx: SpaceWeather, phi: Double = 1.0): Path {
         val d = Geo.distanceKm(tx, rx)
         val hops = max(1, ceil(d / MAX_HOP_KM).toInt())
         val sec = secant(d / hops)
@@ -190,7 +191,7 @@ object PropagationModel {
             }
         }
         val luf = K.L0 * (1 + K.L1 * absorption) * (1 + K.L2 * (sec - 1)) * hops.toDouble().pow(K.L3)
-        return Path(d, hops, muf * K.MM, luf, es)
+        return Path(d, hops, muf * K.MM * phi, luf, es)
     }
 
     /** Model's raw path score (0..1) for [mhz], before display calibration. */
@@ -246,19 +247,28 @@ object PropagationModel {
 
     /**
      * Predicted reliability from [me] to every point of a Web-Mercator grid
-     * [width] × [height] spanning ±[maxLat]. Row 0 is the north edge. Used to
-     * paint the coverage heatmap.
+     * [width] × [height] spanning ±[maxLat]. Row 0 is the north edge.
      */
     fun coverageGrid(me: LatLon, band: Band, timeMs: Long, wx: SpaceWeather, width: Int, height: Int, maxLat: Double): FloatArray {
         val sky = Sky(timeMs)
+        return grid(width, height, maxLat, -maxLat, -180.0, 180.0) { p -> reliability(path(me, p, sky, wx), band.mhz) }
+    }
+
+    /**
+     * Evaluates [f] over a [width] × [height] grid covering the given bounds,
+     * rows evenly spaced in Web-Mercator (so it lines up with map images).
+     * Row 0 is the north edge.
+     */
+    inline fun grid(width: Int, height: Int, north: Double, south: Double, west: Double, east: Double, f: (LatLon) -> Double): FloatArray {
         val out = FloatArray(width * height)
-        val yMax = mercY(maxLat)
+        val yN = mercY(north)
+        val yS = mercY(south)
         for (row in 0 until height) {
-            val y = yMax - (row + 0.5) / height * 2 * yMax
+            val y = yN - (row + 0.5) / height * (yN - yS)
             val lat = Math.toDegrees(kotlin.math.atan(kotlin.math.sinh(y)))
             for (col in 0 until width) {
-                val lon = -180.0 + (col + 0.5) / width * 360.0
-                out[row * width + col] = reliability(path(me, LatLon(lat, lon), sky, wx), band.mhz).toFloat()
+                val lon = west + (col + 0.5) / width * (east - west)
+                out[row * width + col] = f(LatLon(lat, ((lon + 540) % 360) - 180)).toFloat()
             }
         }
         return out

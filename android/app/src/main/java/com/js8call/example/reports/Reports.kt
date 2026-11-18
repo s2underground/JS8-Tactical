@@ -74,7 +74,16 @@ object Reports {
         )
     )
 
-    val ALL = listOf(CHECKIN, SPOT, SALUTE, SITREP, POSREP)
+    /** Solar numbers passed station to station so off-grid stations can keep predictions current. */
+    val SWX = Type(
+        "SWX", "Solar data", listOf(
+            Field("F", "Solar flux (SFI)"),
+            Field("K", "K index"),
+            Field("T", "Observed", Kind.TIME),
+        )
+    )
+
+    val ALL = listOf(CHECKIN, SPOT, SALUTE, SITREP, POSREP, SWX)
     fun byTag(tag: String) = ALL.firstOrNull { it.tag == tag.uppercase() }
 
     /** Clean a value for the air: upper case, no field separators, single spaces. */
@@ -110,6 +119,23 @@ object Reports {
     }
 
     /** Date-time group for now, e.g. "181342Z". */
+    /** "181900Z" → the most recent moment (not in the future) with that day, hour and minute; null if malformed. */
+    fun dtgToMs(dtg: String, nowMs: Long = System.currentTimeMillis()): Long? {
+        val m = Regex("""^(\d{2})(\d{2})(\d{2})Z?$""").find(dtg.trim().uppercase()) ?: return null
+        val (d, h, mi) = m.destructured
+        val c = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = nowMs }
+        repeat(2) {
+            val t = (c.clone() as java.util.Calendar).apply {
+                if (d.toInt() > getActualMaximum(java.util.Calendar.DAY_OF_MONTH)) return@repeat
+                set(java.util.Calendar.DAY_OF_MONTH, d.toInt()); set(java.util.Calendar.HOUR_OF_DAY, h.toInt())
+                set(java.util.Calendar.MINUTE, mi.toInt()); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            if (t <= nowMs + 5 * 60_000L) return t
+            c.add(java.util.Calendar.MONTH, -1)
+        }
+        return null
+    }
+
     fun dtg(nowMs: Long = System.currentTimeMillis()): String {
         val c = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = nowMs }
         return "%02d%02d%02dZ".format(c.get(java.util.Calendar.DAY_OF_MONTH), c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE))

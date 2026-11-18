@@ -400,4 +400,26 @@
     <string name="prop_bucket_mid">800–2k</string>
     <string name="prop_bucket_long">2k–4k</string>
     <string name="prop_bucket_dx">4k+ km</string>
+    <string name="prop_heard_summary_net">%1$d stations · %2$d heard you · %3$d net paths</string>
+    <string name="prop_learning_off">Learning from your log is off</string>
+    <string name="prop_learning_start">Learning: %1$d h listened. It starts once stations are heard around you.</string>
+    <string name="prop_learning_status">Learned from %1$d decodes in %2$d checks over %3$s days</string>
+    <string name="prop_live_tune">live tune %1$s MUF (%2$d reports)</string>
+    <string name="prop_src_forecast">NOAA outlook</string>
+    <string name="prop_src_recurrence">27-day repeat</string>
+    <string name="prop_src_relay">via %1$s %2$s</string>
+    <string name="prop_station_chip">%1$s W · %2$s · %3$s</string>
+    <string name="prop_station_no_antenna">antenna not set</string>
+    <string name="prop_station_title">My station</string>
+    <string name="prop_station_power">Transmit power (watts)</string>
+    <string name="prop_station_speed">JS8 speed for predictions</string>
+    <string name="prop_station_follow_tx">Follow TX (%1$s)</string>
+    <string name="prop_station_antenna">Antenna</string>
+    <string name="prop_station_adjust">Adjust predictions to my station</string>
+    <string name="prop_station_learn">Learn from my log (works offline)</string>
+    <string name="prop_station_reset">Reset learning</string>
+    <string name="prop_station_reset_body">Deletes this station\'s propagation log (stations heard, who heard you, net paths, listening hours). Predictions go back to the base model.</string>
+    <string name="prop_station_reset_yes">Delete log</string>
+    <string name="prop_solar_share">Share over the air</string>
+    <string name="prop_solar_body2">Current: SFI %1$d, K %2$s (%3$s). Saved NOAA outlook covers %4$d more days.\n\nThese numbers matter less than you might think: on real reception data, month-old values cost under 1%% accuracy. Off-grid, the app uses the saved outlook, then the value from 27 days earlier. You can enter numbers heard on WWV (18 min past the hour) or a net, or share yours with the net as a #SWX line.</string>
 </resources>

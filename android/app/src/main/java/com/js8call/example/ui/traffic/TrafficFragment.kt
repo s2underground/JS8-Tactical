@@ -245,6 +245,15 @@ class TrafficFragment : Fragment() {
             }
         }
 
+        // Text handed over from another tab (e.g. "Share solar data" on Prop).
+        traffic.pendingCompose.observe(viewLifecycleOwner) { text ->
+            if (text == null) return@observe
+            input.setText(text)
+            input.setSelection(input.text.length)
+            input.requestFocus()
+            traffic.composeConsumed()
+        }
+
         ComposeBarController(
             fragment = this,
             root = view,

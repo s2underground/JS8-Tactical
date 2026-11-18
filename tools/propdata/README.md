@@ -64,3 +64,20 @@ the high bands).
   the absolute chance of a contact depends on your station.
 - 10–12 m remain the weakest (some F2 long-haul and TEP openings missed).
 - Daily F10.7 is the solar input; a 27-day average fitted no better.
+
+## Offline hardening (validated on the same WSPR data)
+Most stations will run air-gapped, so each offline piece was tested before
+it was built:
+
+| Question | Script | Result |
+|---|---|---|
+| How much do stale or wrong solar numbers hurt? | `validate_stale_solar.py` | Ranking quality 0.814 with the true daily SFI; 0.811–0.815 with values 1–60 days old or a fixed 120; 0.785 with a fixed 70. Kp unknown: −0.001 overall, −0.004 during storms. |
+| Can recent net traffic tune the sky model? | `validate_live_tune.py` | A 25-station local net's last 3 hours, used to scale the MUF (0.8–1.2, prior ≈ 5 observations), lowered next-hour log-loss 0.1796 → 0.1783 and never made it worse. Positive-only reports alone: 0.1796 → 0.1794. A per-day "perfect knowledge" scale only reached ~0.8 % better, so day-to-day ionosphere swings are a small effect. |
+| How should power and JS8 speed shift predictions? | `validate_snr_margin.py` | From ~950 k spot SNRs: share of WSPR-decodable paths still decodable at −26/−24/−22/−20/−18 dB: 0.95/0.88/0.79/0.70/0.62; below the floor about +4.4 % per dB. Used for `StationModel`. |
+| Does learning a station's own quirks help? | `validate_station_learning.py` | Per band × distance log-odds offsets (prior sd 0.5) learned from 4 days improved the next 3 days for 145 of 158 receivers (median log-loss 0.151 → 0.131); 38 of 45 even with < 100 heard spots. |
+
+In the app (`prop/Learning.kt`, `prop/Predictor.kt`): listening hours per
+band are logged so "not heard" counts as evidence; other stations' SNR
+reports and HEARING replies are logged as net paths; NOAA's 27-day outlook and
+a daily flux history are saved whenever online; and `#SWX F:.. K:.. T:..`
+lines let stations pass solar numbers to each other over the air.

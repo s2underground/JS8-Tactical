@@ -22,18 +22,26 @@ data class Observation(
     val band: Band,
     val snr: Int,
     val kind: Kind,
+    /** For [Kind.PATH]: the station that heard [call]. */
+    val by: String? = null,
 ) {
-    enum class Kind { HEARD, HEARD_ME }
+    /**
+     * HEARD: this station decoded [call]. HEARD_ME: [call] reported hearing
+     * this station. PATH: [by] reported hearing [call] (someone else's path,
+     * from their signal reports or HEARING replies).
+     */
+    enum class Kind { HEARD, HEARD_ME, PATH }
 
-    fun encode(): String = listOf(timeMs, call, grid.orEmpty(), band.name, snr, kind.name).joinToString(",")
+    fun encode(): String = listOf(timeMs, call, grid.orEmpty(), band.name, snr, kind.name, by.orEmpty()).joinToString(",")
 
     companion object {
         fun decode(line: String): Observation? {
             val p = line.split(',')
-            if (p.size != 6) return null
+            if (p.size != 6 && p.size != 7) return null
             return runCatching {
                 Observation(
                     p[0].toLong(), p[1], p[2].ifBlank { null }, Band.valueOf(p[3]), p[4].toInt(), Kind.valueOf(p[5]),
+                    p.getOrNull(6)?.ifBlank { null },
                 )
             }.getOrNull()
         }
@@ -43,11 +51,14 @@ data class Observation(
 /** A plotted observation: where it was, and how much it counts for the selected time. */
 data class WeightedObservation(val obs: Observation, val position: LatLon, val weight: Double)
 
+/** Someone else's reported path: [from] heard [to]. */
+data class NetPath(val from: LatLon, val to: LatLon, val obs: Observation, val weight: Double)
+
 /**
- * Keeps a week of observations in a small text file so the offline heatmap
+ * Keeps a month of observations in a small text file so the offline heatmap
  * survives restarts. Writes are append-only; the file is compacted on load.
  */
-class ObservationStore(private val file: File, private val keepMs: Long = 7 * DAY_MS) {
+class ObservationStore(private val file: File, private val keepMs: Long = 30 * DAY_MS) {
 
     private val items = mutableListOf<Observation>()
     private var loaded = false
@@ -63,7 +74,7 @@ class ObservationStore(private val file: File, private val keepMs: Long = 7 * DA
         load()
         // One entry per station, band, kind and 15-minute window is plenty.
         val dup = items.any {
-            it.call == o.call && it.band == o.band && it.kind == o.kind && abs(it.timeMs - o.timeMs) < 15 * 60_000L
+            it.call == o.call && it.by == o.by && it.band == o.band && it.kind == o.kind && abs(it.timeMs - o.timeMs) < 15 * 60_000L
         }
         if (dup) return
         items += o
@@ -103,19 +114,42 @@ class ObservationStore(private val file: File, private val keepMs: Long = 7 * DA
             nowMs: Long,
             gridFor: (String) -> String?,
         ): List<WeightedObservation> = all.mapNotNull { o ->
-            if (o.band != band || o.timeMs > nowMs) return@mapNotNull null
+            if (o.band != band || o.kind == Observation.Kind.PATH) return@mapNotNull null
             val grid = o.grid ?: gridFor(o.call) ?: return@mapNotNull null
             val pos = Geo.maidenheadToLatLon(grid) ?: return@mapNotNull null
-            val todHours = abs(timeOfDayHours(o.timeMs) - timeOfDayHours(timeMs)).let { min(it, 24 - it) }
-            val recent = nowMs - o.timeMs
-            val w = when {
-                // Live picture: anything from the last 3 hours when looking at about now.
+            val w = timeWeight(o.timeMs, timeMs, nowMs)
+            if (w <= 0.02) null else WeightedObservation(o, pos, w * snrWeight(o.snr))
+        }
+
+        /** Paths other stations reported on [band], weighted the same way: (hearer, heard, observation, weight). */
+        fun relevantPaths(
+            all: List<Observation>,
+            band: Band,
+            timeMs: Long,
+            nowMs: Long,
+            gridFor: (String) -> String?,
+        ): List<NetPath> = all.mapNotNull { o ->
+            if (o.band != band || o.kind != Observation.Kind.PATH) return@mapNotNull null
+            val by = o.by?.let(gridFor)?.let { Geo.maidenheadToLatLon(it) } ?: return@mapNotNull null
+            val heard = (o.grid ?: gridFor(o.call))?.let { Geo.maidenheadToLatLon(it) } ?: return@mapNotNull null
+            val w = timeWeight(o.timeMs, timeMs, nowMs)
+            if (w <= 0.02) null else NetPath(by, heard, o, w)
+        }
+
+        /**
+         * How much an observation from [obsMs] says about [timeMs]: for "now",
+         * the last 3 hours; for other hours, the same time of day on earlier
+         * days, newer days counting more.
+         */
+        fun timeWeight(obsMs: Long, timeMs: Long, nowMs: Long): Double {
+            if (obsMs > nowMs) return 0.0
+            val todHours = abs(timeOfDayHours(obsMs) - timeOfDayHours(timeMs)).let { min(it, 24 - it) }
+            val recent = nowMs - obsMs
+            return when {
                 abs(timeMs - nowMs) < HOUR_MS && recent < 3 * HOUR_MS -> 1.0 - 0.5 * recent / (3.0 * HOUR_MS)
-                // Same time of day on earlier days.
                 todHours <= 1.5 -> (1 - todHours / 1.5 * 0.6) * exp(-recent / (3.0 * DAY_MS))
                 else -> 0.0
             }
-            if (w <= 0.02) null else WeightedObservation(o, pos, w * snrWeight(o.snr))
         }
 
         /** Strong signals say more about an open path than marginal ones. */
@@ -124,28 +158,6 @@ class ObservationStore(private val file: File, private val keepMs: Long = 7 * DA
         fun timeOfDayHours(ms: Long): Double {
             val c = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = ms }
             return c.get(Calendar.HOUR_OF_DAY) + c.get(Calendar.MINUTE) / 60.0
-        }
-
-        /**
-         * The solar flux that best explains what was actually heard, for when
-         * NOAA can't be reached. Positive evidence only, so it is held near the
-         * last known value unless the traffic clearly says otherwise.
-         */
-        fun fitSfi(me: LatLon, evidence: List<Pair<Observation, LatLon>>, prior: SpaceWeather): Double? {
-            if (evidence.size < 3) return null
-            var best = prior.sfi
-            var bestScore = Double.NEGATIVE_INFINITY
-            var sfi = 65.0
-            while (sfi <= 300.0) {
-                val wx = prior.copy(sfi = sfi)
-                val fit = evidence.sumOf { (o, pos) ->
-                    PropagationModel.reliability(PropagationModel.path(me, pos, o.timeMs, wx), o.band.mhz)
-                } / evidence.size
-                val score = fit - 0.0008 * abs(sfi - prior.sfi)
-                if (score > bestScore) { bestScore = score; best = sfi }
-                sfi += 5.0
-            }
-            return best
         }
     }
 }
