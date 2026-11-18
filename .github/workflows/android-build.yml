@@ -165,7 +165,7 @@ jobs:
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: js8call-${{ matrix.build-type }}-apk
+        name: js8-baseline-${{ matrix.build-type }}-apk
         path: android/app/build/outputs/apk/${{ matrix.build-type }}/*.apk
 
     - name: Upload AAR
