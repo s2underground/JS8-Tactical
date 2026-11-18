@@ -1,0 +1,5 @@
+Offline basemap data
+- countries.geojson, states.geojson, lakes.geojson: Natural Earth (public domain), 1:50m, simplified.
+- fonts/: glyphs generated from Noto Sans (SIL Open Font License 1.1) by the OpenMapTiles fonts project.
+Online map tiles (when available): OpenFreeMap, OpenMapTiles schema, data © OpenStreetMap contributors (ODbL).
+Map engine: MapLibre Native (BSD 2-Clause).

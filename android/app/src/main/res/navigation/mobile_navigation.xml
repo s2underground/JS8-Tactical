@@ -10,6 +10,11 @@
         android:label="@string/nav_traffic" />
 
     <fragment
+        android:id="@+id/navigation_map"
+        android:name="com.js8call.example.ui.map.MapFragment"
+        android:label="@string/nav_map" />
+
+    <fragment
         android:id="@+id/navigation_monitor"
         android:name="com.js8call.example.ui.MonitorFragment"
         android:label="@string/nav_monitor" />

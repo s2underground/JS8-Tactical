@@ -1,0 +1,52 @@
+{
+  "version": 8,
+  "name": "JS8-Tactical dark",
+  "glyphs": "asset://map/fonts/{fontstack}/{range}.pbf",
+  "sources": {
+    "ne-countries": { "type": "geojson", "data": "asset://map/countries.geojson" },
+    "ne-states": { "type": "geojson", "data": "asset://map/states.geojson" },
+    "ne-lakes": { "type": "geojson", "data": "asset://map/lakes.geojson" },
+    "osm": {
+      "type": "vector",
+      "url": "https://tiles.openfreemap.org/planet",
+      "attribution": "OpenFreeMap © OpenMapTiles Data from OpenStreetMap"
+    }
+  },
+  "layers": [
+    { "id": "background", "type": "background", "paint": { "background-color": "#0A0D11" } },
+
+    { "id": "ne-land", "type": "fill", "source": "ne-countries", "paint": { "fill-color": "#141B23" } },
+    { "id": "ne-lakes", "type": "fill", "source": "ne-lakes", "paint": { "fill-color": "#0A0D11" } },
+
+    { "id": "osm-water", "type": "fill", "source": "osm", "source-layer": "water",
+      "paint": { "fill-color": "#0A0D11" } },
+    { "id": "osm-waterway", "type": "line", "source": "osm", "source-layer": "waterway", "minzoom": 9,
+      "paint": { "line-color": "#0F1A24", "line-width": 1 } },
+
+    { "id": "osm-roads-minor", "type": "line", "source": "osm", "source-layer": "transportation", "minzoom": 12,
+      "filter": ["in", "class", "minor", "service", "track"],
+      "paint": { "line-color": "#1E2630", "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.5, 16, 3] } },
+    { "id": "osm-roads-secondary", "type": "line", "source": "osm", "source-layer": "transportation", "minzoom": 9,
+      "filter": ["in", "class", "secondary", "tertiary"],
+      "paint": { "line-color": "#242D38", "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.5, 16, 4] } },
+    { "id": "osm-roads-major", "type": "line", "source": "osm", "source-layer": "transportation", "minzoom": 5,
+      "filter": ["in", "class", "motorway", "trunk", "primary"],
+      "paint": { "line-color": "#2E3946", "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.6, 16, 6] } },
+
+    { "id": "ne-states", "type": "line", "source": "ne-states",
+      "paint": { "line-color": "#283039", "line-width": 0.7 } },
+    { "id": "ne-borders", "type": "line", "source": "ne-countries",
+      "paint": { "line-color": "#3A4452", "line-width": 1 } },
+
+    { "id": "osm-place-city", "type": "symbol", "source": "osm", "source-layer": "place", "minzoom": 4,
+      "filter": ["in", "class", "city"],
+      "layout": { "text-field": ["coalesce", ["get", "name:latin"], ["get", "name"]], "text-font": ["NotoSansBold"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 4, 11, 10, 15], "text-max-width": 8 },
+      "paint": { "text-color": "#8C96A3", "text-halo-color": "#0A0D11", "text-halo-width": 1.5 } },
+    { "id": "osm-place-town", "type": "symbol", "source": "osm", "source-layer": "place", "minzoom": 8,
+      "filter": ["in", "class", "town", "village"],
+      "layout": { "text-field": ["coalesce", ["get", "name:latin"], ["get", "name"]], "text-font": ["NotoSansRegular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 8, 10, 14, 13], "text-max-width": 8 },
+      "paint": { "text-color": "#6F7A87", "text-halo-color": "#0A0D11", "text-halo-width": 1.5 } }
+  ]
+}

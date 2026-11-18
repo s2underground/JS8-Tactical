@@ -6,6 +6,11 @@
         android:title="@string/nav_traffic" />
 
     <item
+        android:id="@+id/navigation_map"
+        android:icon="@drawable/ic_map"
+        android:title="@string/nav_map" />
+
+    <item
         android:id="@+id/navigation_monitor"
         android:icon="@drawable/ic_graphic_eq"
         android:title="@string/nav_monitor" />

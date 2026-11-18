@@ -335,4 +335,27 @@
     <string name="report_airtime_unknown">Airtime unavailable</string>
     <string name="report_used_grid">No GPS fix; used your grid square</string>
     <string name="report_no_position">No position available. Set your grid in Settings.</string>
+    <!-- Map -->
+    <string name="nav_map">Map</string>
+    <string name="map_desc">Map of heard stations and received reports</string>
+    <string name="map_stations">Stations</string>
+    <string name="map_reports">Reports</string>
+    <string name="map_paths">Paths</string>
+    <string name="map_1h">1 h</string>
+    <string name="map_6h">6 h</string>
+    <string name="map_24h">24 h</string>
+    <string name="map_all">All</string>
+    <string name="map_fit">Fit all</string>
+    <string name="map_legend_paths">PATH SIGNAL</string>
+    <string name="map_legend_strong">Strong (−10 dB and up)</string>
+    <string name="map_legend_ok">Fair (−11 to −18 dB)</string>
+    <string name="map_legend_weak">Weak (below −18 dB)</string>
+    <string name="map_close">Close</string>
+    <string name="map_open_thread">Open thread</string>
+    <string name="map_badge_station">STATION</string>
+    <string name="map_station_body">Heard %1$s · %2$d dB</string>
+    <string name="map_just_now">just now</string>
+    <string name="map_ago">%1$s ago</string>
+    <string name="map_unknown_sender">Unknown sender</string>
+    <string name="map_attribution">© OpenStreetMap · OpenFreeMap · Natural Earth · MapLibre</string>
 </resources>

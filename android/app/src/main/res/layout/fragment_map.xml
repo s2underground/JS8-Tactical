@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/tac_ground">
+
+    <org.maplibre.android.maps.MapView
+        android:id="@+id/map_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/map_desc" />
+
+    <!-- Filters -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:background="@drawable/bg_map_panel"
+        android:orientation="vertical"
+        android:padding="8dp">
+
+        <com.google.android.material.chip.ChipGroup
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:singleLine="true">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/map_show_stations"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/map_stations" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/map_show_reports"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/map_reports" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/map_show_paths"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/map_paths" />
+        </com.google.android.material.chip.ChipGroup>
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/map_window"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:selectionRequired="true"
+            app:singleLine="true"
+            app:singleSelection="true">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/map_window_1h"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/map_1h" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/map_window_6h"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/map_6h" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/map_window_24h"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/map_24h" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/map_window_all"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/map_all" />
+        </com.google.android.material.chip.ChipGroup>
+    </LinearLayout>
+
+    <!-- Fit and legend -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:gravity="end"
+        android:orientation="vertical">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/map_fit"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="52dp"
+            android:text="@string/map_fit" />
+
+        <LinearLayout
+            android:id="@+id/map_legend"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_map_panel"
+            android:orientation="vertical"
+            android:padding="10dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/map_legend_paths"
+                android:textColor="@color/tac_text_dim"
+                android:textSize="11.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/map_legend_strong"
+                android:textColor="#4FC3F7"
+                android:textSize="12sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/map_legend_ok"
+                android:textColor="#F2A33A"
+                android:textSize="12sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/map_legend_weak"
+                android:textColor="#FF6B6B"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Selected item -->
+    <LinearLayout
+        android:id="@+id/map_card"
+        android:layout_width="420dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="12dp"
+        android:background="@drawable/bg_card"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/map_card_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_pill_tx"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="2dp"
+                android:textColor="@color/tac_ground"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                tools:text="SALUTE" />
+
+            <TextView
+                android:id="@+id/map_card_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="monospace"
+                android:textColor="@color/tac_text"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                tools:text="N0DEF" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/map_card_close"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:contentDescription="@string/map_close"
+                app:icon="@drawable/ic_close" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/map_card_body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:lineSpacingMultiplier="1.2"
+            android:textColor="@color/tac_text"
+            android:textSize="15sp"
+            tools:text="About 20, line at fuel station" />
+
+        <TextView
+            android:id="@+id/map_card_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:fontFamily="monospace"
+            android:textColor="@color/tac_text_dim"
+            android:textSize="12.5sp"
+            tools:text="18S UJ 2347 0648 · 38 km NE · 13:24Z" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/map_card_open"
+            android:layout_width="wrap_content"
+            android:layout_height="52dp"
+            android:layout_marginTop="10dp"
+            android:text="@string/map_open_thread" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/map_attribution"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="6dp"
+        android:background="@drawable/bg_map_panel"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="2dp"
+        android:text="@string/map_attribution"
+        android:textColor="@color/tac_text_quiet"
+        android:textSize="10.5sp" />
+</FrameLayout>

@@ -7,6 +7,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.preference.PreferenceManager
+import com.js8call.example.reports.Geo
+import com.js8call.example.reports.LatLon
+import com.js8call.example.reports.Reports
 import com.js8call.example.rollup.HeaderParser
 import com.js8call.example.rollup.RolledMessage
 import com.js8call.example.rollup.RollupEngine
@@ -42,6 +45,21 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     data class Live(val sender: String?, val laneHz: Float, val frames: Int, val text: String, val color: Int)
 
+    /** A station placed on the map at the centre of its grid square. */
+    data class MapStation(val call: String, val grid: String, val position: LatLon, val color: Int, val lastHeardMs: Long, val snr: Int)
+
+    /** A received report with a location. */
+    data class MapReport(
+        val id: Long,
+        val report: Reports.Report,
+        val sender: String?,
+        val position: LatLon,
+        val timeMs: Long,
+        val color: Int,
+    )
+
+    data class MapData(val stations: List<MapStation>, val reports: List<MapReport>)
+
     private data class Heard(
         var lastHeardMs: Long,
         var laneHz: Float,
@@ -63,6 +81,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     val live: LiveData<Live?> = _live
     private val _markers = MutableLiveData<List<Marker>>(emptyList())
     val markers: LiveData<List<Marker>> = _markers
+    private val _mapData = MutableLiveData(MapData(emptyList(), emptyList()))
+    val mapData: LiveData<MapData> = _mapData
     private val _selected = MutableLiveData(ALL)
     val selected: LiveData<String> = _selected
 
@@ -138,6 +158,9 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         }
         val road = listOf("KN4XYZ: @TEAM " to 1, "ROAD BLOCKED AT BRIDGE" to 4, ", REROUTING VIA " to 4, "COUNTY 12, ETA 1" to 4, "630" to 6)
         at(0, 690f, -14, "AC4LT: @HB HEARTBEAT EM72", 3)
+        at(0, 1180f, -9, "KN4XYZ: @HB HEARTBEAT EM73", 3)
+        at(0, 905f, -16, "N0DEF: @HB HEARTBEAT EM74", 3)
+        at(0, 2140f, -5, "W4QRP: @HB HEARTBEAT EM83", 3)
         road.forEachIndexed { i, (t, ty) -> if (i != 2) at(1 + i, 1450f, -12, t, ty) }
         listOf("N0DEF: @TEAM " to 1, "ARRIVED AT CP1, " to 4, "ALL GOOD" to 6).forEachIndexed { i, (t, ty) -> at(2 + i, 820f, -17, t, ty) }
         road.forEachIndexed { i, (t, ty) -> if (i != 3) at(8 + i, 1520f, -10, t, ty) }
@@ -146,9 +169,11 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         listOf("KN4XYZ: @TEAM " to 1, "WATER POINT AT S" to 4, "T MARKS OPEN UNT" to 4, "IL 1800, BRING C" to 4, "ONTAINERS" to 6)
             .forEachIndexed { i, (t, ty) -> if (i != 3) at(20 + i, 1450f, -13, t, ty) }
         listOf(
-            "N0DEF: @TEAM " to 1, "#SALUTE S:ABOUT 2" to 4, "0 A:LINE AT FUEL" to 4, " STATION L:18S UJ" to 4,
-            " 2347 0648 U:CIV" to 4, "ILIANS T:181320Z" to 4, " E:CARS" to 6,
+            "N0DEF: @TEAM " to 1, "#SALUTE S:ABOUT 2" to 4, "0 A:LINE AT FUEL" to 4, " STATION L:16S FD" to 4,
+            " 6410 3236 U:CIV" to 4, "ILIANS T:181320Z" to 4, " E:CARS" to 6,
         ).forEachIndexed { i, (t, ty) -> at(26 + i, 820f, -15, t, ty) }
+        listOf("W4QRP: @TEAM " to 1, "#CHECKIN S:NEED " to 4, "L:EM83 N:WATER" to 6)
+            .forEachIndexed { i, (t, ty) -> at(29 + i, 2010f, -7, t, ty) }
         engine.tick(now)
         publish()
     }
@@ -225,6 +250,20 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val liveForKey = live.filter { key == ALL || it.sender == key || key.startsWith("@") }
             .maxByOrNull { it.lastFrameMs }
         _live.value = liveForKey?.let { Live(it.sender, it.laneHz, it.framesSoFar, it.textSoFar.trim(), colorFor(it.sender)) }
+
+        // Map: stations with a known grid, and every report that carries a location.
+        _mapData.value = MapData(
+            stations = heard.mapNotNull { (call, h) ->
+                val grid = h.grid ?: return@mapNotNull null
+                val pos = Geo.maidenheadToLatLon(grid) ?: return@mapNotNull null
+                MapStation(call, grid, pos, colorFor(call), h.lastHeardMs, h.snr)
+            },
+            reports = messages.mapNotNull { m ->
+                val report = Reports.parse(m.bodyText) ?: return@mapNotNull null
+                val pos = report.location ?: return@mapNotNull null
+                MapReport(m.id, report, m.sender, pos, m.lastHeardMs, colorFor(m.sender))
+            },
+        )
 
         // Waterfall markers: stations heard in the last 10 minutes, at their latest offset.
         _markers.value = heard.filter { now - it.value.lastHeardMs < 10 * 60_000L }
