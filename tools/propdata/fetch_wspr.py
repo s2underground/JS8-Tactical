@@ -88,10 +88,15 @@ def days(today):
     return sorted(set(out))
 
 
-def main(out_dir):
+def minimum_days():
+    """5th and 20th of each month in 2019-2020 (solar minimum, SFI ~65-80)."""
+    return [dt.date(y, mo, d) for y in (2019, 2020) for mo in range(1, 13) for d in (5, 20)]
+
+
+def main(out_dir, day_set="recent"):
     os.makedirs(out_dir, exist_ok=True)
     today = dt.datetime.now(dt.timezone.utc).date()
-    for day in days(today):
+    for day in (minimum_days() if day_set == "minimum" else days(today)):
         d0 = f"{day} 00:00:00"
         d1 = f"{day + dt.timedelta(days=1)} 00:00:00"
         for name, q in QUERIES.items():
@@ -112,4 +117,4 @@ def main(out_dir):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "wspr-sample")
+    main(sys.argv[1] if len(sys.argv) > 1 else "wspr-sample", sys.argv[2] if len(sys.argv) > 2 else "recent")
