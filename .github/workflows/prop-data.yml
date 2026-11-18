@@ -1,0 +1,28 @@
+# Pulls a small WSPR reception sample for calibrating the propagation model.
+# Manual only. Output goes to the "prop-data" release (not shipped in the app).
+name: Propagation calibration data
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch WSPR sample and solar indices
+        run: python3 tools/propdata/fetch_wspr.py wspr-sample
+      - name: Pack
+        run: tar -cf - wspr-sample | zstd -19 -T0 -o wspr-sample.tar.zst && ls -lh wspr-sample.tar.zst
+      - name: Publish to prop-data release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view prop-data >/dev/null 2>&1 || \
+            gh release create prop-data --prerelease --title "Propagation calibration data" \
+              --notes "WSPR reception sample (wspr.live, non-commercial research use) and GFZ solar indices (CC BY 4.0) used to tune the propagation model. Not part of the app."
+          gh release upload prop-data wspr-sample.tar.zst --clobber
