@@ -47,6 +47,27 @@ JNIEXPORT jint JNICALL Java_com_js8call_core_JS8Engine_nativeTxMillisecondsUntil
 JNIEXPORT void JNICALL Java_com_js8call_core_JS8Engine_nativeSetTxReady(JNIEnv*, jobject, jlong, jboolean);
 JNIEXPORT void JNICALL Java_com_js8call_core_JS8Engine_nativeSetTimeDriftMs(JNIEnv*, jobject, jlong, jlong);
 JNIEXPORT jlong JNICALL Java_com_js8call_core_JS8Engine_nativeGetTimeDriftMs(JNIEnv*, jobject, jlong);
+JNIEXPORT jint JNICALL Java_com_js8call_core_JS8Engine_nativeCountFrames(JNIEnv*, jclass, jstring, jstring, jstring, jstring, jint);
+}
+
+// Number of frames a message will need on air (no engine instance required).
+// Used by the UI for airtime estimates; returns -1 if the text can't be framed.
+JNIEXPORT jint JNICALL Java_com_js8call_core_JS8Engine_nativeCountFrames(
+    JNIEnv* env, jclass, jstring mycall, jstring mygrid, jstring selected, jstring text, jint submode) {
+  auto str = [env](jstring value) {
+    if (!value) return std::string();
+    const char* chars = env->GetStringUTFChars(value, nullptr);
+    std::string out = chars ? chars : "";
+    if (chars) env->ReleaseStringUTFChars(value, chars);
+    return out;
+  };
+  try {
+    auto const frames = js8core::protocol::varicode::build_message_frames(
+        str(mycall), str(mygrid), str(selected), str(text), false, false, submode, nullptr);
+    return static_cast<jint>(frames.size());
+  } catch (...) {
+    return -1;
+  }
 }
 
 // Global JavaVM reference for callbacks
@@ -1053,7 +1074,9 @@ int js8_register_natives(JavaVM* vm, JNIEnv* env) {
      (void*)Java_com_js8call_core_JS8Engine_nativeSetTimeDriftMs},
     {"nativeGetTimeDriftMs", "(J)J",
      (void*)Java_com_js8call_core_JS8Engine_nativeGetTimeDriftMs},
-    {"nativeIsRunning", "(J)Z", (void*)Java_com_js8call_core_JS8Engine_nativeIsRunning}
+    {"nativeIsRunning", "(J)Z", (void*)Java_com_js8call_core_JS8Engine_nativeIsRunning},
+    {"nativeCountFrames", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)I",
+     (void*)Java_com_js8call_core_JS8Engine_nativeCountFrames}
   };
 
   int num_methods = sizeof(methods) / sizeof(methods[0]);

@@ -321,4 +321,18 @@
     <string name="tpl_salute">SALUTE</string>
     <string name="tpl_sitrep">SITREP</string>
     <string name="tpl_posrep">POSREP</string>
+    <!-- Report writer -->
+    <string name="report_preview">ON AIR</string>
+    <string name="report_edit_as_text">Edit as text</string>
+    <string name="report_send">Send</string>
+    <string name="report_to_everyone">→ everyone</string>
+    <string name="report_location_hint">MGRS, grid, or lat,lon</string>
+    <string name="report_my_position">My position</string>
+    <string name="report_grid">Grid</string>
+    <string name="report_now">Now</string>
+    <string name="report_empty">Fill in at least one field</string>
+    <string name="report_airtime">≈ %1$d frames · %2$d:%3$02d on air</string>
+    <string name="report_airtime_unknown">Airtime unavailable</string>
+    <string name="report_used_grid">No GPS fix; used your grid square</string>
+    <string name="report_no_position">No position available. Set your grid in Settings.</string>
 </resources>

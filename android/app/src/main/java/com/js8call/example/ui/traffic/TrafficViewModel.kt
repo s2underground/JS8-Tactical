@@ -129,7 +129,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
      */
     fun loadDemo() {
         val now = System.currentTimeMillis()
-        val slot0 = (now / 15_000L - 30) * 15_000L // 30 slots (7.5 min) ago
+        val slot0 = (now / 15_000L - 34) * 15_000L // 34 slots (8.5 min) ago
         fun at(slot: Int, hz: Float, snr: Int, text: String, type: Int) {
             val start = slot0 + slot * 15_000L
             val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = start }
@@ -145,6 +145,10 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         at(17, 640f, -21, "KF4MNO: @HB HEARTBEAT EM63", 3)
         listOf("KN4XYZ: @TEAM " to 1, "WATER POINT AT S" to 4, "T MARKS OPEN UNT" to 4, "IL 1800, BRING C" to 4, "ONTAINERS" to 6)
             .forEachIndexed { i, (t, ty) -> if (i != 3) at(20 + i, 1450f, -13, t, ty) }
+        listOf(
+            "N0DEF: @TEAM " to 1, "#SALUTE S:ABOUT 2" to 4, "0 A:LINE AT FUEL" to 4, " STATION L:18S UJ" to 4,
+            " 2347 0648 U:CIV" to 4, "ILIANS T:181320Z" to 4, " E:CARS" to 6,
+        ).forEachIndexed { i, (t, ty) -> at(26 + i, 820f, -15, t, ty) }
         engine.tick(now)
         publish()
     }

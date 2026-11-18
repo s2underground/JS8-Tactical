@@ -18,6 +18,7 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.js8call.example.R
+import com.js8call.example.reports.Reports
 import com.js8call.example.rollup.RollupEngine
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -95,6 +96,8 @@ class ThreadAdapter(
         val body: TextView = view.findViewById(R.id.card_body)
         val meta: TextView = view.findViewById(R.id.card_meta)
         val actions: View = view.findViewById(R.id.card_actions)
+        val reportBadge: TextView = view.findViewById(R.id.card_report_badge)
+        val reportFields: android.widget.GridLayout = view.findViewById(R.id.card_report_fields)
         val resend: MaterialButton = view.findViewById(R.id.card_resend)
     }
 
@@ -151,6 +154,14 @@ class ThreadAdapter(
         }
         h.time.text = zuluTime(m.lastHeardMs)
         h.body.text = bodySpan(ctx, m.segments)
+        val report = Reports.parse(m.bodyText)
+        h.reportBadge.isVisible = report != null
+        h.reportBadge.text = report?.type?.tag
+        // A complete report shows as fields; an incomplete one keeps its text so the gap is visible.
+        val asFields = report != null && m.isComplete && report.values.isNotEmpty()
+        h.reportFields.isVisible = asFields
+        h.body.isVisible = !asFields
+        if (asFields) bindReportFields(h.reportFields, report!!)
         val snr = m.bestSnr?.let { " · $it dB" } ?: ""
         h.meta.text = if (m.copies > 1)
             ctx.getString(R.string.traffic_meta_multi, zuluTime(m.firstHeardMs), zuluTime(m.lastHeardMs), m.laneHz.toInt(), snr)
@@ -166,6 +177,35 @@ class ThreadAdapter(
         h.to.text = if (item.to != null) ctx.getString(R.string.traffic_you_to, item.to) else ctx.getString(R.string.traffic_you)
         h.time.text = zuluTime(item.sentMs)
         h.body.text = item.text
+    }
+
+    private fun bindReportFields(grid: android.widget.GridLayout, report: Reports.Report) {
+        val ctx = grid.context
+        grid.removeAllViews()
+        val dp = ctx.resources.displayMetrics.density
+        report.type.fields.forEach { field ->
+            val value = report.values[field.key] ?: return@forEach
+            val cell = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(0, (4 * dp).toInt(), (16 * dp).toInt(), (6 * dp).toInt())
+            }
+            cell.addView(TextView(ctx).apply {
+                text = field.label.uppercase()
+                textSize = 11.5f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(ContextCompat.getColor(ctx, R.color.tac_text_dim))
+            })
+            cell.addView(TextView(ctx).apply {
+                text = value
+                textSize = 15f
+                setTextColor(ContextCompat.getColor(ctx, R.color.tac_text))
+                if (field.kind == Reports.Kind.LOCATION || field.kind == Reports.Kind.TIME) typeface = Typeface.MONOSPACE
+            })
+            grid.addView(cell, android.widget.GridLayout.LayoutParams(
+                android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED),
+                android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f),
+            ).apply { width = 0 })
+        }
     }
 
     private fun bodySpan(ctx: android.content.Context, segments: List<RollupEngine.Segment>): CharSequence {

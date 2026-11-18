@@ -224,18 +224,26 @@ class TrafficFragment : Fragment() {
         val input: EditText = view.findViewById(R.id.compose_input)
         val repeat: Chip = view.findViewById(R.id.chip_repeat3)
 
-        fun insertTemplate(template: String) {
-            input.setText(template)
-            input.setSelection(input.text.length)
-            input.requestFocus()
+        // Report buttons open the report writer for the current selection.
+        fun openWriter(tag: String) {
+            if (childFragmentManager.findFragmentByTag(ReportWriterSheet.TAG) != null) return
+            ReportWriterSheet.newInstance(tag, traffic.sendTarget()).show(childFragmentManager, ReportWriterSheet.TAG)
         }
-        val grid = { PreferenceManager.getDefaultSharedPreferences(requireContext()).getString("grid", "").orEmpty().uppercase() }
-        val dtg = { SimpleDateFormat("ddHHmm'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date()) }
-        view.findViewById<Chip>(R.id.tpl_checkin).setOnClickListener { insertTemplate("#CHECKIN GOOD LOC:${grid()} ") }
-        view.findViewById<Chip>(R.id.tpl_spot).setOnClickListener { insertTemplate("#SPOT SIZE: ACT: LOC:${grid()} T:${dtg()} ") }
-        view.findViewById<Chip>(R.id.tpl_salute).setOnClickListener { insertTemplate("#SALUTE S: A: L:${grid()} U: T:${dtg()} E:") }
-        view.findViewById<Chip>(R.id.tpl_sitrep).setOnClickListener { insertTemplate("#SITREP STATUS: NEEDS: ") }
-        view.findViewById<Chip>(R.id.tpl_posrep).setOnClickListener { insertTemplate("#POSREP LOC:${grid()} STATUS: ") }
+        view.findViewById<Chip>(R.id.tpl_checkin).setOnClickListener { openWriter("CHECKIN") }
+        view.findViewById<Chip>(R.id.tpl_spot).setOnClickListener { openWriter("SPOT") }
+        view.findViewById<Chip>(R.id.tpl_salute).setOnClickListener { openWriter("SALUTE") }
+        view.findViewById<Chip>(R.id.tpl_sitrep).setOnClickListener { openWriter("SITREP") }
+        view.findViewById<Chip>(R.id.tpl_posrep).setOnClickListener { openWriter("POSREP") }
+        childFragmentManager.setFragmentResultListener(ReportWriterSheet.RESULT_KEY, viewLifecycleOwner) { _, result ->
+            val line = result.getString(ReportWriterSheet.ARG_LINE).orEmpty()
+            if (result.getBoolean(ReportWriterSheet.ARG_SEND)) {
+                send(line, if (repeat.isChecked) 3 else 1)
+            } else {
+                input.setText(line)
+                input.setSelection(input.text.length)
+                input.requestFocus()
+            }
+        }
 
         ComposeBarController(
             fragment = this,

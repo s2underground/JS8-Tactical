@@ -41,6 +41,22 @@ class JS8Engine private constructor(
             return JS8Engine(handle, callbackHandler)
         }
 
+        /**
+         * Number of frames [text] needs on air, using the real JS8 framing
+         * (dictionary compression, compound headers). -1 if it can't be framed.
+         */
+        fun countFrames(myCall: String, myGrid: String, selectedCall: String, text: String, submode: Int = 0): Int =
+            nativeCountFrames(myCall, myGrid, selectedCall, text, submode)
+
+        @JvmStatic
+        private external fun nativeCountFrames(
+            myCall: String,
+            myGrid: String,
+            selectedCall: String,
+            text: String,
+            submode: Int,
+        ): Int
+
         @JvmStatic
         private external fun nativeCreate(
             callbackHandler: CallbackHandler,
