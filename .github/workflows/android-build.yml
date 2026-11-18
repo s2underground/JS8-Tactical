@@ -30,6 +30,9 @@ on:
           - release
           - both
 
+permissions:
+  contents: write
+
 env:
   HAMLIB_VERSION: 1b2461aba99f0dde0531e1732c00e60aeee40657
   ANDROID_NDK_VERSION: 26.1.10909125
@@ -167,6 +170,17 @@ jobs:
       with:
         name: js8-baseline-${{ matrix.build-type }}-apk
         path: android/app/build/outputs/apk/${{ matrix.build-type }}/*.apk
+
+    - name: Publish rolling test build
+      if: matrix.build-type == 'debug' && github.event_name == 'push' && github.ref == 'refs/heads/master'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
+        cp "$APK" JS8-Tactical-test.apk
+        gh release view test-build >/dev/null 2>&1 || gh release create test-build --prerelease --title "Latest test build" --notes "Rolling test build from master."
+        gh release upload test-build JS8-Tactical-test.apk --clobber
+        gh release edit test-build --notes "Rolling test build from master. Commit ${GITHUB_SHA::8}, run #${GITHUB_RUN_NUMBER}, built $(date -u +%Y-%m-%dT%H:%MZ)."
 
     - name: Upload AAR
       if: matrix.build-type == 'release'
