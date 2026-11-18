@@ -12,7 +12,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.s2underground.js8.baseline"
+        applicationId = "com.s2underground.js8tactical"
         minSdk = 26
         targetSdk = 34
         versionCode = 4

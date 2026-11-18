@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">JS8 Baseline</string>
+    <string name="app_name">JS8-Tactical</string>
 
     <!-- Bottom navigation -->
-    <string name="nav_monitor">Monitor</string>
+    <string name="nav_monitor">Radio</string>
     <string name="nav_messages">Messages</string>
     <string name="nav_settings">Settings</string>
 
@@ -276,4 +276,49 @@
     <string name="notification_message_channel_desc">JS8 directed message notifications</string>
     <string name="notification_new_message_title">New message from %s</string>
     <string name="notification_new_message_group">%d new messages</string>
+    <!-- Traffic screen -->
+    <string name="nav_traffic">Traffic</string>
+    <string name="traffic_all">All traffic</string>
+    <string name="traffic_empty">Nothing heard yet.\nStart receiving on the Radio tab.</string>
+    <string name="traffic_receiving_short">RX…</string>
+    <string name="traffic_unknown_sender">Unknown at +%1$d Hz</string>
+    <string name="traffic_to">→ %1$s</string>
+    <string name="traffic_copies">%1$d copies merged</string>
+    <string name="traffic_complete">Complete</string>
+    <plurals name="traffic_frames_missing">
+        <item quantity="one">%1$d frame missing</item>
+        <item quantity="other">%1$d frames missing</item>
+    </plurals>
+    <string name="traffic_start_missing">Start missing</string>
+    <string name="traffic_end_missing">End missing</string>
+    <string name="traffic_meta_multi">first %1$s · last %2$s · +%3$d Hz%4$s</string>
+    <string name="traffic_meta_single">+%1$d Hz%2$s</string>
+    <string name="traffic_you_to">You → %1$s</string>
+    <string name="traffic_you">You</string>
+    <string name="traffic_gap_unknown">missing</string>
+    <string name="traffic_gap_one">missing frame</string>
+    <string name="traffic_gap_many">%1$d frames missing</string>
+    <string name="traffic_no_rig">No rig frequency</string>
+    <string name="traffic_state_tx">TX</string>
+    <string name="traffic_state_rx">RX</string>
+    <string name="traffic_state_off">OFF</string>
+    <string name="traffic_open_radio">Receive status. Opens the Radio tab.</string>
+    <string name="traffic_waterfall_desc">Waterfall with markers for active stations</string>
+    <string name="traffic_hint_all">Message to everyone…</string>
+    <string name="traffic_hint_to">Message to %1$s…</string>
+    <string name="traffic_receiving_from">Receiving from %1$s</string>
+    <string name="traffic_receiving_at">Receiving at +%1$d Hz</string>
+    <string name="traffic_live_text">frame %1$d · %2$s</string>
+    <string name="traffic_request_resend">Request resend</string>
+    <string name="traffic_resend_queued">Asked %1$s to repeat (AGN?)</string>
+    <string name="traffic_raw_title">Raw frames</string>
+    <string name="traffic_queued">Queued</string>
+    <string name="traffic_queued_n">Queued %1$d copies</string>
+    <string name="traffic_send_x3">Send ×3</string>
+    <string name="traffic_demo_loaded">Sample traffic loaded (test build)</string>
+    <string name="tpl_checkin">Check-in</string>
+    <string name="tpl_spot">SPOT</string>
+    <string name="tpl_salute">SALUTE</string>
+    <string name="tpl_sitrep">SITREP</string>
+    <string name="tpl_posrep">POSREP</string>
 </resources>

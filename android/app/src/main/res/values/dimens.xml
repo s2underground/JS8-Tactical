@@ -3,4 +3,5 @@
     <!-- Monitor split between the waterfall and the decode list -->
     <item name="monitor_waterfall_weight" format="float" type="dimen">1.1</item>
     <item name="monitor_decodes_weight" format="float" type="dimen">1</item>
+    <dimen name="traffic_waterfall_height">88dp</dimen>
 </resources>

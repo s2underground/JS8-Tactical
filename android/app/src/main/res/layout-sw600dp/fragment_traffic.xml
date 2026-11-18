@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tablet: stations and groups on the left, the selected thread on the right. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/tac_ground"
+    android:orientation="vertical">
+
+    <include layout="@layout/traffic_status" />
+
+    <include layout="@layout/traffic_waterfall" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/station_list"
+            android:layout_width="300dp"
+            android:layout_height="match_parent"
+            android:background="@color/tac_panel"
+            android:clipToPadding="false"
+            android:paddingVertical="8dp" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="@color/tac_divider" />
+
+        <include
+            layout="@layout/traffic_thread_pane"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1" />
+    </LinearLayout>
+</LinearLayout>

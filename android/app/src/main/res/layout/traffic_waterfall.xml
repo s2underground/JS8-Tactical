@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/traffic_waterfall_height"
+    android:background="@color/tac_ground"
+    android:paddingHorizontal="12dp"
+    android:paddingVertical="6dp">
+
+    <com.js8call.example.ui.WaterfallView
+        android:id="@+id/traffic_waterfall"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/traffic_waterfall_desc" />
+
+    <com.js8call.example.ui.traffic.StationMarkerOverlay
+        android:id="@+id/traffic_markers"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no" />
+</FrameLayout>

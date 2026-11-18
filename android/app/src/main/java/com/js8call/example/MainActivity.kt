@@ -30,6 +30,7 @@ import com.js8call.example.ui.DecodeViewModel
 import com.js8call.example.ui.MessagesViewModel
 import com.js8call.example.ui.MonitorViewModel
 import com.js8call.example.ui.TransmitViewModel
+import com.js8call.example.ui.traffic.TrafficViewModel
 
 class MainActivity : AppCompatActivity() {
 
@@ -41,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private var spectrumBroadcastCount: Long = 0
     private lateinit var messagesViewModel: MessagesViewModel
     private lateinit var transmitViewModel: TransmitViewModel
+    private lateinit var trafficViewModel: TrafficViewModel
 
     private val decodeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -56,6 +58,7 @@ class MainActivity : AppCompatActivity() {
                     val mode = intent.getIntExtra(JS8EngineService.EXTRA_MODE, 0)
                     val driftMs = intent.getIntExtra(JS8EngineService.EXTRA_DRIFT_MS, 0)
                     decodeViewModel.addDecode(utc, snr, dt, freq, text, type, quality, mode, driftMs)
+                    trafficViewModel.addFrame(utc, snr, freq, text, type, mode)
                     monitorViewModel.updateSnr(snr)
                 }
                 JS8EngineService.ACTION_QUEUE_TX -> {
@@ -93,6 +96,7 @@ class MainActivity : AppCompatActivity() {
                     val freq = intent.getFloatExtra(JS8EngineService.EXTRA_TX_SENT_FREQ, 0f)
                     val utc = intent.getIntExtra(JS8EngineService.EXTRA_UTC, 0)
                     decodeViewModel.addOutgoing(text, freq, utc)
+                    trafficViewModel.addOutgoing(text, freq)
                 }
                 ACTION_PROCESS_TX_QUEUE -> {
                     android.util.Log.d("MainActivity", "Received ACTION_PROCESS_TX_QUEUE")
@@ -210,6 +214,7 @@ class MainActivity : AppCompatActivity() {
         monitorViewModel = ViewModelProvider(this)[MonitorViewModel::class.java]
         messagesViewModel = ViewModelProvider(this)[MessagesViewModel::class.java]
         transmitViewModel = ViewModelProvider(this)[TransmitViewModel::class.java]
+        trafficViewModel = ViewModelProvider(this)[TrafficViewModel::class.java]
         decodeViewModel.loadPersistedDecodesIfEnabled()
 
         // Observe unread count for badge on Messages tab

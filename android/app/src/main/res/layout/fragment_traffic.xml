@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phone: one column. Tablets use layout-sw600dp/fragment_traffic.xml. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/tac_ground"
+    android:orientation="vertical">
+
+    <include layout="@layout/traffic_status" />
+
+    <include layout="@layout/traffic_waterfall" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/station_list"
+        android:layout_width="match_parent"
+        android:layout_height="132dp"
+        android:background="@color/tac_panel"
+        android:paddingVertical="4dp" />
+
+    <include
+        layout="@layout/traffic_thread_pane"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+</LinearLayout>

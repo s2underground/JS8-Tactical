@@ -165,4 +165,30 @@ class RollupEngineTest {
         assertEquals("W4QRP", d.sender)
         assertEquals("KQ4BR", d.recipient)
     }
+
+    @Test
+    fun demoSequenceRollsUpAsExpected() {
+        val e = RollupEngine()
+        fun at(slot: Int, hz: Float, text: String, type: Int) = e.addFrame(frame(slot, text, type, hz))
+        at(0, 690f, "AC4LT: @HB HEARTBEAT EM72", 3)
+        roadMessage.forEachIndexed { i, (t, ty) -> if (i != 2) at(1 + i, 1450f, t, ty) }
+        listOf("N0DEF: @TEAM " to 1, "ARRIVED AT CP1, " to 4, "ALL GOOD" to 6).forEachIndexed { i, (t, ty) -> at(2 + i, 820f, t, ty) }
+        roadMessage.forEachIndexed { i, (t, ty) -> if (i != 3) at(8 + i, 1520f, t, ty) }
+        listOf("W4QRP: KQ4BR " to 1, "CAN YOU RELAY TO " to 4, "KF4MNO?" to 6).forEachIndexed { i, (t, ty) -> at(14 + i, 2010f, t, ty) }
+        listOf("KN4XYZ: @TEAM " to 1, "WATER POINT AT S" to 4, "T MARKS OPEN UNT" to 4, "IL 1800, BRING C" to 4, "ONTAINERS" to 6)
+            .forEachIndexed { i, (t, ty) -> if (i != 3) at(20 + i, 1450f, t, ty) }
+        e.settle(25)
+        val msgs = e.messages().filterNot { it.recipient == "@HB" }
+        val road = msgs.single { it.bodyText.startsWith("ROAD") }
+        assertEquals(2, road.copies)
+        assertTrue(road.isComplete)
+        val water = msgs.single { it.bodyText.startsWith("WATER") }
+        assertEquals(1, water.missingFrames)
+        assertEquals("WATER POINT AT ST MARKS OPEN UNT[…]ONTAINERS", water.bodyText)
+        val relay = msgs.single { it.sender == "W4QRP" }
+        assertEquals("KQ4BR", relay.recipient)
+        assertEquals("CAN YOU RELAY TO KF4MNO?", relay.bodyText)
+        assertEquals("ARRIVED AT CP1, ALL GOOD", msgs.single { it.sender == "N0DEF" }.bodyText)
+        assertEquals(4, msgs.size)
+    }
 }

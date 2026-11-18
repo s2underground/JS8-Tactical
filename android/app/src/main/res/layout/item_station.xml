@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginHorizontal="8dp"
+    android:layout_marginBottom="2dp"
+    android:background="@drawable/bg_station_row"
+    android:gravity="center_vertical"
+    android:minHeight="56dp"
+    android:orientation="horizontal"
+    android:paddingHorizontal="12dp"
+    android:paddingVertical="8dp">
+
+    <View
+        android:id="@+id/station_dot"
+        android:layout_width="12dp"
+        android:layout_height="12dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/station_dot" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/station_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="@color/tac_text"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            tools:text="KN4XYZ" />
+
+        <TextView
+            android:id="@+id/station_detail"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/tac_text_dim"
+            android:textSize="12sp"
+            tools:text="EM73 · +1450 Hz · -11 dB" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="end"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/station_last"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/tac_text_dim"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            tools:text="4m" />
+
+        <TextView
+            android:id="@+id/station_unread"
+            android:layout_width="wrap_content"
+            android:layout_height="22dp"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/bg_unread"
+            android:gravity="center"
+            android:minWidth="22dp"
+            android:paddingHorizontal="6dp"
+            android:textColor="@color/tac_ground"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone"
+            tools:text="2"
+            tools:visibility="visible" />
+    </LinearLayout>
+</LinearLayout>
