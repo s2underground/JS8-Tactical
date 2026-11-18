@@ -107,6 +107,9 @@ dependencies {
     // RecyclerView
     implementation("androidx.recyclerview:recyclerview:1.3.2")
 
+    // Map tab: MapLibre Native (BSD-2), vector maps, works offline with local tiles
+    implementation("org.maplibre.gl:android-sdk:11.8.0")
+
     // Material Design
     implementation("com.google.android.material:material:1.11.0")
 
