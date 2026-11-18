@@ -7,12 +7,16 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.preference.PreferenceManager
+import com.js8call.example.prop.Band
+import com.js8call.example.prop.Observation
+import com.js8call.example.prop.ObservationStore
 import com.js8call.example.reports.Geo
 import com.js8call.example.reports.LatLon
 import com.js8call.example.reports.Reports
 import com.js8call.example.rollup.HeaderParser
 import com.js8call.example.rollup.RolledMessage
 import com.js8call.example.rollup.RollupEngine
+import java.io.File
 
 /**
  * State for the Traffic screen: the rolled-up view of everything heard.
@@ -86,6 +90,14 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     private val _selected = MutableLiveData(ALL)
     val selected: LiveData<String> = _selected
 
+    /** Propagation evidence (who we heard, who heard us, on which band); kept for a week. */
+    val observationStore = ObservationStore(File(application.filesDir, "observations.csv"))
+    private val _observationsVersion = MutableLiveData(0)
+    val observationsVersion: LiveData<Int> = _observationsVersion
+    private var rigDialHz: Long? = null
+    /** Set while the demo loads: its made-up stations are shown but never saved. */
+    private var demoBand: Band? = null
+
     private val handler = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
@@ -117,10 +129,54 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                 h.laneHz = frequency
                 h.snr = snr
                 gridIn(text)?.let { h.grid = it }
+                currentBand()?.let { band ->
+                    observe(Observation(now, header.sender, h.grid, band, snr, Observation.Kind.HEARD))
+                }
             }
         }
         publish()
     }
+
+    /** Dial frequency from rig control (null or 0 when there is none). */
+    fun setDialFrequency(hz: Long?) {
+        rigDialHz = hz?.takeIf { it > 0 }
+    }
+
+    /** Band we are listening on: rig frequency if known, else the frequency picked on the Radio tab. */
+    fun currentBand(): Band? {
+        demoBand?.let { return it }
+        rigDialHz?.let { return Band.forDialHz(it) }
+        val saved = PreferenceManager.getDefaultSharedPreferences(getApplication())
+            .getString("last_frequency", "")?.trim()?.toLongOrNull()
+        return Band.forDialHz(saved)
+    }
+
+    /** Last grid heard from [call], for observations logged before their grid was known. */
+    fun gridFor(call: String): String? = heard[call]?.grid
+
+    private fun observe(o: Observation) {
+        val before = observationStore.all().size
+        observationStore.add(o, persist = demoBand == null)
+        if (observationStore.all().size != before) _observationsVersion.value = (_observationsVersion.value ?: 0) + 1
+    }
+
+    /** Someone sent us a signal report ("CALL: MYCALL SNR -12"): proof our signal reached them. */
+    private fun noteSignalReports(messages: List<RolledMessage>) {
+        val me = PreferenceManager.getDefaultSharedPreferences(getApplication())
+            .getString("callsign", "").orEmpty().trim().uppercase()
+        if (me.isEmpty()) return
+        val band = currentBand() ?: return
+        messages.forEach { m ->
+            if (m.recipient?.uppercase()?.substringBefore('/') != me.substringBefore('/')) return@forEach
+            val sender = m.sender ?: return@forEach
+            val snr = snrReport.find(m.bodyText.uppercase())?.groupValues?.get(1)?.toIntOrNull() ?: return@forEach
+            if (m.id in reportedIds) return@forEach
+            reportedIds += m.id
+            observe(Observation(m.lastHeardMs, sender, heard[sender]?.grid, band, snr, Observation.Kind.HEARD_ME))
+        }
+    }
+
+    private val reportedIds = mutableSetOf<Long>()
 
     /** Something this station transmitted. */
     fun addOutgoing(text: String, frequency: Float) {
@@ -149,6 +205,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
      */
     fun loadDemo() {
         val now = System.currentTimeMillis()
+        demoBand = currentBand() ?: Band.B40
         val slot0 = (now / 15_000L - 34) * 15_000L // 34 slots (8.5 min) ago
         fun at(slot: Int, hz: Float, snr: Int, text: String, type: Int) {
             val start = slot0 + slot * 15_000L
@@ -176,6 +233,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             .forEachIndexed { i, (t, ty) -> at(29 + i, 2010f, -7, t, ty) }
         engine.tick(now)
         publish()
+        demoBand = null
     }
 
     fun clear() {
@@ -191,6 +249,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val now = System.currentTimeMillis()
         lastViewedMs[selectedKey] = now
         val messages = engine.messages().filterNot { isBeacon(it) }
+        noteSignalReports(messages)
         val live = engine.live()
         val myGroups = myGroups()
 
@@ -299,6 +358,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             return PALETTE[Math.floorMod(call.hashCode(), PALETTE.size)]
         }
 
+        private val snrReport = Regex("""\bSNR\s+([+-]?\d{1,2})\b""")
         private val gridRegex = Regex("""\b([A-R]{2}[0-9]{2}(?:[A-X]{2})?)\b""")
         private fun gridIn(text: String): String? =
             gridRegex.findAll(text.uppercase()).map { it.groupValues[1] }.lastOrNull()

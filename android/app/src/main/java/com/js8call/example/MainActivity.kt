@@ -203,7 +203,7 @@ class MainActivity : AppCompatActivity() {
             if ((destination.id == R.id.navigation_conversation ||
                     destination.id == R.id.navigation_everything) && inMessagesTab
             ) {
-                bottomNav.menu.findItem(R.id.navigation_messages).isChecked = true
+                bottomNav.menu.findItem(R.id.navigation_messages)?.isChecked = true
             }
         }
         // A tab is checked only while its own screen shows, so one tap can arrive as either event
@@ -216,9 +216,13 @@ class MainActivity : AppCompatActivity() {
         transmitViewModel = ViewModelProvider(this)[TransmitViewModel::class.java]
         trafficViewModel = ViewModelProvider(this)[TrafficViewModel::class.java]
         decodeViewModel.loadPersistedDecodesIfEnabled()
+        // Propagation observations are tagged with the band in use.
+        monitorViewModel.radioFrequency.observe(this) { hz -> trafficViewModel.setDialFrequency(hz) }
 
         // Observe unread count for badge on Messages tab
         messagesViewModel.totalUnreadCount.observe(this) { count ->
+            // Phones in portrait have no Messages tab (five-tab limit); Traffic covers it there.
+            if (bottomNav.menu.findItem(R.id.navigation_messages) == null) return@observe
             val badge = bottomNav.getOrCreateBadge(R.id.navigation_messages)
             if (count > 0) {
                 badge.isVisible = true

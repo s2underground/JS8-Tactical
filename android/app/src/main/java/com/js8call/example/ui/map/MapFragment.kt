@@ -335,17 +335,7 @@ class MapFragment : Fragment() {
 
     // ------------------------------------------------------------- helpers
 
-    @SuppressLint("MissingPermission")
-    private fun myPosition(): LatLon? {
-        val ctx = context ?: return null
-        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            runCatching { lm.getProviders(true).mapNotNull { lm.getLastKnownLocation(it) }.maxByOrNull { it.time } }
-                .getOrNull()?.let { return LatLon(it.latitude, it.longitude) }
-        }
-        val grid = PreferenceManager.getDefaultSharedPreferences(ctx).getString("grid", "").orEmpty()
-        return Geo.maidenheadToLatLon(grid)
-    }
+    private fun myPosition(): LatLon? = context?.let { com.js8call.example.ui.map.myPosition(it) }
 
     private fun rangeText(from: LatLon, to: LatLon): String {
         val km = Geo.distanceKm(from, to)

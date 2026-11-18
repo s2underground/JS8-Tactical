@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Phones in portrait: BottomNavigationView allows five tabs, so Messages
+     (covered by Traffic) lives only on the side rail in landscape and on tablets. -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:id="@+id/navigation_traffic"
@@ -11,14 +13,14 @@
         android:title="@string/nav_map" />
 
     <item
+        android:id="@+id/navigation_propagation"
+        android:icon="@drawable/ic_cell_tower"
+        android:title="@string/nav_propagation" />
+
+    <item
         android:id="@+id/navigation_monitor"
         android:icon="@drawable/ic_graphic_eq"
         android:title="@string/nav_monitor" />
-
-    <item
-        android:id="@+id/navigation_messages"
-        android:icon="@drawable/ic_chat_bubble"
-        android:title="@string/nav_messages" />
 
     <item
         android:id="@+id/navigation_settings"

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Propagation band chart open by default only where there is room for it. -->
+    <bool name="prop_chart_open_default">false</bool>
+</resources>

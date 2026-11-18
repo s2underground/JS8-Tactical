@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/tac_ground">
+
+    <org.maplibre.android.maps.MapView
+        android:id="@+id/prop_map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/prop_desc" />
+
+    <!-- Controls: band, time, solar data -->
+    <LinearLayout
+        android:id="@+id/prop_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:background="@drawable/bg_map_panel"
+        android:orientation="vertical"
+        android:padding="8dp">
+
+        <HorizontalScrollView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/prop_bands"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleLine="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/prop_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="112dp"
+                android:fontFamily="monospace"
+                android:textColor="@color/tac_text"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                tools:text="NOW 1432Z" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/prop_slider"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:minWidth="200dp"
+                android:contentDescription="@string/prop_time_desc"
+                android:stepSize="0.5"
+                android:value="0"
+                android:valueFrom="0"
+                android:valueTo="24" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/prop_show_predicted"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/prop_predicted" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/prop_show_heard"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:checked="true"
+                android:text="@string/prop_heard" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/prop_solar"
+                style="@style/Widget.Material3.Chip.Assist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:fontFamily="monospace"
+                tools:text="SFI 142 · K2 · NOAA 2h" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/prop_notice"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:maxWidth="420dp"
+            android:textColor="@color/tac_warn_text"
+            android:textSize="12.5sp"
+            android:visibility="gone"
+            tools:text="Solar data is 3 days old. The Heard layer shows what is actually working."
+            tools:visibility="visible" />
+    </LinearLayout>
+
+    <!-- Legend -->
+    <LinearLayout
+        android:id="@+id/prop_legend"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="12dp"
+        android:background="@drawable/bg_map_panel"
+        android:orientation="vertical"
+        android:padding="10dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/prop_legend_predicted"
+            android:textColor="@color/tac_text_dim"
+            android:textSize="11.5sp"
+            android:textStyle="bold" />
+
+        <View
+            android:layout_width="150dp"
+            android:layout_height="8dp"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/bg_prop_legend_ramp" />
+
+        <LinearLayout
+            android:layout_width="150dp"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/prop_legend_marginal"
+                android:textColor="@color/tac_text_quiet"
+                android:textSize="11sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/prop_legend_likely"
+                android:textColor="@color/tac_text_quiet"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/prop_legend_heard"
+            android:textColor="@color/tac_text_dim"
+            android:textSize="11.5sp"
+            android:textStyle="bold" />
+
+        <View
+            android:layout_width="150dp"
+            android:layout_height="8dp"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/bg_prop_legend_heard" />
+
+        <TextView
+            android:id="@+id/prop_heard_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/tac_text_quiet"
+            android:textSize="11sp"
+            tools:text="7 stations · 2 heard you" />
+    </LinearLayout>
+
+    <!-- Band × distance chart -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="12dp"
+        android:gravity="end"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/prop_chart_card"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_map_panel"
+            android:orientation="vertical"
+            android:padding="10dp">
+
+            <TextView
+                android:id="@+id/prop_chart_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/tac_text_dim"
+                android:textSize="11.5sp"
+                android:textStyle="bold"
+                tools:text="BAND CHART · NOW 1432Z" />
+
+            <com.js8call.example.ui.prop.StoplightView
+                android:id="@+id/prop_chart"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/prop_chart_toggle"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="52dp"
+            android:text="@string/prop_chart" />
+    </LinearLayout>
+
+</FrameLayout>

@@ -15,6 +15,11 @@
         android:label="@string/nav_map" />
 
     <fragment
+        android:id="@+id/navigation_propagation"
+        android:name="com.js8call.example.ui.prop.PropagationFragment"
+        android:label="@string/nav_propagation" />
+
+    <fragment
         android:id="@+id/navigation_monitor"
         android:name="com.js8call.example.ui.MonitorFragment"
         android:label="@string/nav_monitor" />
