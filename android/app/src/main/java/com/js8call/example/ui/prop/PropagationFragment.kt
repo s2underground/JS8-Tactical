@@ -386,7 +386,7 @@ class PropagationFragment : Fragment() {
         val dir = dirs[(((Geo.bearingDeg(me, to) + 22.5) % 360) / 45).toInt()]
         val text = String.format(
             Locale.US, "%,d km %s on %s: %s · MUF %.1f MHz · best band %s",
-            path.distanceKm.roundToInt(), dir, band.label, verdict, path.mufMHz, best.label,
+            path.distanceKm.roundToInt(), dir, band.label, verdict, path.medianMufMHz, best.label,
         )
         Snackbar.make(v, text, Snackbar.LENGTH_LONG).show()
     }

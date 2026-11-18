@@ -66,82 +66,155 @@ object Sun {
 }
 
 /**
- * A deliberately simple HF skywave model, in the spirit of MINIMUF:
- * F2 critical frequency from solar activity and sun angle at each hop's
- * midpoint, curved-earth secant law for the MUF, and a daytime D-layer
- * absorption estimate for the LUF. It is an estimate for "which band, how
- * far, right now", not a VOACAP replacement.
+ * A compact HF skywave model, calibrated against real reception reports.
+ *
+ * Structure (MINIMUF-like): F2 critical frequency at each hop's midpoint from
+ * solar activity, sun angle (with the F2 layer's lag behind the sun), season
+ * (winter anomaly), geomagnetic latitude and storms; curved-earth secant law
+ * for the MUF; D-layer absorption for the LUF; plus sporadic-E for summer
+ * short skip. Every coefficient in [K] was fitted to WSPR spots (wspr.live,
+ * 2019-2026, held-out days and stations used for checking), see
+ * tools/propdata. It answers "which band, how far, about now", not VOACAP.
  */
 object PropagationModel {
 
     private const val R = 6371.0       // earth radius, km
-    private const val H_F2 = 300.0     // reflection height, km
     private const val MAX_HOP_KM = 3500.0
     private const val MAX_SECANT = 3.6
-    /** JS8 decodes far below SSB levels, which lowers the usable floor. */
-    private const val JS8_LUF_FACTOR = 0.75
+    /** Geomagnetic north pole (dipole approximation). */
+    private val POLE = LatLon(80.8, -72.7)
 
+    /** Fitted coefficients (see tools/propdata/README.md). */
+    object K {
+        const val A0 = 10.01; const val A1 = 0.02908          // daytime foF2 base and SSN slope
+        const val B0 = 5.47; const val B1 = 0.004771        // night-time foF2 base and SSN slope
+        const val WD = 0.2119; const val WN = 0.1671         // season: winter-day boost, summer-night boost
+        const val C0 = 0.3118; const val P = 0.4933           // daylight curve
+        const val LAG = 0.6103                               // weight of the sun 2 h earlier (F2 lag)
+        const val HL = 0.6566; const val EQ = 0.9812         // high-latitude cut, equatorial-anomaly boost
+        const val KS = 0.02864                              // storm depression per K above 3
+        const val H = 318.4; const val MM = 1.142            // layer height (km), MUF scale
+        const val KA = 0.008166                              // absorption growth with SSN
+        const val L0 = 0.1276; const val L1 = 7.387; const val L2 = 1.94; const val L3 = 0.598  // LUF
+        const val U0 = 1.037; const val U1 = 1.098; const val W = 5.685  // ramp shapes near MUF / LUF
+        const val GW1 = 87.56; const val GW2 = 54.37         // ground-wave reach (km) below 4 / 10 MHz
+        const val ES0 = 0.2626; const val ESW = 0.0001575; const val ESP = 6.955  // sporadic-E strength, season
+        const val ESC = 6.079; const val ESK = 0.0345; const val ES2 = 0.2853   // its day curve, freq fall-off, 2-hop share
+        /** Raw path score → display score (share of spots relative to the best paths, fitted). */
+        val SCORE_REL = doubleArrayOf(0.0, 0.005, 0.074, 0.124, 0.174, 0.225, 0.274, 0.324, 0.374, 0.426, 0.474, 0.524, 0.575, 0.622, 0.673, 0.725, 0.78)
+        val SCORE_VAL = doubleArrayOf(0.0, 0.056, 0.155, 0.214, 0.281, 0.373, 0.463, 0.548, 0.647, 0.741, 0.833, 0.871, 0.907, 0.917, 0.924, 0.973, 1.0)
+    }
+
+    /**
+     * A path's propagation summary. [mufMHz]/[lufMHz] are the model's raw
+     * limits; [medianMufMHz] is the frequency where the upper ramp is half
+     * way, the number shown to the operator.
+     */
     data class Path(
         val distanceKm: Double,
         val hops: Int,
         val mufMHz: Double,
         val lufMHz: Double,
+        /** Sporadic-E strength before the frequency fall-off. */
+        val esBase: Double = 0.0,
     ) {
-        val fotMHz: Double get() = 0.85 * mufMHz
+        val medianMufMHz: Double get() = mufMHz * (K.U0 - 0.5 * K.U1)
+        val fotMHz: Double get() = 0.85 * medianMufMHz
+    }
+
+    private fun sigmoid(x: Double) = 1 / (1 + kotlin.math.exp(-x))
+
+    fun magLat(p: LatLon): Double {
+        val phi = Math.toRadians(p.lat); val pl = Math.toRadians(POLE.lat)
+        val s = sin(phi) * sin(pl) + cos(phi) * cos(pl) * cos(Math.toRadians(p.lon - POLE.lon))
+        return Math.toDegrees(asin(s.coerceIn(-1.0, 1.0)))
+    }
+
+    /** Everything about the sky at one instant that the per-point maths needs. */
+    class Sky(val timeMs: Long) {
+        val sub: LatLon = Sun.subsolarPoint(timeMs)
+        val subLag: LatLon = Sun.subsolarPoint(timeMs - 2 * 3_600_000L)
+        val doy: Int = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = timeMs }.get(Calendar.DAY_OF_YEAR)
+        fun season(lat: Double) = cos(2 * PI * (doy - 172) / 365.0) * kotlin.math.sign(lat)
     }
 
     /** F2-layer critical frequency (MHz) over [p] at [timeMs]. */
-    fun foF2(p: LatLon, timeMs: Long, wx: SpaceWeather): Double = foF2(p, Sun.subsolarPoint(timeMs), wx)
+    fun foF2(p: LatLon, timeMs: Long, wx: SpaceWeather): Double = foF2(p, Sky(timeMs), wx)
 
-    fun foF2(p: LatLon, sub: LatLon, wx: SpaceWeather): Double {
+    fun foF2(p: LatLon, sky: Sky, wx: SpaceWeather): Double {
         val ssn = wx.ssn
-        val day = 4.2 + 0.042 * ssn
-        val night = 2.3 + 0.021 * ssn
-        val cosZ = cos(Math.toRadians(Sun.zenithDeg(p, sub)))
-        // Lit layer: fades out a few degrees after sunset at layer height.
-        val lit = (max(0.0, cosZ + 0.1) / 1.1).pow(0.5)
+        val cz = (1 - K.LAG) * cosZ(p, sky.sub) + K.LAG * cosZ(p, sky.subLag)
+        val lit = (max(0.0, cz + K.C0) / (1 + K.C0) + 1e-6).pow(K.P)
+        val s = sky.season(p.lat)
+        val aml = kotlin.math.abs(magLat(p))
+        val day = (K.A0 + K.A1 * ssn) * (1 - K.WD * s)
+        val night = (K.B0 + K.B1 * ssn) * (1 + K.WN * s)
         var f = night + (day - night) * lit
-        // High latitudes run lower, and geomagnetic storms depress the layer.
-        if (kotlin.math.abs(p.lat) > 60) f *= 0.85
-        val storm = max(0.0, wx.kIndex - 3)
-        f *= 1 - 0.04 * storm * (if (kotlin.math.abs(p.lat) > 45) 1.5 else 1.0)
+        f *= 1 - K.HL * sigmoid((aml - 60) / 4)
+        f *= 1 + K.EQ * kotlin.math.exp(-((aml - 15) / 10).pow(2)) * lit
+        f *= 1 - K.KS * max(0.0, wx.kIndex - 3) * (1 + aml / 45)
         return max(1.0, f)
     }
+
+    private fun cosZ(p: LatLon, sub: LatLon) = cos(Math.toRadians(Sun.zenithDeg(p, sub)))
 
     /** Secant of the incidence angle at the layer for a hop of [hopKm]. */
     fun secant(hopKm: Double): Double {
         val theta = hopKm / (2 * R)
-        val ap = sqrt(R * R + (R + H_F2).pow(2) - 2 * R * (R + H_F2) * cos(theta))
+        val ap = sqrt(R * R + (R + K.H).pow(2) - 2 * R * (R + K.H) * cos(theta))
         val sinI = (R * sin(theta) / ap).coerceIn(0.0, 0.999)
         return min(MAX_SECANT, 1 / sqrt(1 - sinI * sinI))
     }
 
-    fun path(tx: LatLon, rx: LatLon, timeMs: Long, wx: SpaceWeather): Path = path(tx, rx, Sun.subsolarPoint(timeMs), wx)
+    fun path(tx: LatLon, rx: LatLon, timeMs: Long, wx: SpaceWeather): Path = path(tx, rx, Sky(timeMs), wx)
 
-    fun path(tx: LatLon, rx: LatLon, sub: LatLon, wx: SpaceWeather): Path {
+    fun path(tx: LatLon, rx: LatLon, sky: Sky, wx: SpaceWeather): Path {
         val d = Geo.distanceKm(tx, rx)
         val hops = max(1, ceil(d / MAX_HOP_KM).toInt())
-        val hopKm = d / hops
-        val sec = secant(hopKm)
+        val sec = secant(d / hops)
         var muf = Double.MAX_VALUE
         var absorption = 0.0
+        var es = 0.0
         for (i in 0 until hops) {
             val mid = intermediate(tx, rx, (i + 0.5) / hops)
-            muf = min(muf, foF2(mid, sub, wx) * sec)
-            val cosZ = max(0.0, cos(Math.toRadians(Sun.zenithDeg(mid, sub))))
-            absorption = max(absorption, cosZ.pow(0.75) * (1 + 0.0037 * wx.ssn))
+            muf = min(muf, foF2(mid, sky, wx) * sec)
+            val cz = max(0.0, cosZ(mid, sky.sub))
+            absorption = max(absorption, cz.pow(0.75) * (1 + K.KA * wx.ssn))
+            if (i == 0) {
+                val summer = K.ESW + ((1 + sky.season(mid.lat)) / 2).pow(K.ESP)
+                val day = max(0.0, cosZ(mid, sky.sub) + K.ESC) / (1 + K.ESC)
+                val midlat = kotlin.math.exp(-((kotlin.math.abs(magLat(mid)) - 40) / 18).pow(2))
+                val one = sigmoid((d - 400) / 80) * sigmoid((2300 - d) / 200)
+                val two = K.ES2 * sigmoid((d - 2300) / 200) * sigmoid((4500 - d) / 300)
+                es = K.ES0 * summer * day * midlat * (one + two)
+            }
         }
-        val luf = (1.0 + 3.6 * absorption) * (1 + 0.25 * (sec - 1)) * hops.toDouble().pow(0.3) * JS8_LUF_FACTOR
-        return Path(d, hops, muf, luf)
+        val luf = K.L0 * (1 + K.L1 * absorption) * (1 + K.L2 * (sec - 1)) * hops.toDouble().pow(K.L3)
+        return Path(d, hops, muf * K.MM, luf, es)
     }
 
-    /** 0..1 chance-like score that [mhz] works on [p]. */
-    fun reliability(p: Path, mhz: Double): Double {
-        // Ground wave covers short range on the lower bands regardless.
-        val ground = if (mhz < 10) max(0.0, 1 - p.distanceKm / (if (mhz < 4) 80.0 else 50.0)) else 0.0
-        val upper = ((p.mufMHz * 1.05 - mhz) / (0.2 * p.mufMHz)).coerceIn(0.0, 1.0)
-        val lower = ((mhz - p.lufMHz) / (0.25 * p.lufMHz)).coerceIn(0.0, 1.0)
-        return max(ground, min(upper, lower))
+    /** Model's raw path score (0..1) for [mhz], before display calibration. */
+    fun rawScore(p: Path, mhz: Double): Double {
+        val ground = if (mhz < 10) max(0.0, 1 - p.distanceKm / (if (mhz < 4) K.GW1 else K.GW2)) else 0.0
+        val upper = ((p.mufMHz * K.U0 - mhz) / (K.U1 * p.mufMHz)).coerceIn(0.0, 1.0)
+        val lower = ((mhz - p.lufMHz) / (K.W * p.lufMHz)).coerceIn(0.0, 1.0)
+        val es = (p.esBase * kotlin.math.exp(-K.ESK * (mhz - 14))).coerceIn(0.0, 1.0)
+        return max(max(ground, min(upper, lower)), es)
+    }
+
+    /**
+     * 0..1 score that [mhz] works on [p], calibrated so that 1 means "as good
+     * as the best paths in the reception data" (chart thresholds: 0.10 / 0.33 / 0.66).
+     */
+    fun reliability(p: Path, mhz: Double): Double = calibrate(rawScore(p, mhz))
+
+    fun calibrate(raw: Double): Double {
+        val xs = K.SCORE_REL; val ys = K.SCORE_VAL
+        if (raw <= xs[0]) return ys[0]
+        for (i in 1 until xs.size) {
+            if (raw <= xs[i]) return ys[i - 1] + (ys[i] - ys[i - 1]) * (raw - xs[i - 1]) / (xs[i] - xs[i - 1])
+        }
+        return ys.last()
     }
 
     /** Point a fraction [f] of the way along the great circle from [a] to [b]. */
@@ -160,9 +233,9 @@ object PropagationModel {
 
     /** Average reliability for each distance bucket over 12 bearings: the band/distance stoplight. */
     fun stoplight(me: LatLon, band: Band, timeMs: Long, wx: SpaceWeather, bucketsKm: List<Double>): List<Double> {
-        val sub = Sun.subsolarPoint(timeMs)
+        val sky = Sky(timeMs)
         return bucketsKm.map { km ->
-            (0 until 12).map { i -> reliability(path(me, destination(me, i * 30.0, km), sub, wx), band.mhz) }.average()
+            (0 until 12).map { i -> reliability(path(me, destination(me, i * 30.0, km), sky, wx), band.mhz) }.average()
         }
     }
 
@@ -177,7 +250,7 @@ object PropagationModel {
      * paint the coverage heatmap.
      */
     fun coverageGrid(me: LatLon, band: Band, timeMs: Long, wx: SpaceWeather, width: Int, height: Int, maxLat: Double): FloatArray {
-        val sub = Sun.subsolarPoint(timeMs)
+        val sky = Sky(timeMs)
         val out = FloatArray(width * height)
         val yMax = mercY(maxLat)
         for (row in 0 until height) {
@@ -185,7 +258,7 @@ object PropagationModel {
             val lat = Math.toDegrees(kotlin.math.atan(kotlin.math.sinh(y)))
             for (col in 0 until width) {
                 val lon = -180.0 + (col + 0.5) / width * 360.0
-                out[row * width + col] = reliability(path(me, LatLon(lat, lon), sub, wx), band.mhz).toFloat()
+                out[row * width + col] = reliability(path(me, LatLon(lat, lon), sky, wx), band.mhz).toFloat()
             }
         }
         return out
