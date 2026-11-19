@@ -23,6 +23,15 @@ android {
     }
 
     signingConfigs {
+        // One fixed debug key for every test build (CI runners otherwise make a new random one
+        // each run, and Android then refuses to install a build over the previous one).
+        // Debug-only key, not a secret; release builds are signed separately.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         create("release") {
             val keystorePropsFile = rootProject.file("keystore.properties")
             val envStoreFile = System.getenv("KEYSTORE_PATH") ?: System.getenv("JS8_KEYSTORE_FILE")

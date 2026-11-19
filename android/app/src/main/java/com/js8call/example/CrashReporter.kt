@@ -32,6 +32,9 @@ import java.util.TimeZone
 object CrashReporter {
     private const val TAG = "CrashReporter"
     private const val FILE = "crash-report.txt"
+    /** Every report ever shown, newest last (capped), for Settings → Diagnostics. */
+    private const val ARCHIVE = "crash-archive.txt"
+    private const val ARCHIVE_MAX_BYTES = 256 * 1024
     private const val PREFS = "crash_reporter"
     private const val KEY_LAST_EXIT = "last_exit_seen"
     private const val KEY_LAST_NATIVE_TRACE = "last_native_trace_v2"
@@ -61,6 +64,7 @@ object CrashReporter {
         val f = file(activity)
         if (!f.exists() || f.length() == 0L) return
         val text = f.readText()
+        archive(activity, text)
         val view = TextView(activity).apply {
             setText(text)
             setTextIsSelectable(true)
@@ -160,6 +164,48 @@ object CrashReporter {
     }
 
     private fun file(ctx: Context) = File(ctx.filesDir, FILE)
+
+    private fun archive(ctx: Context, text: String) {
+        runCatching {
+            val a = File(ctx.filesDir, ARCHIVE)
+            a.appendText("\n##### Report shown ${stamp(System.currentTimeMillis())}\n$text\n")
+            if (a.length() > ARCHIVE_MAX_BYTES) a.writeText(a.readText().takeLast(ARCHIVE_MAX_BYTES))
+        }
+    }
+
+    /**
+     * Everything useful for a bug report, built on demand (Settings → Diagnostics):
+     * app and device, radio setup (no callsign or grid), past crash/ANR reports,
+     * anything pending, and the app's own recent log lines (Android only lets an
+     * app read its own). Shared only when the user chooses to.
+     */
+    fun diagnosticReport(ctx: Context): String {
+        runCatching { collectExitReasons(ctx) }
+        val p = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
+        val sb = StringBuilder()
+        sb.append("JS8-Tactical ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}\n")
+        sb.append("Report made ${stamp(System.currentTimeMillis())}\n\n")
+        sb.append("== Setup (no callsign or grid)\n")
+        // Every setting except ones that identify the operator or their team.
+        val private = Regex("(?i)call|grid|info|status_message|group|roster|host|sent_uids|location|lat|lon")
+        p.all.toSortedMap().forEach { (k, v) ->
+            if (private.containsMatchIn(k)) return@forEach
+            val text = v.toString()
+            if (text.length <= 200) sb.append("$k = $text\n")
+        }
+        sb.append('\n')
+        val pending = file(ctx).takeIf { it.exists() }?.readText().orEmpty()
+        if (pending.isNotBlank()) sb.append("== Pending report\n").append(pending).append('\n')
+        val past = File(ctx.filesDir, ARCHIVE).takeIf { it.exists() }?.readText().orEmpty()
+        sb.append("== Past crash/ANR reports\n").append(if (past.isBlank()) "(none)\n" else past.takeLast(48_000)).append('\n')
+        sb.append("== Recent app log\n")
+        val log = runCatching {
+            val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "6000"))
+            proc.inputStream.bufferedReader().use { it.readText() }
+        }.getOrElse { "(log unavailable: ${it.message})" }
+        sb.append(log.takeLast(220_000))
+        return sb.toString()
+    }
 
     private fun stamp(ms: Long): String =
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(ms))

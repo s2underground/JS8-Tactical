@@ -434,6 +434,19 @@
 
     </PreferenceCategory>
 
+    <!-- Diagnostics: a report to send when something goes wrong -->
+    <PreferenceCategory
+        app:title="Diagnostics"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            app:key="diagnostics_share"
+            app:title="Share diagnostic report"
+            app:summary="Past crash and freeze reports, the app's recent log and radio setup (no callsign or grid). Nothing is sent unless you share it."
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
 <!-- About Category -->
     <PreferenceCategory
         app:title="@string/settings_category_about"

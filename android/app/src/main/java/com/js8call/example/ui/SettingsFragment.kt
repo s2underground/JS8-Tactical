@@ -249,6 +249,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         setUpAtak()
         setUpHistory()
+        setUpDiagnostics()
         findPreference<Preference>("open_library")?.setOnPreferenceClickListener {
             com.js8call.example.ui.library.AppLinks.open(this, "library")
             true
@@ -332,6 +333,34 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     // ------------------------------------------------------------------ history
+
+    /** Settings → Diagnostics: build the report off the main thread, then hand it to a share sheet. */
+    private fun setUpDiagnostics() {
+        findPreference<Preference>("diagnostics_share")?.setOnPreferenceClickListener {
+            val ctx = requireContext().applicationContext
+            view?.let { v -> Snackbar.make(v, "Collecting diagnostics…", Snackbar.LENGTH_SHORT).show() }
+            Thread {
+                val text = runCatching { com.js8call.example.CrashReporter.diagnosticReport(ctx) }
+                    .getOrElse { "Could not build the report: ${it.message}" }
+                val file = java.io.File(ctx.cacheDir, "diagnostics").apply { mkdirs() }.resolve("js8-tactical-diagnostics.txt")
+                runCatching { file.writeText(text) }
+                Handler(Looper.getMainLooper()).post {
+                    if (!isAdded) return@post
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "JS8-Tactical diagnostics")
+                        runCatching {
+                            val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.diagnostics", file)
+                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }.onFailure { putExtra(android.content.Intent.EXTRA_TEXT, text.takeLast(90_000)) }
+                    }
+                    startActivity(android.content.Intent.createChooser(send, "Share diagnostics"))
+                }
+            }.start()
+            true
+        }
+    }
 
     private fun setUpHistory() {
         val traffic = com.js8call.example.ui.traffic.TrafficViewModel.of(requireContext())
