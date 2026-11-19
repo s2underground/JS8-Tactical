@@ -282,6 +282,8 @@
     <string name="nav_traffic">Traffic</string>
     <string name="traffic_all">All traffic</string>
     <string name="traffic_empty">Nothing heard yet.\nStart receiving on the Radio tab.</string>
+    <string name="traffic_empty_listening">Listening. Messages will appear here as they are decoded.</string>
+    <string name="traffic_empty_station">No messages from %1$s yet.\nHeartbeats only update the station list.</string>
     <string name="traffic_receiving_short">RX…</string>
     <string name="traffic_unknown_sender">Unknown at +%1$d Hz</string>
     <string name="traffic_to">→ %1$s</string>
@@ -318,6 +320,7 @@
     <string name="traffic_queued_n">Queued %1$d copies</string>
     <string name="traffic_send_x3">Send ×3</string>
     <string name="traffic_demo_loaded">Sample traffic loaded (test build)</string>
+    <string name="tpl_heartbeat">♥ Heartbeat</string>
     <string name="tpl_checkin">Check-in</string>
     <string name="tpl_spot">SPOT</string>
     <string name="tpl_salute">SALUTE</string>

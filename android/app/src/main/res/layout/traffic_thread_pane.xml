@@ -120,6 +120,16 @@
             app:singleLine="true">
 
             <com.google.android.material.chip.Chip
+                android:id="@+id/tpl_heartbeat"
+                style="@style/Widget.Material3.Chip.Assist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/tpl_heartbeat"
+                android:textColor="@color/tac_ground"
+                app:chipBackgroundColor="@color/tac_accent"
+                app:chipStrokeWidth="0dp" />
+
+            <com.google.android.material.chip.Chip
                 android:id="@+id/tpl_checkin"
                 style="@style/Widget.Material3.Chip.Assist"
                 android:layout_width="wrap_content"

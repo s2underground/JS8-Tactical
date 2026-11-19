@@ -26,6 +26,7 @@ import com.js8call.example.ui.MonitorViewModel
 import com.js8call.example.ui.TransmitViewModel
 import com.js8call.example.ui.WaterfallView
 import com.js8call.example.ui.readyToSend
+import com.js8call.example.ui.queueBroadcast
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -248,6 +249,7 @@ class TrafficFragment : Fragment() {
                 if (atBottom && items.isNotEmpty()) threadList.scrollToPosition(items.size - 1)
             }
             empty.isVisible = items.isEmpty()
+            if (items.isEmpty()) empty.text = emptyText()
         }
         traffic.selected.observe(viewLifecycleOwner) {
             thread.notifyDataSetChanged()
@@ -297,6 +299,8 @@ class TrafficFragment : Fragment() {
             if (childFragmentManager.findFragmentByTag(ReportWriterSheet.TAG) != null) return
             ReportWriterSheet.newInstance(tag, traffic.sendTarget()).show(childFragmentManager, ReportWriterSheet.TAG)
         }
+        // Heartbeat: one tap, always to @HB (the service adds your grid and picks the heartbeat offset).
+        view.findViewById<Chip>(R.id.tpl_heartbeat).setOnClickListener { queueBroadcast("HB") }
         view.findViewById<Chip>(R.id.tpl_checkin).setOnClickListener { openWriter("CHECKIN") }
         view.findViewById<Chip>(R.id.tpl_spot).setOnClickListener { openWriter("SPOT") }
         view.findViewById<Chip>(R.id.tpl_salute).setOnClickListener { openWriter("SALUTE") }
@@ -328,6 +332,16 @@ class TrafficFragment : Fragment() {
             commandMenuRes = R.menu.directed_command_menu,
             onSend = { text -> send(text, if (repeat.isChecked) 3 else 1) },
         )
+    }
+
+    private fun emptyText(): String {
+        val running = monitor.isRunning.value == true
+        val key = traffic.selected.value ?: TrafficViewModel.ALL
+        return when {
+            !running && key == TrafficViewModel.ALL -> getString(R.string.traffic_empty)
+            key == TrafficViewModel.ALL -> getString(R.string.traffic_empty_listening)
+            else -> getString(R.string.traffic_empty_station, key)
+        }
     }
 
     private fun send(text: String, copies: Int): Boolean {

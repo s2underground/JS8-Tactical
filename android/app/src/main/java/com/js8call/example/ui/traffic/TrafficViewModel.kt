@@ -288,6 +288,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         heard.clear()
         outgoing.clear()
         reportedIds.clear()
+        gridIds.clear()
         lastViewedMs.clear()
         historyStartMs = null
         historyIo.execute { history.clear() }
@@ -310,7 +311,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         engine.addFrame(frame, now)
         record(TrafficHistory.Entry.Frame(frame))
         if (frame.isFirst) {
-            HeaderParser.parse(text)?.let { header ->
+            HeaderParser.parse(text)?.takeUnless { isMe(it.sender) }?.let { header ->
                 val h = heard.getOrPut(header.sender) { Heard(now, frequency, snr, null) }
                 h.lastHeardMs = now
                 h.laneHz = frequency
@@ -408,6 +409,35 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     private val reportedIds = mutableSetOf<Long>()
 
+    /**
+     * Grids that arrive in the body of a message, e.g. an answer to GRID?
+     * ("X: ME GRID EN90QK") or a heartbeat split over frames. The first-frame
+     * check in [addFrameAt] misses these.
+     */
+    private fun noteGrids(messages: List<RolledMessage>) {
+        messages.forEach { m ->
+            if (m.id in gridIds) return@forEach
+            val sender = m.sender ?: return@forEach
+            if (isMe(sender)) { gridIds += m.id; return@forEach }
+            val grid = gridStatement.find(m.bodyText.uppercase())?.groupValues?.get(1) ?: return@forEach
+            heard[sender]?.let { h ->
+                // Keep the more precise of two grids in the same square.
+                if (h.grid == null || !(h.grid!!.length > grid.length && h.grid!!.startsWith(grid))) h.grid = grid
+            }
+            if (m.isComplete) gridIds += m.id
+        }
+    }
+    private val gridIds = mutableSetOf<Long>()
+
+    private fun myBaseCall(): String = PreferenceManager.getDefaultSharedPreferences(getApplication())
+        .getString("callsign", "").orEmpty().trim().uppercase().substringBefore('/')
+
+    /** Our own signal decoded (echo, or a station relaying it): never a "heard" station. */
+    private fun isMe(call: String?): Boolean {
+        val me = myBaseCall()
+        return me.isNotEmpty() && call != null && call.uppercase().substringBefore('/') == me
+    }
+
     /** Something this station transmitted. */
     fun addOutgoing(text: String, frequency: Float) {
         val now = System.currentTimeMillis()
@@ -484,8 +514,11 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     private fun publish() {
         val now = System.currentTimeMillis()
         lastViewedMs[selectedKey] = now
-        val messages = engine.messages().filterNot { isBeacon(it) }
-        noteNetEvidence(messages)
+        val all = engine.messages()
+        val messages = all.filterNot { isBeacon(it) }
+        // Heartbeat replies ("X: ME HEARTBEAT SNR -19") are the best "they heard me" evidence: scan everything.
+        noteNetEvidence(all)
+        noteGrids(all)
         val live = engine.live()
         val myGroups = myGroups()
 
@@ -665,7 +698,9 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     private fun isBeacon(m: RolledMessage): Boolean {
         if (m.recipient == "@HB") return true
         val body = m.bodyText.uppercase()
-        return body.startsWith("HEARTBEAT") || body.startsWith("HB ")
+        if (!(body.startsWith("HEARTBEAT") || body.startsWith("HB "))) return false
+        // A heartbeat reply addressed to us ("HEARTBEAT SNR -19") is worth seeing in the thread.
+        return !isMe(m.recipient)
     }
 
     private fun myGroups(): List<String> {
@@ -708,6 +743,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
         private val snrReport = Regex("""\bSNR\s+([+-]?\d{1,2})\b""")
         private val hearingList = Regex("""\bHEARING\s+([A-Z0-9/ ]+)""")
+        /** "GRID EN90QK" or "HEARTBEAT EN90" in a message body. */
+        private val gridStatement = Regex("""\b(?:GRID|HEARTBEAT|HB)\s+([A-R]{2}[0-9]{2}(?:[A-X]{2})?)\b""")
         private val gridRegex = Regex("""\b([A-R]{2}[0-9]{2}(?:[A-X]{2})?)\b""")
         private fun gridIn(text: String): String? =
             gridRegex.findAll(text.uppercase()).map { it.groupValues[1] }.lastOrNull()
