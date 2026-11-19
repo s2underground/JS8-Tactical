@@ -35,6 +35,20 @@
             android:textColor="@color/tac_text_dim"
             android:textSize="13sp"
             tools:text="EM73 · +1450 Hz · -11 dB" />
+
+        <!-- Back to everyone: shown while a station or group is selected. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/thread_clear"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/traffic_clear_selection"
+            android:textColor="@color/tac_text"
+            android:visibility="gone"
+            app:icon="@drawable/ic_close_traffic"
+            app:iconTint="@color/tac_text"
+            app:strokeColor="@color/tac_text_dim"
+            tools:visibility="visible" />
     </LinearLayout>
 
     <View

@@ -557,6 +557,14 @@ class JS8EngineService : Service() {
                 broadcastEngineState(if (engineStartInProgress) STATE_STARTING else STATE_RUNNING)
                 return
             }
+            val stoppingFor = engineStoppingSinceMs.let { if (it > 0) System.currentTimeMillis() - it else -1L }
+            if (stoppingFor in 0..15_000L) {
+                Log.w(TAG, "Ignoring engine start while the previous engine is still releasing audio")
+                broadcastError("The receiver is still shutting down. Please try again in a few seconds.")
+                broadcastEngineState(STATE_STOPPED)
+                stopSelf()
+                return
+            }
             if (rigTeardownPending) {
                 Log.w(TAG, "Ignoring engine start while rig teardown is still active")
                 broadcastError("Rig control is still stopping. Please try again.")
@@ -1770,9 +1778,23 @@ class JS8EngineService : Service() {
             pskReporterClient?.stop(flush = true)
             pskReporterEnabled = false
 
-            engine?.stop()
-            engine?.close()
-            engine = null
+            // Stopping the audio streams can block for seconds (seen: AAudio waiting on a USB
+            // audio callback thread for >10 s). Off the main thread, so the app never freezes.
+            engine?.let { dying ->
+                engine = null
+                engineStoppingSinceMs = System.currentTimeMillis()
+                Thread({
+                    try {
+                        dying.stop()
+                        dying.close()
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "Engine stop failed", t)
+                    } finally {
+                        engineStoppingSinceMs = 0L
+                        Log.i(TAG, "Engine audio released")
+                    }
+                }, "js8-engine-stop").start()
+            }
 
             broadcastEngineState(STATE_STOPPED)
             Log.i(TAG, "Engine stopped")
@@ -1796,6 +1818,9 @@ class JS8EngineService : Service() {
      * Held only while the engine is running or starting.
      */
     private var cpuLock: android.os.PowerManager.WakeLock? = null
+
+    /** When a stopping engine began releasing its audio (0 = none in progress). */
+    @Volatile private var engineStoppingSinceMs = 0L
 
     private fun holdCpu(on: Boolean) {
         try {

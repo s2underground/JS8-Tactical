@@ -201,6 +201,15 @@ class MainActivity : AppCompatActivity() {
         navController = navHostFragment.navController
 
         bottomNav.setupWithNavController(navController)
+        // Back on the first screen sends the app to the background instead of closing it:
+        // closing stops the receiver, which is never what a stray Back press in the field means.
+        // (Stop the receiver with its switch, or Stop in the notification.)
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (navController.previousBackStackEntry != null) navController.popBackStack()
+                else moveTaskToBack(true)
+            }
+        })
         navController.addOnDestinationChangedListener { controller, destination, _ ->
             onMonitorTab = destination.id == R.id.navigation_monitor
             val inMessagesTab = runCatching { controller.getBackStackEntry(R.id.navigation_messages) }.isSuccess

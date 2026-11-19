@@ -227,8 +227,14 @@ class TrafficFragment : Fragment() {
         val liveText: TextView = view.findViewById(R.id.live_text)
 
         val stations = StationAdapter { row ->
-            if (row.key == TrafficViewModel.TEAM) openTeam() else traffic.select(row.key)
+            when {
+                row.key == TrafficViewModel.TEAM -> openTeam()
+                // Tapping the selected station again goes back to everyone.
+                row.selected && row.key != TrafficViewModel.ALL -> traffic.select(TrafficViewModel.ALL)
+                else -> traffic.select(row.key)
+            }
         }
+        view.findViewById<View>(R.id.thread_clear).setOnClickListener { traffic.select(TrafficViewModel.ALL) }
         stationList.layoutManager = LinearLayoutManager(requireContext())
         stationList.adapter = stations
         stationList.itemAnimator = null
@@ -259,6 +265,7 @@ class TrafficFragment : Fragment() {
         }
         traffic.selected.observe(viewLifecycleOwner) {
             thread.notifyDataSetChanged()
+            view.findViewById<View>(R.id.thread_clear).isVisible = it != TrafficViewModel.ALL
             view.findViewById<EditText>(R.id.compose_input).hint = when (it) {
                 TrafficViewModel.ALL -> getString(R.string.traffic_hint_all)
                 else -> getString(R.string.traffic_hint_to, it)
