@@ -101,6 +101,11 @@ class RollupEngine(
         messages.clear()
     }
 
+    /** Forget finished messages last heard before [beforeMs] (history retention). */
+    fun prune(beforeMs: Long) {
+        messages.removeAll { it.lastHeardMs < beforeMs }
+    }
+
     // ---------------------------------------------------------------- internals
 
     private fun closeIdle(nowMs: Long, exceptLaneOf: Frame?) {

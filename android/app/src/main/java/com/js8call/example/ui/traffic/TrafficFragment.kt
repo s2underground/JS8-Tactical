@@ -141,6 +141,13 @@ class TrafficFragment : Fragment() {
         }
     }
 
+    /** Team: a tab on the side rail; on phones (five tabs max) the "My team" row is the way in. */
+    private fun openTeam() {
+        val bar = requireActivity().findViewById<NavigationBarView>(R.id.bottom_navigation)
+        if (bar?.menu?.findItem(R.id.navigation_team) != null) bar.selectedItemId = R.id.navigation_team
+        else androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_team)
+    }
+
     // ------------------------------------------------------------- waterfall
 
     private fun setUpWaterfall(view: View) {
@@ -173,7 +180,9 @@ class TrafficFragment : Fragment() {
         val liveFrom: TextView = view.findViewById(R.id.live_from)
         val liveText: TextView = view.findViewById(R.id.live_text)
 
-        val stations = StationAdapter { row -> traffic.select(row.key) }
+        val stations = StationAdapter { row ->
+            if (row.key == TrafficViewModel.TEAM) openTeam() else traffic.select(row.key)
+        }
         stationList.layoutManager = LinearLayoutManager(requireContext())
         stationList.adapter = stations
         stationList.itemAnimator = null

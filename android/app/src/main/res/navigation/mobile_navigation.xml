@@ -20,6 +20,11 @@
         android:label="@string/nav_propagation" />
 
     <fragment
+        android:id="@+id/navigation_team"
+        android:name="com.js8call.example.ui.team.TeamFragment"
+        android:label="@string/nav_team" />
+
+    <fragment
         android:id="@+id/navigation_digest"
         android:name="com.js8call.example.ui.digest.DigestFragment"
         android:label="@string/nav_digest" />

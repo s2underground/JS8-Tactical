@@ -360,6 +360,7 @@
     <string name="map_attribution">© OpenStreetMap · OpenFreeMap · Natural Earth · MapLibre</string>
     <!-- Propagation tab -->
     <string name="nav_digest">Digest</string>
+    <string name="nav_team">Team</string>
     <string name="nav_propagation">Prop</string>
     <string name="prop_desc">Map of estimated HF coverage and stations actually heard</string>
     <string name="prop_time_desc">Hours from now</string>
@@ -445,4 +446,10 @@
     <string name="settings_atak_remove">Remove JS8 points from ATAK</string>
     <string name="settings_atak_remove_summary">Deletes every point this app has sent, on every device that received them</string>
     <string name="settings_atak_help_text">JS8-Tactical sends Cursor-on-Target points over UDP. Pick where they go in \"Send to\":\n\n• This device (port 4242): ATAK on this phone or tablet. In ATAK: Settings → Network Preferences → Network Connection Preferences → Manage Inputs. Make sure an input with address 0.0.0.0, port 4242, protocol UDP exists and is ticked (add one with ⋮ → Add if not).\n\n• Mesh SA (239.2.3.1:6969): ATAK listens here out of the box, so no ATAK setup. Every TAK device on the same Wi-Fi or mesh network sees the points too, so only use it when you mean to share them.\n\n• Custom: another device\'s IP address and its UDP input port, or a TAK Server\'s UDP CoT input.\n\nThen tap \"Send a test point\". A cyan dot named \"JS8-Tactical test\" should appear near your grid square within a few seconds and vanish after 5 minutes.\n\nPoints are spot-map dots: red = emergency or RED, yellow = needs or AMBER, green = good or GREEN, magenta = SPOT and SALUTE reports, cyan = other reports. Tap one in ATAK to read the whole report. Location precision follows what was sent, so a 4-character grid square gives a wide error circle.</string>
+    <!-- Message history -->
+    <string name="settings_category_history">Message history</string>
+    <string name="settings_history_keep">Keep message history for</string>
+    <string name="settings_history_clear">Clear message history now</string>
+    <string name="settings_history_clear_confirm">All messages, sent traffic and the list of stations heard will be deleted from this device. Propagation learning (Prop tab) is kept; reset it there if you want that gone too.</string>
+    <string name="settings_atak_legend">Dot colours in ATAK</string>
 </resources>

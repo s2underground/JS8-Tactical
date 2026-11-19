@@ -248,6 +248,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         gridPreference?.onUpdateClickListener = { onGridUpdateRequested() }
 
         setUpAtak()
+        setUpHistory()
 
         logPreference = findPreference("log_messages_to_file")
         logPreference?.setOnPreferenceChangeListener { _, newValue ->
@@ -288,6 +289,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         listOf(AtakBridge.KEY_HOST, AtakBridge.KEY_PORT, AtakBridge.KEY_ENABLED).forEach { key ->
             findPreference<Preference>(key)?.setOnPreferenceChangeListener { _, _ -> AtakBridge.resendAll(); true }
         }
+        findPreference<Preference>("atak_legend")?.summary = atakLegend()
         findPreference<Preference>("atak_help")?.setOnPreferenceClickListener {
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.settings_atak_help)
@@ -323,6 +325,62 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 .show()
             true
         }
+    }
+
+    // ------------------------------------------------------------------ history
+
+    private fun setUpHistory() {
+        val traffic = ViewModelProvider(requireActivity())[com.js8call.example.ui.traffic.TrafficViewModel::class.java]
+        findPreference<ListPreference>(com.js8call.example.ui.traffic.TrafficHistory.KEY_KEEP_HOURS)?.setOnPreferenceChangeListener { _, _ ->
+            // Applied after the value is saved.
+            Handler(Looper.getMainLooper()).post { if (isAdded) traffic.historySettingChanged(); updateHistorySummary() }
+            true
+        }
+        findPreference<Preference>("history_clear")?.setOnPreferenceClickListener {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.settings_history_clear)
+                .setMessage(R.string.settings_history_clear_confirm)
+                .setPositiveButton("Delete") { _, _ ->
+                    traffic.clearHistory()
+                    Handler(Looper.getMainLooper()).postDelayed({ if (isAdded) updateHistorySummary() }, 300)
+                    view?.let { v -> Snackbar.make(v, "Message history deleted.", Snackbar.LENGTH_SHORT).show() }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            true
+        }
+        updateHistorySummary()
+    }
+
+    private fun updateHistorySummary() {
+        val traffic = ViewModelProvider(requireActivity())[com.js8call.example.ui.traffic.TrafficViewModel::class.java]
+        val kb = traffic.historySizeBytes() / 1024.0
+        findPreference<Preference>("history_clear")?.summary = when {
+            kb <= 0.0 -> "Nothing saved on this device"
+            kb < 1024 -> String.format(Locale.US, "%.0f KB saved on this device", kb.coerceAtLeast(1.0))
+            else -> String.format(Locale.US, "%.1f MB saved on this device", kb / 1024)
+        }
+    }
+
+    /** "● red  emergency / RED  ● yellow …" with real coloured dots. */
+    private fun atakLegend(): CharSequence {
+        val items = listOf(
+            0xFFFF0000.toInt() to "emergency or RED status",
+            0xFFFFFF00.toInt() to "needs or AMBER",
+            0xFF00FF00.toInt() to "good or GREEN",
+            0xFFFF00FF.toInt() to "SPOT and SALUTE reports",
+            0xFF00FFFF.toInt() to "other reports, test point",
+            0xFFFFFFFF.toInt() to "heard stations (grid-square centre)",
+        )
+        val sb = android.text.SpannableStringBuilder()
+        items.forEachIndexed { i, (color, label) ->
+            if (i > 0) sb.append("\n")
+            val start = sb.length
+            sb.append("●")
+            sb.setSpan(android.text.style.ForegroundColorSpan(color), start, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.append("  ").append(label)
+        }
+        return sb
     }
 
     private fun atakStatusText(): String {

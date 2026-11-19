@@ -27,7 +27,7 @@ class CotTest {
         assertEquals("b-m-p-s-m", e.getAttribute("type"))
         assertEquals("JS8-Tactical.KX4ABC.SALUTE.42", e.getAttribute("uid"))
         assertEquals("2026-11-18T00:00:00.000Z", e.getAttribute("time"))
-        assertEquals("2026-11-19T00:00:00.000Z", e.getAttribute("stale"))
+        assertEquals("2026-11-18T23:59:00.000Z", e.getAttribute("stale"))  // 24 h after heard
         assertEquals("SALUTE KX4ABC", e.child("contact").getAttribute("callsign"))
         assertEquals(Cot.MAGENTA.toString(), e.child("color").getAttribute("argb"))
         assertEquals("COT_MAPPING_SPOTMAP/b-m-p-s-m/${Cot.MAGENTA}", e.child("usericon").getAttribute("iconsetpath"))
@@ -80,10 +80,11 @@ class CotTest {
     }
 
     @Test
-    fun staleNeverBeforeNow() {
+    fun staleCountsFromWhenHeard() {
+        // A report replayed from history is not made fresh again.
         val r = Reports.parse("#POSREP L:EM12")!!
         val p = Cot.reportPoint(r, "W1AW", r.location!!, now - 10 * 3_600_000L, 1L, 3_600_000L, now)
-        assertEquals(now + 3_600_000L, p.staleMs)
+        assertEquals(now - 9 * 3_600_000L, p.staleMs)
     }
 
     @Test

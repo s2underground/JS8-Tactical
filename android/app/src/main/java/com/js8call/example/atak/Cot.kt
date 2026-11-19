@@ -73,8 +73,9 @@ object Cot {
     }
 
     /**
-     * A received report as a spot-map point.
-     * @param messageId the app's id for the message, so the same report always gets the same uid.
+     * A received report as a spot-map point. It goes stale [staleAfterMs] after it was heard.
+     * @param messageId a stable key for the message (first-heard time, seconds), so the same
+     *   report keeps the same uid across app restarts.
      */
     fun reportPoint(
         report: Reports.Report,
@@ -101,7 +102,7 @@ object Cot {
             position = position,
             ceM = ceFor(locText),
             timeMs = heardMs,
-            staleMs = maxOf(heardMs, nowMs) + staleAfterMs,
+            staleMs = heardMs + staleAfterMs,
             argb = colorFor(report),
             remarks = lines.joinToString("\n"),
         )
@@ -123,7 +124,7 @@ object Cot {
         position = position,
         ceM = ceFor(grid),
         timeMs = heardMs,
-        staleMs = maxOf(heardMs, nowMs) + staleAfterMs,
+        staleMs = heardMs + staleAfterMs,
         argb = WHITE,
         remarks = "JS8 station $call, last heard ${utcHuman(heardMs)} at $snr dB.\n" +
             "Grid $grid: the dot is the centre of the square (${precisionText(grid)}), not the station's exact position.",

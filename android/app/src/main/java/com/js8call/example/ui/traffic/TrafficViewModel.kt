@@ -15,6 +15,9 @@ import com.js8call.example.prop.ObservationStore
 import com.js8call.example.atak.AtakBridge
 import com.js8call.example.atak.Cot
 import com.js8call.example.digest.DigestBuilder
+import com.js8call.example.team.TeamBoard
+import com.js8call.example.team.TeamMember
+import com.js8call.example.team.TeamRoster
 import com.js8call.example.reports.Geo
 import com.js8call.example.reports.LatLon
 import com.js8call.example.reports.Reports
@@ -65,6 +68,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val position: LatLon,
         val timeMs: Long,
         val color: Int,
+        /** When the message was first heard; stable across restarts (ATAK point ids use it). */
+        val firstHeardMs: Long = timeMs,
     )
 
     data class MapData(val stations: List<MapStation>, val reports: List<MapReport>)
@@ -113,6 +118,18 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     private var lastFlushMs = 0L
 
     private val startedMs = System.currentTimeMillis()
+
+    /** Message history on the device (Settings: keep for N hours, or clear). */
+    private val history = TrafficHistory(File(application.filesDir, "traffic-history.tsv"))
+    private val historyIo = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "traffic-history").apply { isDaemon = true } }
+    private var replaying = false
+    /** Earliest message time we hold (replayed history), for the Digest's "data since". */
+    private var historyStartMs: Long? = null
+    /** Messages up to this time count as already read (replayed history). */
+    private var viewedBaselineMs = 0L
+    private var lastPruneMs = 0L
+    private val _historyLoaded = MutableLiveData(false)
+    val historyLoaded: LiveData<Boolean> = _historyLoaded
     private val _digestAlerts = MutableLiveData(DigestAlerts(0, DigestBuilder.Tone.GREEN))
     /** Open needs/emergencies in the last 24 h, for the Digest button on the Traffic tab. */
     val digestAlerts: LiveData<DigestAlerts> = _digestAlerts
@@ -129,6 +146,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             engine.tick(now)
             if (listening) currentBand()?.let { listeningLog.add(now, it, TICK_MS / 60_000.0) }
             if (now - lastFlushMs > 60_000L) { listeningLog.flush(); lastFlushMs = now }
+            if (now - lastPruneMs > 10 * 60_000L) { lastPruneMs = now; pruneHistory(now) }
             publish()
             handler.postDelayed(this, TICK_MS)
         }
@@ -145,7 +163,94 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         handler.postDelayed(ticker, TICK_MS)
+        loadHistory()
     }
+
+    // ---------------------------------------------------------------- history
+
+    private fun keepMs(): Long {
+        val hours = PreferenceManager.getDefaultSharedPreferences(getApplication())
+            .getString(TrafficHistory.KEY_KEEP_HOURS, TrafficHistory.DEFAULT_KEEP_HOURS.toString())?.toLongOrNull()
+            ?: TrafficHistory.DEFAULT_KEEP_HOURS.toLong()
+        return hours.coerceAtLeast(0) * 3_600_000L
+    }
+
+    /** Read the saved history off the main thread, then replay it through the rollup engine. */
+    private fun loadHistory() {
+        val keep = keepMs()
+        if (keep <= 0) { historyIo.execute { history.clear() }; _historyLoaded.value = true; return }
+        val since = System.currentTimeMillis() - keep
+        historyIo.execute {
+            val entries = history.load(since)
+            handler.post { replay(entries) }
+        }
+    }
+
+    private fun replay(entries: List<TrafficHistory.Entry>) {
+        if (entries.isNotEmpty()) {
+            replaying = true
+            try {
+                // Anything live that arrived while the file was being read stays; replayed frames go underneath.
+                val live = engine.messages().isNotEmpty()
+                if (!live) {
+                    entries.forEach { e ->
+                        when (e) {
+                            is TrafficHistory.Entry.Frame -> with(e.frame) { addFrameAt(utc, snr, frequencyHz, text, type, mode, receivedAtMs) }
+                            is TrafficHistory.Entry.Sent -> addOutgoingAt(e.text, e.frequencyHz, e.timeMs)
+                        }
+                    }
+                    historyStartMs = entries.first().timeMs
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("TrafficViewModel", "history replay failed", e)
+            } finally {
+                replaying = false
+            }
+            val now = System.currentTimeMillis()
+            engine.tick(now)
+            // Evidence in old messages was logged when they were first heard.
+            engine.messages().forEach { reportedIds += it.id }
+            viewedBaselineMs = now
+        }
+        _historyLoaded.value = true
+        publish()
+    }
+
+    private fun record(entry: TrafficHistory.Entry) {
+        if (replaying || demoBand != null || keepMs() <= 0) return
+        historyIo.execute { history.append(entry) }
+    }
+
+    private fun pruneHistory(now: Long) {
+        val keep = keepMs()
+        if (keep <= 0) return
+        val cutoff = now - keep
+        engine.prune(cutoff)
+        outgoing.removeAll { it.sentMs < cutoff }
+        heard.entries.removeAll { it.value.lastHeardMs < cutoff }
+        historyStartMs = historyStartMs?.coerceAtLeast(cutoff)
+        historyIo.execute { history.prune(cutoff) }
+    }
+
+    /** Settings changed how long to keep history: apply now (0 = stop saving and delete the file). */
+    fun historySettingChanged() {
+        if (keepMs() <= 0) historyIo.execute { history.clear() } else pruneHistory(System.currentTimeMillis())
+        publish()
+    }
+
+    /** Delete all saved and shown traffic (messages, sent, stations heard). Propagation logs are kept. */
+    fun clearHistory() {
+        engine.clear()
+        heard.clear()
+        outgoing.clear()
+        reportedIds.clear()
+        lastViewedMs.clear()
+        historyStartMs = null
+        historyIo.execute { history.clear() }
+        publish()
+    }
+
+    fun historySizeBytes(): Long = history.sizeBytes()
 
     override fun onCleared() {
         handler.removeCallbacks(ticker)
@@ -159,6 +264,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     private fun addFrameAt(utc: Int, snr: Int, frequency: Float, text: String, type: Int, mode: Int, now: Long) {
         val frame = RollupEngine.Frame(utc, frequency, type, text, snr, mode, now)
         engine.addFrame(frame, now)
+        record(TrafficHistory.Entry.Frame(frame))
         if (frame.isFirst) {
             HeaderParser.parse(text)?.let { header ->
                 val h = heard.getOrPut(header.sender) { Heard(now, frequency, snr, null) }
@@ -166,12 +272,12 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                 h.laneHz = frequency
                 h.snr = snr
                 gridIn(text)?.let { h.grid = it }
-                currentBand()?.let { band ->
+                if (!replaying) currentBand()?.let { band ->
                     observe(Observation(now, header.sender, h.grid, band, snr, Observation.Kind.HEARD))
                 }
             }
         }
-        publish()
+        if (!replaying) publish()
     }
 
     /** Dial frequency from rig control (null or 0 when there is none). */
@@ -250,13 +356,19 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     /** Something this station transmitted. */
     fun addOutgoing(text: String, frequency: Float) {
+        val now = System.currentTimeMillis()
+        record(TrafficHistory.Entry.Sent(now, frequency, text))
+        addOutgoingAt(text, frequency, now)
+    }
+
+    private fun addOutgoingAt(text: String, frequency: Float, sentMs: Long) {
         val header = HeaderParser.parse(text)
         val to = header?.recipient
         val body = if (header != null) text.substring(minOf(header.headerLength, text.length)).trim() else text.trim()
         val shownTo = to ?: firstToken(text)?.takeIf { it.startsWith("@") || looksLikeCall(it) }
         val shownBody = if (to == null && shownTo != null) text.trim().removePrefix(shownTo).trim() else body
-        outgoing += ThreadItem.Outgoing(shownTo, shownBody.ifEmpty { text.trim() }, System.currentTimeMillis(), frequency)
-        publish()
+        outgoing += ThreadItem.Outgoing(shownTo, shownBody.ifEmpty { text.trim() }, sentMs, frequency)
+        if (!replaying) publish()
     }
 
     fun select(key: String) {
@@ -334,7 +446,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                 key = g, label = g, isGroup = true, color = ACCENT,
                 detail = if (inGroup.isEmpty()) "No traffic yet" else "${inGroup.size} message${if (inGroup.size == 1) "" else "s"}",
                 lastHeardMs = last,
-                unread = inGroup.count { it.lastHeardMs > (lastViewedMs[g] ?: 0L) },
+                unread = inGroup.count { it.lastHeardMs > (lastViewedMs[g] ?: viewedBaselineMs) },
                 selected = g == selectedKey,
                 receiving = false,
             )
@@ -348,11 +460,20 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                     key = call, label = call, isGroup = false, color = colorFor(call),
                     detail = listOfNotNull(h.grid, "+${h.laneHz.toInt()} Hz", "${h.snr} dB").joinToString(" · "),
                     lastHeardMs = h.lastHeardMs,
-                    unread = fromThem.count { it.lastHeardMs > (lastViewedMs[call] ?: 0L) },
+                    unread = fromThem.count { it.lastHeardMs > (lastViewedMs[call] ?: viewedBaselineMs) },
                     selected = call == selectedKey,
                     receiving = live.any { it.sender == call },
                 )
             }
+
+        // Team shortcut (opens the Team tab): how many members were heard in the last 24 h.
+        val roster = TeamRoster.decode(PreferenceManager.getDefaultSharedPreferences(getApplication()).getString(TeamRoster.KEY, null))
+        val heardBase = heard.filter { now - it.value.lastHeardMs < 24 * 3_600_000L }.keys.map(TeamMember::baseOf).toSet()
+        val teamRow = StationRow(
+            key = TEAM, label = "My team", isGroup = true, color = ACCENT,
+            detail = if (roster.isEmpty()) "Add your team's callsigns" else "${roster.count { it.baseCall in heardBase }} of ${roster.size} heard in 24 h",
+            lastHeardMs = 0L, unread = 0, selected = false, receiving = false,
+        )
 
         val allRow = StationRow(
             key = ALL, label = "All traffic", isGroup = true, color = ACCENT,
@@ -360,7 +481,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             lastHeardMs = messages.maxOfOrNull { it.lastHeardMs } ?: 0L,
             unread = 0, selected = selectedKey == ALL, receiving = false,
         )
-        _stations.value = listOf(allRow) + groupRows + stationRows
+        _stations.value = listOf(allRow, teamRow) + groupRows + stationRows
 
         // Thread for the selection.
         val key = selectedKey
@@ -390,7 +511,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             reports = messages.mapNotNull { m ->
                 val report = Reports.parse(m.bodyText) ?: return@mapNotNull null
                 val pos = report.location ?: return@mapNotNull null
-                MapReport(m.id, report, m.sender, pos, m.lastHeardMs, colorFor(m.sender))
+                MapReport(m.id, report, m.sender, pos, m.lastHeardMs, colorFor(m.sender), m.firstHeardMs)
             },
         )
 
@@ -409,6 +530,20 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         _markers.value = heard.filter { now - it.value.lastHeardMs < 10 * 60_000L }
             .map { (call, h) -> Marker(call, h.laneHz, colorFor(call)) }
     }
+
+    /** What the Team tab needs: last heard per base callsign and recent messages. */
+    fun teamHeard(): Map<String, TeamBoard.Heard> {
+        val out = HashMap<String, TeamBoard.Heard>()
+        heard.forEach { (call, h) ->
+            val key = TeamMember.baseOf(call)
+            val prev = out[key]
+            if (prev == null || h.lastHeardMs > prev.lastHeardMs) out[key] = TeamBoard.Heard(h.lastHeardMs, h.snr, h.grid ?: prev?.grid)
+        }
+        return out
+    }
+
+    fun teamMessages(): List<TeamBoard.Msg> =
+        engine.messages().filterNot { isBeacon(it) }.map { TeamBoard.Msg(it.sender, it.bodyText, it.lastHeardMs) }
 
     /** Everything the Digest tab needs for the window starting at [sinceMs]. */
     fun digestInput(sinceMs: Long, now: Long = System.currentTimeMillis()): DigestBuilder.Input {
@@ -437,7 +572,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             stations = stations,
             listeningHours = listenedMin?.let { it / 60.0 }?.takeIf { it > 0 },
             solar = solar,
-            dataStartMs = startedMs,
+            dataStartMs = minOf(startedMs, historyStartMs ?: startedMs),
         )
     }
 
@@ -446,7 +581,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         if (!AtakBridge.enabled(app)) return
         val stale = AtakBridge.staleAfterMs(app)
         val points = map.reports.map { r ->
-            Cot.reportPoint(r.report, r.sender, r.position, r.timeMs, r.id, stale, now)
+            Cot.reportPoint(r.report, r.sender, r.position, r.timeMs, r.firstHeardMs / 1000, stale, now)
         } + if (AtakBridge.includeStations(app)) map.stations.map { s ->
             Cot.stationPoint(s.call, s.grid, s.position, s.lastHeardMs, s.snr, stale, now)
         } else emptyList()
@@ -472,6 +607,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     companion object {
         const val ALL = "*"
+        /** Station-list row that opens the Team tab. */
+        const val TEAM = "#TEAM"
         private const val TICK_MS = 5_000L
         private const val ACCENT = 0xFFF2A33A.toInt()
 

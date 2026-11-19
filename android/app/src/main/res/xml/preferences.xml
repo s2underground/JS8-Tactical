@@ -242,6 +242,27 @@
 
     </PreferenceCategory>
 
+    <!-- Message history Category -->
+    <PreferenceCategory
+        app:title="@string/settings_category_history"
+        app:iconSpaceReserved="false">
+
+        <ListPreference
+            app:key="history_keep_hours"
+            app:title="@string/settings_history_keep"
+            app:entries="@array/history_keep_entries"
+            app:entryValues="@array/history_keep_values"
+            app:defaultValue="168"
+            app:useSimpleSummaryProvider="true"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            app:key="history_clear"
+            app:title="@string/settings_history_clear"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
     <!-- ATAK Category -->
     <PreferenceCategory
         app:title="@string/settings_category_atak"
@@ -252,6 +273,12 @@
             app:title="@string/settings_atak_enabled"
             app:summary="@string/settings_atak_enabled_summary"
             app:defaultValue="false"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            app:key="atak_legend"
+            app:title="@string/settings_atak_legend"
+            app:selectable="false"
             app:iconSpaceReserved="false" />
 
         <Preference
