@@ -92,17 +92,14 @@ class PropagationFragment : Fragment() {
     private var hoursAhead = 0f
     private var me: LatLon? = null
     private var centered = false
-    /** Latest predictor (built off the main thread); used for taps and the detail layer. */
+    /** Latest predictor (built off the main thread); used for taps. */
     @Volatile private var predictor: Predictor? = null
-    /** What was learned, reused while the logs and settings haven't changed (re-learned at most every 5 min). */
-    @Volatile private var learned: Pair<String, Predictor>? = null
-    @Volatile private var learnedAtMs = 0L
+    /** Learned predictor and last picture, kept while the app runs so reopening the tab is instant. */
+    private lateinit var cache: PropCache
 
     private val worker = Executors.newSingleThreadExecutor()
-    private val detailWorker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var generation = 0
-    @Volatile private var detailGeneration = 0
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         MapLibre.getInstance(requireContext().applicationContext)
@@ -111,6 +108,7 @@ class PropagationFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         traffic = ViewModelProvider(requireActivity())[TrafficViewModel::class.java]
+        cache = ViewModelProvider(requireActivity())[PropCache::class.java]
         weather = traffic.weather
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
         band = traffic.currentBand()
@@ -133,7 +131,6 @@ class PropagationFragment : Fragment() {
                 render()
             }
             m.addOnMapClickListener { latLng -> guarded("Prop tap") { onTap(latLng) }; true }
-            m.addOnCameraIdleListener { renderDetail() }
         }
 
         buildBandChips(view)
@@ -143,7 +140,7 @@ class PropagationFragment : Fragment() {
             render()
         }
         view.findViewById<Chip>(R.id.prop_show_predicted).setOnCheckedChangeListener { _, on ->
-            setVisible(on, L_COVERAGE, L_DETAIL)
+            setVisible(on, L_COVERAGE)
         }
         view.findViewById<Chip>(R.id.prop_show_heard).setOnCheckedChangeListener { _, on ->
             setVisible(on, L_HEARD_HEAT, L_HEARD_DOTS, L_HEARD_LABELS, L_NET)
@@ -192,18 +189,12 @@ class PropagationFragment : Fragment() {
 
     private fun addOverlay(st: Style) {
         val halo = "#0A0D11"
-        st.addSource(ImageSource(S_COVERAGE, WORLD_QUAD, Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)))
+        // Start with the last picture (if any) so reopening the tab doesn't flash empty.
+        st.addSource(ImageSource(S_COVERAGE, WORLD_QUAD, cache.bitmap ?: Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)))
         st.addLayer(RasterLayer(L_COVERAGE, S_COVERAGE).withProperties(
             PropertyFactory.rasterOpacity(0.85f),
             PropertyFactory.rasterResampling(Property.RASTER_RESAMPLING_LINEAR),
             PropertyFactory.rasterFadeDuration(0f),
-        ))
-        st.addSource(ImageSource(S_DETAIL, WORLD_QUAD, Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)))
-        st.addLayer(RasterLayer(L_DETAIL, S_DETAIL).withProperties(
-            PropertyFactory.rasterOpacity(0.85f),
-            PropertyFactory.rasterResampling(Property.RASTER_RESAMPLING_LINEAR),
-            PropertyFactory.rasterFadeDuration(0f),
-            PropertyFactory.visibility(Property.NONE),
         ))
         listOf(S_NIGHT, S_TERMINATOR, S_NET, S_HEARD, S_ME).forEach { st.addSource(GeoJsonSource(it)) }
         st.addLayer(FillLayer(L_NIGHT, S_NIGHT).withProperties(
@@ -270,8 +261,9 @@ class PropagationFragment : Fragment() {
     }
 
     private fun setVisible(on: Boolean, vararg layers: String) {
-        layers.forEach { style?.getLayer(it)?.setProperties(PropertyFactory.visibility(if (on) Property.VISIBLE else Property.NONE)) }
-        if (on && L_DETAIL in layers) renderDetail()
+        guarded("Prop layer toggle") {
+            layers.forEach { style?.getLayer(it)?.setProperties(PropertyFactory.visibility(if (on) Property.VISIBLE else Property.NONE)) }
+        }
     }
 
     // ------------------------------------------------------------- render
@@ -329,22 +321,26 @@ class PropagationFragment : Fragment() {
         submit(worker, "Prop render") {
             if (gen != generation) return@submit
             val key = "${all.size}|${listening.size}|$profile|$me"
-            val cached = learned
-            val p = if (cached != null && cached.first == key && now - learnedAtMs < 5 * 60_000L) {
-                Predictor(me, wx, profile, cached.second.correction, cached.second.nowcast)
+            val cached = cache.learned
+            val p = if (cached != null && cache.learnedKey == key && now - cache.learnedAtMs < 5 * 60_000L) {
+                Predictor(me, wx, profile, cached.correction, cached.nowcast)
             } else {
                 Predictor.build(me, wx, profile, all, listening, gridFor, now).also {
-                    learned = key to it
-                    learnedAtMs = now
+                    cache.learned = it
+                    cache.learnedKey = key
+                    cache.learnedAtMs = now
                 }
             }
             predictor = p
+            // Same band, same 5-minute slot, same inputs: reuse the last picture.
+            val picKey = listOf(key, band.name, t / 300_000L, wx.sfi, wx.kIndex, p.nowcast.phi).joinToString("|")
+            val reuse = cache.bitmapKey == picKey && cache.bitmap != null && cache.rows != null
             val heard = ObservationStore.relevant(all, band, t, now, gridFor)
                 .groupBy { it.obs.call }
                 .map { (_, list) -> list.maxBy { it.weight }.copy(weight = list.sumOf { it.weight }.coerceAtMost(1.5)) }
             val heardMe = heard.count { w -> all.any { it.call == w.obs.call && it.kind == Observation.Kind.HEARD_ME && it.band == band } }
             val net = ObservationStore.relevantPaths(all, band, t, now, gridFor)
-            val rows = Band.entries.map { b ->
+            val rows = if (reuse) cache.rows!! else Band.entries.map { b ->
                 val counts = IntArray(PropagationModel.CHART_BUCKETS_KM.size)
                 if (me != null) {
                     ObservationStore.relevant(all, b, t, now, gridFor).map { it.obs.call to it.position }.distinctBy { it.first }
@@ -352,8 +348,10 @@ class PropagationFragment : Fragment() {
                 }
                 StoplightView.Row(b, p.stoplight(b, t), counts.toList())
             }
-            val grid = p.coverage(band, t, GRID_W, GRID_H, MAX_LAT, -MAX_LAT, -180.0, 180.0)
-            val bitmap = grid?.let { toBitmap(it, GRID_W, GRID_H) }
+            val bitmap = if (reuse) cache.bitmap else {
+                p.coverage(band, t, GRID_W, GRID_H, MAX_LAT, -MAX_LAT, -180.0, 180.0)?.let { toBitmap(it, GRID_W, GRID_H) }
+                    .also { bmp -> cache.bitmap = bmp; cache.rows = rows; cache.bitmapKey = picKey }
+            }
             if (gen != generation) return@submit
             main.post { if (gen == generation) guarded("Prop deliver") { deliver(heard, heardMe, net, rows, bitmap, t, p, listenedHours) } }
         }
@@ -398,47 +396,6 @@ class PropagationFragment : Fragment() {
         }
         v.findViewById<TextView>(R.id.prop_chart_title).text = getString(R.string.prop_chart_title,
             if (hoursAhead == 0f) getString(R.string.prop_now, zuluTime(t)) else zuluTime(t))
-        renderDetail()
-    }
-
-    /** Sharper heatmap for the area on screen once zoomed in past a whole-world view. */
-    private fun renderDetail() = guarded("Prop detail") {
-        val m = map ?: return@guarded
-        val st = style ?: return@guarded
-        val p = predictor ?: return@guarded
-        val v = view ?: return@guarded
-        if (v.width == 0 || v.height == 0) return@guarded
-        val showPredicted = v.findViewById<Chip>(R.id.prop_show_predicted)?.isChecked != false
-        val bounds = m.projection.visibleRegion.latLngBounds
-        val north = bounds.latitudeNorth.coerceIn(-MAX_LAT, MAX_LAT)
-        val south = bounds.latitudeSouth.coerceIn(-MAX_LAT, MAX_LAT)
-        val west = bounds.longitudeWest
-        val east = bounds.longitudeEast
-        val layer = st.getLayer(L_DETAIL)
-        val sane = listOf(north, south, west, east).all { it.isFinite() }
-        if (!sane || !showPredicted || m.cameraPosition.zoom < 2.6 || east <= west || east - west > 200 || north <= south) {
-            layer?.setProperties(PropertyFactory.visibility(Property.NONE))
-            return@guarded
-        }
-        val gen = ++detailGeneration
-        val band = this.band
-        val t = selectedTime()
-        submit(detailWorker, "Prop detail") {
-            if (gen != detailGeneration) return@submit
-            val grid = p.coverage(band, t, DETAIL_W, DETAIL_H, north, south, west, east) ?: return@submit
-            val bmp = toBitmap(grid, DETAIL_W, DETAIL_H)
-            main.post {
-                if (gen != detailGeneration || view == null) return@post
-                val s = style ?: return@post
-                guarded("Prop detail draw") {
-                    (s.getSource(S_DETAIL) as? ImageSource)?.apply {
-                        setCoordinates(LatLngQuad(LatLng(north, west), LatLng(north, east), LatLng(south, east), LatLng(south, west)))
-                        setImage(bmp)
-                    }
-                    s.getLayer(L_DETAIL)?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
-                }
-            }
-        }
     }
 
     private fun learningText(p: Predictor, listenedHours: Double): String {
@@ -733,7 +690,6 @@ class PropagationFragment : Fragment() {
 
     override fun onDestroyView() {
         generation++
-        detailGeneration++
         mapView?.onDestroy()
         mapView = null
         map = null
@@ -743,17 +699,14 @@ class PropagationFragment : Fragment() {
 
     override fun onDestroy() {
         worker.shutdownNow()
-        detailWorker.shutdownNow()
         super.onDestroy()
     }
 
     companion object {
         private const val PREF_BAND = "prop_band"
         private const val PREF_CHART = "prop_chart_open"
-        private const val GRID_W = 240
-        private const val GRID_H = 180
-        private const val DETAIL_W = 200
-        private const val DETAIL_H = 150
+        private const val GRID_W = 360
+        private const val GRID_H = 270
         private const val MAX_LAT = 85.0
 
         private val WORLD_QUAD = LatLngQuad(
@@ -762,14 +715,12 @@ class PropagationFragment : Fragment() {
         )
 
         private const val S_COVERAGE = "prop-coverage"
-        private const val S_DETAIL = "prop-detail"
         private const val S_NIGHT = "prop-night"
         private const val S_TERMINATOR = "prop-terminator"
         private const val S_NET = "prop-net"
         private const val S_HEARD = "prop-heard"
         private const val S_ME = "prop-me"
         private const val L_COVERAGE = "prop-coverage"
-        private const val L_DETAIL = "prop-detail"
         private const val L_NIGHT = "prop-night"
         private const val L_TERMINATOR = "prop-terminator"
         private const val L_NET = "prop-net"

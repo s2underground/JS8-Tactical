@@ -34,6 +34,7 @@ object CrashReporter {
     private const val FILE = "crash-report.txt"
     private const val PREFS = "crash_reporter"
     private const val KEY_LAST_EXIT = "last_exit_seen"
+    private const val KEY_LAST_NATIVE_TRACE = "last_native_trace"
     private const val MAX_BYTES = 64 * 1024
 
     private var appContext: Context? = null
@@ -113,13 +114,50 @@ object CrashReporter {
             sb.append("When: ").append(stamp(e.timestamp)).append('\n')
             e.description?.let { sb.append("Detail: ").append(it).append('\n') }
             sb.append("Importance: ").append(e.importance).append(", PSS: ").append(e.pss / 1024).append(" MB\n")
-            // ANR traces are plain text; native tombstones are binary, so only the first readable part is kept.
+            // ANR traces are plain text; native tombstones are binary (protobuf), so their readable strings are kept.
             if (e.reason == ApplicationExitInfo.REASON_ANR) {
                 runCatching { e.traceInputStream?.bufferedReader()?.use { r -> sb.append(r.readText().take(12_000)) } }
             }
+            if (e.reason == ApplicationExitInfo.REASON_CRASH_NATIVE) sb.append(nativeStrings(e))
             appendRaw(sb.toString())
         }
-        if (newest != lastSeen) prefs.edit().putLong(KEY_LAST_EXIT, newest).apply()
+        // Native crashes seen before this reporter could read them: extract their traces once.
+        val lastTrace = prefs.getLong(KEY_LAST_NATIVE_TRACE, 0L)
+        var newestTrace = lastTrace
+        for (e in exits.sortedBy { it.timestamp }) {
+            if (e.reason != ApplicationExitInfo.REASON_CRASH_NATIVE || e.timestamp <= lastTrace) continue
+            newestTrace = maxOf(newestTrace, e.timestamp)
+            if (e.timestamp > lastSeen) continue // handled above
+            appendRaw("Native crash trace (earlier crash)\nWhen: ${stamp(e.timestamp)}\n" + nativeStrings(e))
+        }
+        prefs.edit().putLong(KEY_LAST_EXIT, newest).putLong(KEY_LAST_NATIVE_TRACE, newestTrace).apply()
+    }
+
+    /**
+     * Readable text from a native tombstone (binary protobuf): abort message,
+     * library paths and symbol names from the backtrace, in order. Enough to
+     * see which library and function crashed.
+     */
+    private fun nativeStrings(e: ApplicationExitInfo): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return ""
+        val bytes = runCatching { e.traceInputStream?.use { it.readBytes() } }.getOrNull() ?: return "(no native trace available)\n"
+        val out = LinkedHashSet<String>()
+        val run = StringBuilder()
+        fun flush() {
+            if (run.length >= 5) {
+                val t = run.toString().trim()
+                if (t.length >= 5 && t.any { it.isLetter() }) out += t
+            }
+            run.setLength(0)
+        }
+        for (b in bytes) {
+            val c = b.toInt() and 0xFF
+            if (c in 0x20..0x7E) run.append(c.toChar()) else flush()
+            if (out.size >= 160) break
+        }
+        flush()
+        val text = out.joinToString("\n")
+        return "Trace strings (${bytes.size} bytes):\n" + text.take(10_000) + "\n"
     }
 
     private fun append(title: String, error: Throwable) {
