@@ -12,6 +12,9 @@ import com.js8call.example.prop.ListeningLog
 import com.js8call.example.prop.SpaceWeatherRepository
 import com.js8call.example.prop.Observation
 import com.js8call.example.prop.ObservationStore
+import com.js8call.example.atak.AtakBridge
+import com.js8call.example.atak.Cot
+import com.js8call.example.digest.DigestBuilder
 import com.js8call.example.reports.Geo
 import com.js8call.example.reports.LatLon
 import com.js8call.example.reports.Reports
@@ -66,11 +69,14 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     data class MapData(val stations: List<MapStation>, val reports: List<MapReport>)
 
+    data class DigestAlerts(val count: Int, val tone: DigestBuilder.Tone)
+
     private data class Heard(
         var lastHeardMs: Long,
         var laneHz: Float,
         var snr: Int,
         var grid: String?,
+        val firstHeardMs: Long = lastHeardMs,
     )
 
     private val engine = RollupEngine()
@@ -105,6 +111,12 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     val weather = SpaceWeatherRepository(application)
     private var listening = false
     private var lastFlushMs = 0L
+
+    private val startedMs = System.currentTimeMillis()
+    private val _digestAlerts = MutableLiveData(DigestAlerts(0, DigestBuilder.Tone.GREEN))
+    /** Open needs/emergencies in the last 24 h, for the Digest button on the Traffic tab. */
+    val digestAlerts: LiveData<DigestAlerts> = _digestAlerts
+    private var lastDigestCheckMs = 0L
 
     private val _pendingCompose = MutableLiveData<String?>(null)
     /** Text another screen wants put in the compose box (e.g. a #SWX line from the Prop tab). */
@@ -382,9 +394,67 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             },
         )
 
+        // Digest button badge, at most every few seconds.
+        if (now - lastDigestCheckMs >= TICK_MS) {
+            lastDigestCheckMs = now
+            val d = DigestBuilder.build(digestInput(now - 24 * 3_600_000L, now))
+            val count = d.sections.first().lines.count { it.tone == DigestBuilder.Tone.RED || it.tone == DigestBuilder.Tone.AMBER }
+            if (_digestAlerts.value != DigestAlerts(count, d.tone)) _digestAlerts.value = DigestAlerts(count, d.tone)
+        }
+
+        // ATAK: the same reports (and optionally stations) as spot-map points. Demo data never goes out.
+        if (demoBand == null) sendToAtak(_mapData.value!!, now)
+
         // Waterfall markers: stations heard in the last 10 minutes, at their latest offset.
         _markers.value = heard.filter { now - it.value.lastHeardMs < 10 * 60_000L }
             .map { (call, h) -> Marker(call, h.laneHz, colorFor(call)) }
+    }
+
+    /** Everything the Digest tab needs for the window starting at [sinceMs]. */
+    fun digestInput(sinceMs: Long, now: Long = System.currentTimeMillis()): DigestBuilder.Input {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(getApplication())
+        val messages = engine.messages().filterNot { isBeacon(it) }.map { m ->
+            DigestBuilder.Msg(m.id, m.sender, m.recipient, m.bodyText, m.lastHeardMs, m.isComplete, m.missingFrames, m.bestSnr)
+        }
+        val sent = outgoing.map { DigestBuilder.Sent(it.to, it.text, it.sentMs) }
+        val stations = heard.map { (call, h) -> DigestBuilder.Station(call, h.grid, h.firstHeardMs, h.lastHeardMs, h.snr) }
+        val listenedMin = runCatching {
+            listeningLog.hours(0.0).filterKeys { it.first >= sinceMs - 3_600_000L }.values.sum()
+        }.getOrNull()
+        val wx = runCatching { weather.effective(now, now) }.getOrNull()
+        val solar = wx?.takeIf { it.updatedMs > 0 }?.let {
+            val ageH = ((now - it.updatedMs) / 3_600_000L).coerceAtLeast(0)
+            "SFI ${it.sfi.toInt()}, K ${"%.0f".format(java.util.Locale.US, it.kIndex)} (${it.source}, ${ageH} h old)"
+        }
+        return DigestBuilder.Input(
+            nowMs = now,
+            sinceMs = sinceMs,
+            myCall = prefs.getString("callsign", "").orEmpty().trim().uppercase().substringBefore('/'),
+            myGrid = prefs.getString("grid", null),
+            myGroups = myGroups(),
+            messages = messages,
+            sent = sent,
+            stations = stations,
+            listeningHours = listenedMin?.let { it / 60.0 }?.takeIf { it > 0 },
+            solar = solar,
+            dataStartMs = startedMs,
+        )
+    }
+
+    private fun sendToAtak(map: MapData, now: Long) {
+        val app = getApplication<Application>()
+        if (!AtakBridge.enabled(app)) return
+        val stale = AtakBridge.staleAfterMs(app)
+        val points = map.reports.map { r ->
+            Cot.reportPoint(r.report, r.sender, r.position, r.timeMs, r.id, stale, now)
+        } + if (AtakBridge.includeStations(app)) map.stations.map { s ->
+            Cot.stationPoint(s.call, s.grid, s.position, s.lastHeardMs, s.snr, stale, now)
+        } else emptyList()
+        try {
+            AtakBridge.sync(app, points, now)
+        } catch (e: Exception) {
+            android.util.Log.w("TrafficViewModel", "ATAK sync failed", e)
+        }
     }
 
     private fun isBeacon(m: RolledMessage): Boolean {

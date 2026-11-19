@@ -127,4 +127,28 @@
         <item>30</item>
         <item>60</item>
     </string-array>
+    <string-array name="atak_target_entries">
+        <item>This device (ATAK on this phone/tablet, UDP 4242)</item>
+        <item>Mesh SA multicast (every TAK device on the network)</item>
+        <item>Custom address and port</item>
+    </string-array>
+    <string-array name="atak_target_values">
+        <item>local</item>
+        <item>mesh</item>
+        <item>custom</item>
+    </string-array>
+    <string-array name="atak_stale_entries">
+        <item>1 hour</item>
+        <item>6 hours</item>
+        <item>24 hours</item>
+        <item>3 days</item>
+        <item>7 days</item>
+    </string-array>
+    <string-array name="atak_stale_values">
+        <item>1</item>
+        <item>6</item>
+        <item>24</item>
+        <item>72</item>
+        <item>168</item>
+    </string-array>
 </resources>

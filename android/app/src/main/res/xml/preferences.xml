@@ -242,6 +242,82 @@
 
     </PreferenceCategory>
 
+    <!-- ATAK Category -->
+    <PreferenceCategory
+        app:title="@string/settings_category_atak"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreferenceCompat
+            app:key="atak_enabled"
+            app:title="@string/settings_atak_enabled"
+            app:summary="@string/settings_atak_enabled_summary"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            app:key="atak_help"
+            app:title="@string/settings_atak_help"
+            app:summary="@string/settings_atak_help_summary"
+            app:iconSpaceReserved="false" />
+
+        <ListPreference
+            app:key="atak_target"
+            app:title="@string/settings_atak_target"
+            app:entries="@array/atak_target_entries"
+            app:entryValues="@array/atak_target_values"
+            app:defaultValue="local"
+            app:dependency="atak_enabled"
+            app:useSimpleSummaryProvider="true"
+            app:iconSpaceReserved="false" />
+
+        <EditTextPreference
+            app:key="atak_host"
+            app:title="@string/settings_atak_host"
+            app:defaultValue="127.0.0.1"
+            app:dependency="atak_enabled"
+            app:useSimpleSummaryProvider="true"
+            app:iconSpaceReserved="false" />
+
+        <EditTextPreference
+            app:key="atak_port"
+            app:title="@string/settings_atak_port"
+            app:defaultValue="4242"
+            app:dependency="atak_enabled"
+            app:useSimpleSummaryProvider="true"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            app:key="atak_stations"
+            app:title="@string/settings_atak_stations"
+            app:summary="@string/settings_atak_stations_summary"
+            app:defaultValue="false"
+            app:dependency="atak_enabled"
+            app:iconSpaceReserved="false" />
+
+        <ListPreference
+            app:key="atak_stale_hours"
+            app:title="@string/settings_atak_stale"
+            app:entries="@array/atak_stale_entries"
+            app:entryValues="@array/atak_stale_values"
+            app:defaultValue="24"
+            app:dependency="atak_enabled"
+            app:useSimpleSummaryProvider="true"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            app:key="atak_test"
+            app:title="@string/settings_atak_test"
+            app:dependency="atak_enabled"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            app:key="atak_remove"
+            app:title="@string/settings_atak_remove"
+            app:summary="@string/settings_atak_remove_summary"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
     <!-- General Category -->
     <PreferenceCategory
         app:title="@string/settings_category_general"

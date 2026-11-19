@@ -119,6 +119,26 @@ class TrafficFragment : Fragment() {
         pill.setOnClickListener {
             requireActivity().findViewById<NavigationBarView>(R.id.bottom_navigation)?.selectedItemId = R.id.navigation_monitor
         }
+
+        // Digest: a tab on the side rail; on phones in portrait (five tabs max) this button is the way in.
+        val digest: TextView = view.findViewById(R.id.status_digest)
+        digest.setOnClickListener {
+            val bar = requireActivity().findViewById<NavigationBarView>(R.id.bottom_navigation)
+            if (bar?.menu?.findItem(R.id.navigation_digest) != null) bar.selectedItemId = R.id.navigation_digest
+            else androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_digest)
+        }
+        traffic.digestAlerts.observe(viewLifecycleOwner) { a ->
+            val (label, textColor, bg) = when {
+                a.count > 0 && a.tone == com.js8call.example.digest.DigestBuilder.Tone.RED ->
+                    Triple("⚠ ${a.count}", R.color.tac_text, R.drawable.bg_pill_alert)
+                a.count > 0 -> Triple("⚠ ${a.count}", R.color.tac_warn_text, R.drawable.bg_pill_off)
+                else -> Triple(getString(R.string.nav_digest), R.color.tac_text_dim, R.drawable.bg_pill_off)
+            }
+            digest.text = label
+            digest.setTextColor(ContextCompat.getColor(requireContext(), textColor))
+            digest.setBackgroundResource(bg)
+            digest.contentDescription = if (a.count > 0) "Digest: ${a.count} open needs or emergencies" else getString(R.string.nav_digest)
+        }
     }
 
     // ------------------------------------------------------------- waterfall

@@ -359,6 +359,7 @@
     <string name="map_unknown_sender">Unknown sender</string>
     <string name="map_attribution">© OpenStreetMap · OpenFreeMap · Natural Earth · MapLibre</string>
     <!-- Propagation tab -->
+    <string name="nav_digest">Digest</string>
     <string name="nav_propagation">Prop</string>
     <string name="prop_desc">Map of estimated HF coverage and stations actually heard</string>
     <string name="prop_time_desc">Hours from now</string>
@@ -428,4 +429,20 @@
     <string name="crash_share">Share</string>
     <string name="crash_copy">Copy</string>
     <string name="crash_dismiss">Dismiss</string>
+    <!-- ATAK -->
+    <string name="settings_category_atak">ATAK</string>
+    <string name="settings_atak_enabled">Show reports in ATAK</string>
+    <string name="settings_atak_enabled_summary">Reports with a location appear in ATAK as spot-map points, with the full report in the remarks</string>
+    <string name="settings_atak_help">How to set up ATAK</string>
+    <string name="settings_atak_help_summary">One-time setting in ATAK so it listens for these points</string>
+    <string name="settings_atak_target">Send to</string>
+    <string name="settings_atak_host">Custom address</string>
+    <string name="settings_atak_port">Custom port</string>
+    <string name="settings_atak_stations">Also show heard stations</string>
+    <string name="settings_atak_stations_summary">White dots at the centre of each station\'s grid square. A 4-character grid is only good to about ±100 km.</string>
+    <string name="settings_atak_stale">Keep points in ATAK for</string>
+    <string name="settings_atak_test">Send a test point</string>
+    <string name="settings_atak_remove">Remove JS8 points from ATAK</string>
+    <string name="settings_atak_remove_summary">Deletes every point this app has sent, on every device that received them</string>
+    <string name="settings_atak_help_text">JS8-Tactical sends Cursor-on-Target points over UDP. Pick where they go in \"Send to\":\n\n• This device (port 4242): ATAK on this phone or tablet. In ATAK: Settings → Network Preferences → Network Connection Preferences → Manage Inputs. Make sure an input with address 0.0.0.0, port 4242, protocol UDP exists and is ticked (add one with ⋮ → Add if not).\n\n• Mesh SA (239.2.3.1:6969): ATAK listens here out of the box, so no ATAK setup. Every TAK device on the same Wi-Fi or mesh network sees the points too, so only use it when you mean to share them.\n\n• Custom: another device\'s IP address and its UDP input port, or a TAK Server\'s UDP CoT input.\n\nThen tap \"Send a test point\". A cyan dot named \"JS8-Tactical test\" should appear near your grid square within a few seconds and vanish after 5 minutes.\n\nPoints are spot-map dots: red = emergency or RED, yellow = needs or AMBER, green = good or GREEN, magenta = SPOT and SALUTE reports, cyan = other reports. Tap one in ATAK to read the whole report. Location precision follows what was sent, so a 4-character grid square gives a wide error circle.</string>
 </resources>

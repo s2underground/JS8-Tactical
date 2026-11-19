@@ -98,6 +98,11 @@ class PropagationFragment : Fragment() {
 
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
+
+    /** Sharper picture of the area on screen when zoomed in (own thread; newest request wins). */
+    private val detailWorker = Executors.newSingleThreadExecutor()
+    @Volatile private var detailGeneration = 0
+    private var detailKey: String? = null
     @Volatile private var generation = 0
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -130,6 +135,7 @@ class PropagationFragment : Fragment() {
                 render()
             }
             m.addOnMapClickListener { latLng -> guarded("Prop tap") { onTap(latLng) }; true }
+            m.addOnCameraIdleListener { renderDetail() }
         }
 
         buildBandChips(view)
@@ -139,7 +145,8 @@ class PropagationFragment : Fragment() {
             render()
         }
         view.findViewById<Chip>(R.id.prop_show_predicted).setOnCheckedChangeListener { _, on ->
-            setVisible(on, L_COVERAGE)
+            setVisible(on, L_COVERAGE, L_DETAIL)
+            if (on) { detailKey = null; renderDetail() }
         }
         view.findViewById<Chip>(R.id.prop_show_heard).setOnCheckedChangeListener { _, on ->
             setVisible(on, L_HEARD_HEAT, L_HEARD_DOTS, L_HEARD_LABELS, L_NET)
@@ -194,6 +201,16 @@ class PropagationFragment : Fragment() {
             PropertyFactory.rasterOpacity(0.85f),
             PropertyFactory.rasterResampling(Property.RASTER_RESAMPLING_LINEAR),
             PropertyFactory.rasterFadeDuration(0f),
+        ))
+        // Detail image: fixed size, moved over the visible area after the camera settles.
+        // (MapLibre 13 fixed the native crash this tab hit in 11.8; that was the heatmap
+        // layer, not this one, but it is still updated only from the main thread.)
+        st.addSource(ImageSource(S_DETAIL, WORLD_QUAD, Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)))
+        st.addLayer(RasterLayer(L_DETAIL, S_DETAIL).withProperties(
+            PropertyFactory.rasterOpacity(0.85f),
+            PropertyFactory.rasterResampling(Property.RASTER_RESAMPLING_LINEAR),
+            PropertyFactory.rasterFadeDuration(0f),
+            PropertyFactory.visibility(Property.NONE),
         ))
         listOf(S_NIGHT, S_TERMINATOR, S_NET, S_HEARD, S_ME).forEach { st.addSource(GeoJsonSource(it)) }
         st.addLayer(FillLayer(L_NIGHT, S_NIGHT).withProperties(
@@ -391,6 +408,52 @@ class PropagationFragment : Fragment() {
         }
         v.findViewById<TextView>(R.id.prop_chart_title).text = getString(R.string.prop_chart_title,
             if (hoursAhead == 0f) getString(R.string.prop_now, zuluTime(t)) else zuluTime(t))
+        detailKey = null
+        renderDetail()
+    }
+
+    /** Sharper prediction for the area on screen once zoomed in past a whole-world view. */
+    private fun renderDetail() = guarded("Prop detail") {
+        val m = map ?: return@guarded
+        val st = style ?: return@guarded
+        val p = predictor ?: return@guarded
+        val v = view ?: return@guarded
+        if (v.width == 0 || v.height == 0) return@guarded
+        val showPredicted = v.findViewById<Chip>(R.id.prop_show_predicted)?.isChecked != false
+        val bounds = m.projection.visibleRegion.latLngBounds
+        val north = bounds.latitudeNorth.coerceIn(-MAX_LAT, MAX_LAT)
+        val south = bounds.latitudeSouth.coerceIn(-MAX_LAT, MAX_LAT)
+        val west = bounds.longitudeWest
+        val east = bounds.longitudeEast
+        val sane = listOf(north, south, west, east).all { it.isFinite() }
+        if (!sane || !showPredicted || m.cameraPosition.zoom < 2.6 || east <= west || east - west > 200 || north <= south) {
+            detailKey = null
+            st.getLayer(L_DETAIL)?.setProperties(PropertyFactory.visibility(Property.NONE))
+            return@guarded
+        }
+        val band = this.band
+        val t = selectedTime()
+        // Skip work when nothing changed (camera idle fires often).
+        val key = String.format(Locale.US, "%s|%d|%.3f|%.3f|%.3f|%.3f", band.name, t / 600_000L, north, south, west, east)
+        if (key == detailKey) return@guarded
+        detailKey = key
+        val gen = ++detailGeneration
+        submit(detailWorker, "Prop detail") {
+            if (gen != detailGeneration) return@submit
+            val grid = p.coverage(band, t, DETAIL_W, DETAIL_H, north, south, west, east) ?: return@submit
+            val bmp = toBitmap(grid, DETAIL_W, DETAIL_H)
+            main.post {
+                if (gen != detailGeneration || view == null) return@post
+                val s = style ?: return@post
+                guarded("Prop detail draw") {
+                    (s.getSource(S_DETAIL) as? ImageSource)?.apply {
+                        setCoordinates(LatLngQuad(LatLng(north, west), LatLng(north, east), LatLng(south, east), LatLng(south, west)))
+                        setImage(bmp)
+                    }
+                    s.getLayer(L_DETAIL)?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
+                }
+            }
+        }
     }
 
     private fun learningText(p: Predictor, listenedHours: Double): String {
@@ -685,6 +748,8 @@ class PropagationFragment : Fragment() {
 
     override fun onDestroyView() {
         generation++
+        detailGeneration++
+        detailKey = null
         mapView?.onDestroy()
         mapView = null
         map = null
@@ -694,6 +759,7 @@ class PropagationFragment : Fragment() {
 
     override fun onDestroy() {
         worker.shutdownNow()
+        detailWorker.shutdownNow()
         super.onDestroy()
     }
 
@@ -709,6 +775,10 @@ class PropagationFragment : Fragment() {
             LatLng(-MAX_LAT, 180.0), LatLng(-MAX_LAT, -180.0),
         )
 
+        private const val DETAIL_W = 200
+        private const val DETAIL_H = 150
+        private const val S_DETAIL = "prop-detail"
+        private const val L_DETAIL = "prop-detail"
         private const val S_COVERAGE = "prop-coverage"
         private const val S_NIGHT = "prop-night"
         private const val S_TERMINATOR = "prop-terminator"

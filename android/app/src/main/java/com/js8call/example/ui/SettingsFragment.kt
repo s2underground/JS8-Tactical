@@ -22,12 +22,15 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreferenceCompat
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import com.js8call.core.BluetoothSerialPortCatalog
 import com.js8call.core.HamlibRigCatalog
 import com.js8call.core.UsbSerialPortCatalog
 import com.js8call.example.BuildConfig
 import com.js8call.example.R
+import com.js8call.example.atak.AtakBridge
+import com.js8call.example.reports.Geo
 import java.util.Locale
 
 /**
@@ -244,6 +247,8 @@ class SettingsFragment : PreferenceFragmentCompat() {
         gridPreference = findPreference("grid")
         gridPreference?.onUpdateClickListener = { onGridUpdateRequested() }
 
+        setUpAtak()
+
         logPreference = findPreference("log_messages_to_file")
         logPreference?.setOnPreferenceChangeListener { _, newValue ->
             val enable = newValue as? Boolean ?: false
@@ -259,6 +264,81 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 }
             }
             true
+        }
+    }
+
+    // ------------------------------------------------------------------ ATAK
+
+    private fun setUpAtak() {
+        val target = findPreference<ListPreference>(AtakBridge.KEY_TARGET)
+        fun showCustom(value: String?) {
+            val custom = value == "custom"
+            findPreference<Preference>(AtakBridge.KEY_HOST)?.isVisible = custom
+            findPreference<Preference>(AtakBridge.KEY_PORT)?.isVisible = custom
+        }
+        showCustom(target?.value)
+        target?.setOnPreferenceChangeListener { _, v ->
+            showCustom(v as? String)
+            AtakBridge.resendAll()
+            true
+        }
+        findPreference<EditTextPreference>(AtakBridge.KEY_PORT)?.setOnBindEditTextListener {
+            it.inputType = InputType.TYPE_CLASS_NUMBER
+        }
+        listOf(AtakBridge.KEY_HOST, AtakBridge.KEY_PORT, AtakBridge.KEY_ENABLED).forEach { key ->
+            findPreference<Preference>(key)?.setOnPreferenceChangeListener { _, _ -> AtakBridge.resendAll(); true }
+        }
+        findPreference<Preference>("atak_help")?.setOnPreferenceClickListener {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.settings_atak_help)
+                .setMessage(R.string.settings_atak_help_text)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            true
+        }
+        findPreference<Preference>("atak_test")?.apply {
+            summary = atakStatusText()
+            setOnPreferenceClickListener {
+                val grid = preferenceManager.sharedPreferences?.getString("grid", "").orEmpty()
+                val where = Geo.maidenheadToLatLon(grid.trim())
+                if (where == null) {
+                    view?.let { v -> Snackbar.make(v, "Set your grid square first (General → Grid), so the test point lands near you.", Snackbar.LENGTH_LONG).show() }
+                    return@setOnPreferenceClickListener true
+                }
+                val label = AtakBridge.target(requireContext()).label
+                AtakBridge.sendTest(requireContext(), where) { err -> postAtakResult(err?.let { "Couldn't send: $it" } ?: "Test point sent to $label. Look for a cyan dot in ATAK.") }
+                true
+            }
+        }
+        findPreference<Preference>("atak_remove")?.setOnPreferenceClickListener {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.settings_atak_remove)
+                .setMessage("Every point JS8-Tactical has sent will be deleted from ATAK, and from any other TAK device that received them. New reports will still be sent while \"Show reports in ATAK\" is on.")
+                .setPositiveButton("Remove") { _, _ ->
+                    AtakBridge.removeAll(requireContext()) { n, err ->
+                        postAtakResult(err?.let { "Couldn't send: $it" } ?: "Sent delete for $n point${if (n == 1) "" else "s"}.")
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            true
+        }
+    }
+
+    private fun atakStatusText(): String {
+        val s = AtakBridge.status
+        return when {
+            s.lastError != null -> "Last send failed: ${s.lastError}"
+            s.sentPackets > 0 -> "${s.sentPackets} point updates sent to ${s.target} since the app started"
+            else -> "Puts a cyan dot near your grid square for 5 minutes"
+        }
+    }
+
+    private fun postAtakResult(message: String) {
+        Handler(Looper.getMainLooper()).post {
+            if (!isAdded) return@post
+            findPreference<Preference>("atak_test")?.summary = atakStatusText()
+            view?.let { Snackbar.make(it, message, Snackbar.LENGTH_LONG).show() }
         }
     }
 

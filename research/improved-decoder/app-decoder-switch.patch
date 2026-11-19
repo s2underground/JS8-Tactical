@@ -1,0 +1,107 @@
+diff --git a/adapters/android/jni/js8_jni_methods.cpp b/adapters/android/jni/js8_jni_methods.cpp
+index 00d67385..041e843e 100644
+--- a/adapters/android/jni/js8_jni_methods.cpp
++++ b/adapters/android/jni/js8_jni_methods.cpp
+@@ -8,6 +8,7 @@
+ #include <vector>
+ #include "hamlib/rig.h"
+ #include "js8_engine_jni.h"
++#include "js8core/decoder.hpp"
+ 
+ // JNI method implementations for com.js8call.core.JS8Engine
+ 
+@@ -91,6 +92,27 @@ Java_com_js8call_core_JS8Engine_00024Companion_nativeCreate(
+   return reinterpret_cast<jlong>(engine);
+ }
+ 
++// Process-wide decoder choice (see js8core/decoder.hpp); applies from the
++// next decode pass, for every engine instance.
++JNIEXPORT void JNICALL
++Java_com_js8call_core_JS8Engine_00024Companion_nativeSetImprovedDecoder(
++    JNIEnv* /* env */,
++    jobject /* thiz */,
++    jboolean enabled) {
++  js8core::set_improved_decoder_enabled(enabled == JNI_TRUE);
++}
++
++JNIEXPORT jboolean JNICALL
++Java_com_js8call_core_JS8Engine_00024Companion_nativeHasImprovedDecoder(
++    JNIEnv* /* env */,
++    jobject /* thiz */) {
++#if defined(JS8CORE_HAS_IMPROVED_DECODER)
++  return JNI_TRUE;
++#else
++  return JNI_FALSE;
++#endif
++}
++
+ JNIEXPORT jboolean JNICALL
+ Java_com_js8call_core_JS8Engine_nativeStart(
+     JNIEnv* /* env */,
+diff --git a/adapters/android/jni/kotlin/JS8Engine.kt b/adapters/android/jni/kotlin/JS8Engine.kt
+index 43ba782e..891dfcf5 100644
+--- a/adapters/android/jni/kotlin/JS8Engine.kt
++++ b/adapters/android/jni/kotlin/JS8Engine.kt
+@@ -27,6 +27,20 @@ class JS8Engine private constructor(
+          * @param submodes Bitmask of enabled submodes
+          * @param callbackHandler Handler for engine events
+          */
++        /**
++         * Use the JS8Call-improved decoder (true) or the standard one (false).
++         * Process-wide; takes effect from the next decode pass.
++         */
++        fun setImprovedDecoder(enabled: Boolean) {
++            if (nativeHasImprovedDecoder()) nativeSetImprovedDecoder(enabled)
++        }
++
++        /** True when the native library was built with the JS8Call-improved decoder. */
++        fun hasImprovedDecoder(): Boolean = nativeHasImprovedDecoder()
++
++        private external fun nativeSetImprovedDecoder(enabled: Boolean)
++        private external fun nativeHasImprovedDecoder(): Boolean
++
+         fun create(
+             sampleRateHz: Int = 12000,
+             submodes: Int = 0x1F, // default to A/B/C/E/I like desktop
+diff --git a/android/app/src/main/java/com/js8call/example/service/JS8EngineService.kt b/android/app/src/main/java/com/js8call/example/service/JS8EngineService.kt
+index 47c08ae4..a038183c 100644
+--- a/android/app/src/main/java/com/js8call/example/service/JS8EngineService.kt
++++ b/android/app/src/main/java/com/js8call/example/service/JS8EngineService.kt
+@@ -292,6 +292,20 @@ class JS8EngineService : Service() {
+         if (key == PREF_LOG_MESSAGES) {
+             updateMessageLogging()
+         }
++        if (key == PREF_IMPROVED_DECODER) {
++            applyDecoderChoice()
++        }
++    }
++
++    /** Standard decoder unless the user turned on the experimental JS8Call-improved one. */
++    private fun applyDecoderChoice() {
++        try {
++            val on = PreferenceManager.getDefaultSharedPreferences(this).getBoolean(PREF_IMPROVED_DECODER, false)
++            JS8Engine.setImprovedDecoder(on)
++            Log.i(TAG, "Decoder: ${if (on) "JS8Call-improved (experimental)" else "standard"}")
++        } catch (e: Throwable) {
++            Log.w(TAG, "Could not set decoder", e)
++        }
+     }
+ 
+     override fun onCreate() {
+@@ -676,6 +690,8 @@ class JS8EngineService : Service() {
+                 }
+             }
+ 
++            applyDecoderChoice()
++
+             // Create engine
+             engine = JS8Engine.create(
+                 sampleRateHz = 12000,
+@@ -4347,6 +4363,7 @@ class JS8EngineService : Service() {
+         const val PREF_TIME_SYNC_AUTO = "time_sync_auto"
+         const val PREF_TIME_DRIFT_MS = "time_drift_ms"
+         const val PREF_LOG_MESSAGES = "log_messages_to_file"
++        const val PREF_IMPROVED_DECODER = "improved_decoder"
+         const val RIG_MODE_USB = "USB"
+         const val RIG_MODE_PKTUSB = "PKTUSB"
+ 

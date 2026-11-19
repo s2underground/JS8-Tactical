@@ -1,0 +1,1242 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 725a579..1617cff 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -20,6 +20,7 @@ add_library(js8core STATIC
+   src/placeholder.cpp
+   src/engine/engine.cpp
+   src/decoder/legacy_decoder.cpp
++  src/decoder/decoder_select.cpp
+   src/decoder/ldpc.cpp
+   src/dsp/flatten.cpp
+   src/dsp/resampler.cpp
+@@ -41,6 +42,19 @@ if(JS8CORE_WITH_VARI)
+   )
+ endif()
+ 
++# JS8Call-improved decoder (vendor/js8call-improved, compiled unchanged with the
++# stand-ins in src/decoder/improved/compat). Its include paths apply to this one
++# file only, so the Qt/FFTW/Boost stand-ins never leak into the rest of js8core.
++option(JS8CORE_WITH_IMPROVED_DECODER "Build the JS8Call-improved decoder" ON)
++if(JS8CORE_WITH_IMPROVED_DECODER)
++  target_sources(js8core PRIVATE src/decoder/improved/improved_decoder.cpp
++                                 vendor/js8call-improved/JS8_Mode/FrequencyTracker.cpp)
++  set_source_files_properties(src/decoder/improved/improved_decoder.cpp
++                              vendor/js8call-improved/JS8_Mode/FrequencyTracker.cpp PROPERTIES
++    INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/src/decoder/improved/compat;${CMAKE_CURRENT_SOURCE_DIR}/vendor/js8call-improved;${CMAKE_CURRENT_SOURCE_DIR}/vendor")
++  target_compile_definitions(js8core PUBLIC JS8CORE_HAS_IMPROVED_DECODER=1)
++endif()
++
+ add_library(js8core::js8core ALIAS js8core)
+ 
+ target_compile_features(js8core PUBLIC cxx_std_20)
+@@ -125,6 +139,11 @@ add_executable(js8core-fractional-rx-test EXCLUDE_FROM_ALL
+ target_compile_features(js8core-fractional-rx-test PRIVATE cxx_std_20)
+ target_include_directories(js8core-fractional-rx-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+ 
++add_executable(js8core-decoder-compare EXCLUDE_FROM_ALL tools/decoder_compare.cpp)
++target_compile_features(js8core-decoder-compare PRIVATE cxx_std_20)
++target_include_directories(js8core-decoder-compare PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
++target_link_libraries(js8core-decoder-compare PRIVATE js8core)
++
+ add_executable(js8core-decoder-roundtrip-test EXCLUDE_FROM_ALL
+   tools/decoder_roundtrip_test.cpp
+ )
+diff --git a/include/js8core/decoder.hpp b/include/js8core/decoder.hpp
+index 1d66c96..e9e1e62 100644
+--- a/include/js8core/decoder.hpp
++++ b/include/js8core/decoder.hpp
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include <chrono>
+ #include <functional>
+ 
+ #include "js8core/decoder_state.hpp"
+@@ -12,6 +13,24 @@ namespace js8core {
+ std::size_t legacy_decode(DecodeState const& state,
+                           std::function<void(events::Variant const&)> emit);
+ 
++// JS8Call-improved decoder (soft combining, coherent demodulation, LDPC
++// feedback, decoder-aided re-demodulation, interference cancellation). Same
++// events as legacy_decode. Optional work is skipped as `next_ready` (when the
++// next decode is due) approaches; a default time point means no limit.
++std::size_t improved_decode(DecodeState const& state,
++                            std::function<void(events::Variant const&)> emit,
++                            std::chrono::steady_clock::time_point next_ready = {});
++
++// Choose the decoder used by the engine: false (default) = legacy_decode,
++// true = improved_decode (when built with JS8CORE_WITH_IMPROVED_DECODER).
++// Process-wide; takes effect at the next decode pass.
++void set_improved_decoder_enabled(bool enabled) noexcept;
++bool improved_decoder_enabled() noexcept;
++
++// The engine's decode call: the selected decoder.
++std::size_t run_decoder(DecodeState const& state,
++                        std::function<void(events::Variant const&)> emit);
++
+ void legacy_encode(int type,
+                    protocol::CostasArray const& costas,
+                    char const* message,
+diff --git a/src/decoder/decoder_select.cpp b/src/decoder/decoder_select.cpp
+new file mode 100644
+index 0000000..9815cff
+--- /dev/null
++++ b/src/decoder/decoder_select.cpp
+@@ -0,0 +1,39 @@
++#include "js8core/decoder.hpp"
++
++#include <atomic>
++
++namespace js8core {
++
++namespace {
++std::atomic<bool> g_improved{false};
++}
++
++void set_improved_decoder_enabled(bool enabled) noexcept { g_improved.store(enabled, std::memory_order_relaxed); }
++
++bool improved_decoder_enabled() noexcept {
++#if defined(JS8CORE_HAS_IMPROVED_DECODER)
++    return g_improved.load(std::memory_order_relaxed);
++#else
++    return false;
++#endif
++}
++
++std::size_t run_decoder(DecodeState const& state, std::function<void(events::Variant const&)> emit) {
++#if defined(JS8CORE_HAS_IMPROVED_DECODER)
++    if (improved_decoder_enabled()) {
++        // Skip optional work that would run past the next decode of the
++        // fastest submode in this pass (4 s Ultra … 30 s Slow), keeping 20 %.
++        int const set = state.params.nsubmodes;
++        int seconds = 30;
++        if (set & (1 << 0)) seconds = 15;
++        if (set & (1 << 1)) seconds = 10;
++        if (set & (1 << 2)) seconds = 6;
++        if (set & (1 << 4)) seconds = 4;
++        auto const next = std::chrono::steady_clock::now() + std::chrono::milliseconds(seconds * 800);
++        return improved_decode(state, std::move(emit), next);
++    }
++#endif
++    return legacy_decode(state, std::move(emit));
++}
++
++}  // namespace js8core
+diff --git a/src/decoder/improved/compat/JS8.h b/src/decoder/improved/compat/JS8.h
+new file mode 100644
+index 0000000..21d37ce
+--- /dev/null
++++ b/src/decoder/improved/compat/JS8.h
+@@ -0,0 +1,64 @@
++// The parts of JS8Call-improved's JS8_Mode/JS8.h that the decoder uses, without
++// the Qt Decoder/Worker classes: Costas arrays, decode events and encode().
++#pragma once
++// Same guard name as upstream JS8.h: FrequencyTracker.h checks it to pull in
++// the interference-cancellation helpers for the decoder.
++#ifndef __JS8
++#define __JS8
++#endif
++#include <array>
++#include <cstddef>
++#include <functional>
++#include <string>
++#include <type_traits>
++#include <variant>
++
++namespace JS8 {
++namespace Costas {
++enum class Type { ORIGINAL, MODIFIED };
++
++using Array = std::array<std::array<int, 7>, 3>;
++
++constexpr auto array = [] {
++    constexpr auto COSTAS =
++        std::array{std::array{std::array{4, 2, 5, 6, 1, 3, 0},
++                              std::array{4, 2, 5, 6, 1, 3, 0},
++                              std::array{4, 2, 5, 6, 1, 3, 0}},
++                   std::array{std::array{0, 6, 2, 3, 5, 4, 1},
++                              std::array{1, 5, 0, 2, 3, 6, 4},
++                              std::array{2, 5, 0, 6, 4, 1, 3}}};
++
++    return [COSTAS](Type type) -> Array const & {
++        return COSTAS[static_cast<std::underlying_type_t<Type>>(type)];
++    };
++}();
++} // namespace Costas
++
++void encode(int type, Costas::Array const &costas, const char *message, int *tones);
++
++namespace Event {
++struct DecodeStarted { int submodes; };
++struct SyncStart { int position; int size; };
++struct SyncState {
++    enum class Type { CANDIDATE, DECODED } type;
++    int mode;
++    float frequency;
++    float dt;
++    union { int candidate; float decoded; } sync;
++};
++struct Decoded {
++    int utc;
++    int snr;
++    float xdt;
++    float frequency;
++    std::string data;
++    int type;
++    float quality;
++    int mode;
++};
++struct DecodeFinished { std::size_t decoded; };
++
++using Variant = std::variant<DecodeStarted, SyncStart, SyncState, Decoded, DecodeFinished>;
++using Emitter = std::function<void(Variant const &)>;
++} // namespace Event
++} // namespace JS8
+diff --git a/src/decoder/improved/compat/JS8_Include/commons.h b/src/decoder/improved/compat/JS8_Include/commons.h
+new file mode 100644
+index 0000000..c36cb84
+--- /dev/null
++++ b/src/decoder/improved/compat/JS8_Include/commons.h
+@@ -0,0 +1,48 @@
++// The decoder-facing parts of JS8Call-improved's JS8_Include/commons.h. The
++// sample ring and parameters are filled from js8core::DecodeState by
++// improved_decoder.cpp; there is no global instance here.
++#pragma once
++#include <cstdint>
++#include <mutex>
++
++#define JS8_NSPS           6192
++#define JS8_NSMAX          6827
++#define JS8_NTMAX          60
++#define JS8_RX_SAMPLE_RATE 12000
++#define JS8_RX_SAMPLE_SIZE (JS8_NTMAX * JS8_RX_SAMPLE_RATE)
++#define JS8_NUM_SYMBOLS    79
++
++#define JS8A_SYMBOL_SAMPLES 1920
++#define JS8A_TX_SECONDS     15
++#define JS8A_START_DELAY_MS 500
++#define JS8B_SYMBOL_SAMPLES 1200
++#define JS8B_TX_SECONDS     10
++#define JS8B_START_DELAY_MS 200
++#define JS8C_SYMBOL_SAMPLES 600
++#define JS8C_TX_SECONDS     6
++#define JS8C_START_DELAY_MS 100
++#define JS8E_SYMBOL_SAMPLES 3840
++#define JS8E_TX_SECONDS     30
++#define JS8E_START_DELAY_MS 500
++#define JS8I_SYMBOL_SAMPLES 384
++#define JS8I_TX_SECONDS     4
++#define JS8I_START_DELAY_MS 100
++
++struct dec_data {
++    std::int16_t d2[JS8_RX_SAMPLE_SIZE];
++    struct {
++        int nutc;
++        int nfqso;
++        bool newdat;
++        int nfa;
++        int nfb;
++        bool syncStats;
++        int kin;
++        int kposA, kposB, kposC, kposE, kposI;
++        int kszA, kszB, kszC, kszE, kszI;
++        int nsubmodes;
++    } params;
++};
++
++namespace js8core::improved { std::mutex &fftw_mutex(); }
++#define fftw_mutex (js8core::improved::fftw_mutex())
+diff --git a/src/decoder/improved/compat/QDebug b/src/decoder/improved/compat/QDebug
+new file mode 100644
+index 0000000..de98d0f
+--- /dev/null
++++ b/src/decoder/improved/compat/QDebug
+@@ -0,0 +1,2 @@
++#pragma once
++#include "qt_shim.h"
+diff --git a/src/decoder/improved/compat/QLoggingCategory b/src/decoder/improved/compat/QLoggingCategory
+new file mode 100644
+index 0000000..de98d0f
+--- /dev/null
++++ b/src/decoder/improved/compat/QLoggingCategory
+@@ -0,0 +1,2 @@
++#pragma once
++#include "qt_shim.h"
+diff --git a/src/decoder/improved/compat/QtGlobal b/src/decoder/improved/compat/QtGlobal
+new file mode 100644
+index 0000000..de98d0f
+--- /dev/null
++++ b/src/decoder/improved/compat/QtGlobal
+@@ -0,0 +1,2 @@
++#pragma once
++#include "qt_shim.h"
+diff --git a/src/decoder/improved/compat/boost/crc.hpp b/src/decoder/improved/compat/boost/crc.hpp
+new file mode 100644
+index 0000000..ab977a1
+--- /dev/null
++++ b/src/decoder/improved/compat/boost/crc.hpp
+@@ -0,0 +1,23 @@
++// boost::augmented_crc<12, 0xc06> as used by the JS8 decoder (CRC-12 over the
++// whole buffer, augmented form: no reflection, zero initial value).
++#pragma once
++#include <cstddef>
++#include <cstdint>
++namespace boost {
++template <std::size_t Bits, std::uint32_t TruncPoly>
++std::uint32_t augmented_crc(void const *buffer, std::size_t byte_count) {
++    constexpr std::uint32_t top = 1u << (Bits - 1);
++    constexpr std::uint32_t mask = (Bits >= 32) ? 0xFFFFFFFFu : ((1u << Bits) - 1u);
++    auto const *p = static_cast<std::uint8_t const *>(buffer);
++    std::uint32_t rem = 0;
++    for (std::size_t i = 0; i < byte_count; ++i) {
++        for (int b = 7; b >= 0; --b) {
++            bool const in = (p[i] >> b) & 1u;
++            bool const msb = (rem & top) != 0;
++            rem = ((rem << 1) | (in ? 1u : 0u)) & mask;
++            if (msb) rem ^= TruncPoly;
++        }
++    }
++    return rem & mask;
++}
++} // namespace boost
+diff --git a/src/decoder/improved/compat/boost/math/ccmath/round.hpp b/src/decoder/improved/compat/boost/math/ccmath/round.hpp
+new file mode 100644
+index 0000000..4c53beb
+--- /dev/null
++++ b/src/decoder/improved/compat/boost/math/ccmath/round.hpp
+@@ -0,0 +1,11 @@
++// boost::math::ccmath::round: round half away from zero, usable at compile
++// time (std::round is constexpr only as a GCC extension; NDK clang needs this).
++#pragma once
++#include <type_traits>
++namespace boost::math::ccmath {
++template <typename T>
++constexpr std::enable_if_t<std::is_floating_point_v<T>, T> round(T x) noexcept {
++    return x >= T(0) ? T(static_cast<long long>(x + T(0.5)))
++                     : T(static_cast<long long>(x - T(0.5)));
++}
++} // namespace boost::math::ccmath
+diff --git a/src/decoder/improved/compat/boost/multi_index/key.hpp b/src/decoder/improved/compat/boost/multi_index/key.hpp
+new file mode 100644
+index 0000000..503b160
+--- /dev/null
++++ b/src/decoder/improved/compat/boost/multi_index/key.hpp
+@@ -0,0 +1,2 @@
++#pragma once
++#include "boost/multi_index_container.hpp"
+diff --git a/src/decoder/improved/compat/boost/multi_index/ordered_index.hpp b/src/decoder/improved/compat/boost/multi_index/ordered_index.hpp
+new file mode 100644
+index 0000000..503b160
+--- /dev/null
++++ b/src/decoder/improved/compat/boost/multi_index/ordered_index.hpp
+@@ -0,0 +1,2 @@
++#pragma once
++#include "boost/multi_index_container.hpp"
+diff --git a/src/decoder/improved/compat/boost/multi_index/ranked_index.hpp b/src/decoder/improved/compat/boost/multi_index/ranked_index.hpp
+new file mode 100644
+index 0000000..503b160
+--- /dev/null
++++ b/src/decoder/improved/compat/boost/multi_index/ranked_index.hpp
+@@ -0,0 +1,2 @@
++#pragma once
++#include "boost/multi_index_container.hpp"
+diff --git a/src/decoder/improved/compat/boost/multi_index_container.hpp b/src/decoder/improved/compat/boost/multi_index_container.hpp
+new file mode 100644
+index 0000000..5eb850b
+--- /dev/null
++++ b/src/decoder/improved/compat/boost/multi_index_container.hpp
+@@ -0,0 +1,177 @@
++// Minimal stand-in for boost::multi_index_container, enough for the decoder's
++// sync-candidate index: ordered_non_unique / ranked_non_unique views selected
++// by tag, with begin/end, lower_bound/upper_bound, erase(range), modify(it, f),
++// nth(k) and size(). Elements live in insertion order; each view keeps a sorted
++// list of element positions, rebuilt only when an element was modified. Equal
++// keys keep insertion order, as in Boost. Erased elements are skipped.
++#pragma once
++
++#include <algorithm>
++#include <cstddef>
++#include <functional>
++#include <tuple>
++#include <type_traits>
++#include <utility>
++#include <vector>
++
++namespace boost::multi_index {
++
++template <typename... Tags> struct tag {};
++
++template <auto Member> struct key {
++    template <typename V> static decltype(auto) get(V const &v) { return v.*Member; }
++};
++
++template <typename Tag, typename Key, typename Compare = std::less<>>
++struct ordered_non_unique {
++    using tag_type = Tag;
++    using key_type = Key;
++    using compare_type = Compare;
++};
++
++template <typename Tag, typename Key, typename Compare = std::less<>>
++struct ranked_non_unique : ordered_non_unique<Tag, Key, Compare> {};
++
++template <typename... Indices> struct indexed_by {};
++
++template <typename Value, typename Indices> class multi_index_container;
++
++template <typename Value, typename... Indices>
++class multi_index_container<Value, indexed_by<Indices...>> {
++    std::vector<Value> items_;
++    std::vector<char> alive_;
++    std::size_t live_ = 0;
++    std::size_t version_ = 0; // bumped when values may have changed order
++
++  public:
++    template <typename Index> class view {
++        friend class multi_index_container;
++        multi_index_container *c_;
++        std::vector<std::size_t> order_;
++        std::size_t built_ = static_cast<std::size_t>(-1);
++        std::size_t built_count_ = static_cast<std::size_t>(-1);
++
++        using Key = typename Index::key_type;
++        using Cmp = typename Index::compare_type;
++
++        explicit view(multi_index_container *c) : c_(c) {}
++
++        void sync() {
++            if (built_ == c_->version_ && built_count_ == c_->items_.size()) return;
++            order_.resize(c_->items_.size());
++            for (std::size_t i = 0; i < order_.size(); ++i) order_[i] = i;
++            auto const &items = c_->items_;
++            std::stable_sort(order_.begin(), order_.end(), [&](std::size_t a, std::size_t b) {
++                return Cmp{}(Key::get(items[a]), Key::get(items[b]));
++            });
++            built_ = c_->version_;
++            built_count_ = c_->items_.size();
++        }
++
++        std::size_t skip(std::size_t pos) const {
++            while (pos < order_.size() && !c_->alive_[order_[pos]]) ++pos;
++            return pos;
++        }
++
++      public:
++        class iterator {
++            friend class view;
++            view const *v_ = nullptr;
++            std::size_t pos_ = 0;
++            iterator(view const *v, std::size_t pos) : v_(v), pos_(pos) {}
++
++          public:
++            iterator() = default;
++            Value const &operator*() const { return v_->c_->items_[v_->order_[pos_]]; }
++            Value const *operator->() const { return &**this; }
++            iterator &operator++() { pos_ = v_->skip(pos_ + 1); return *this; }
++            iterator operator++(int) { auto t = *this; ++*this; return t; }
++            bool operator==(iterator const &o) const { return pos_ == o.pos_; }
++            bool operator!=(iterator const &o) const { return pos_ != o.pos_; }
++        };
++        using const_iterator = iterator;
++
++        iterator begin() { sync(); return iterator(this, skip(0)); }
++        iterator end() { return iterator(this, order_.size()); }
++        std::size_t size() const { return c_->live_; }
++        bool empty() const { return c_->live_ == 0; }
++
++        template <typename K> iterator lower_bound(K const &k) {
++            sync();
++            auto const &items = c_->items_;
++            auto it = std::lower_bound(order_.begin(), order_.end(), k, [&](std::size_t i, K const &key) {
++                return Cmp{}(Key::get(items[i]), key);
++            });
++            return iterator(this, skip(static_cast<std::size_t>(it - order_.begin())));
++        }
++
++        template <typename K> iterator upper_bound(K const &k) {
++            sync();
++            auto const &items = c_->items_;
++            auto it = std::upper_bound(order_.begin(), order_.end(), k, [&](K const &key, std::size_t i) {
++                return Cmp{}(key, Key::get(items[i]));
++            });
++            return iterator(this, skip(static_cast<std::size_t>(it - order_.begin())));
++        }
++
++        /// The k-th element in this view's order (ranked indices).
++        iterator nth(std::size_t k) {
++            sync();
++            std::size_t pos = skip(0);
++            while (k-- > 0 && pos < order_.size()) pos = skip(pos + 1);
++            return iterator(this, pos);
++        }
++
++        template <typename F> bool modify(iterator it, F f) {
++            f(c_->items_[order_[it.pos_]]);
++            // Other views may now be out of order; this view's positions stay
++            // valid until its next begin()/bound/nth, as in the decoder's use.
++            ++c_->version_;
++            built_ = c_->version_;
++            return true;
++        }
++
++        iterator erase(iterator first, iterator last) {
++            for (std::size_t p = first.pos_; p < last.pos_ && p < order_.size(); ++p) {
++                std::size_t const idx = order_[p];
++                if (c_->alive_[idx]) { c_->alive_[idx] = 0; --c_->live_; }
++            }
++            return iterator(this, skip(last.pos_));
++        }
++    };
++
++  private:
++    std::tuple<view<Indices>...> views_{view<Indices>(this)...};
++
++    template <typename Tag, std::size_t I = 0> static constexpr std::size_t index_of() {
++        static_assert(I < sizeof...(Indices), "unknown multi_index tag");
++        using Index = std::tuple_element_t<I, std::tuple<Indices...>>;
++        if constexpr (std::is_same_v<typename Index::tag_type, tag<Tag>>) return I;
++        else return index_of<Tag, I + 1>();
++    }
++
++  public:
++    multi_index_container() = default;
++    multi_index_container(multi_index_container const &) = delete;
++    multi_index_container &operator=(multi_index_container const &) = delete;
++
++    template <typename Tag> auto &get() { return std::get<index_of<Tag>()>(views_); }
++
++    template <typename... Args> void emplace(Args &&...args) {
++        items_.emplace_back(std::forward<Args>(args)...);
++        alive_.push_back(1);
++        ++live_;
++    }
++
++    void clear() {
++        items_.clear();
++        alive_.clear();
++        live_ = 0;
++        ++version_;
++    }
++
++    bool empty() const noexcept { return live_ == 0; }
++    std::size_t size() const noexcept { return live_; }
++};
++
++} // namespace boost::multi_index
+diff --git a/src/decoder/improved/compat/fftw3.h b/src/decoder/improved/compat/fftw3.h
+new file mode 100644
+index 0000000..117b6e0
+--- /dev/null
++++ b/src/decoder/improved/compat/fftw3.h
+@@ -0,0 +1,61 @@
++// FFTW single-precision API subset used by the JS8Call-improved decoder,
++// implemented on pocketfft (header-only, already used by js8core). Only the
++// calls the decoder makes: 1-D complex and real-to-complex plans, execute,
++// destroy. Plans remember their arrays, as FFTW plans do.
++#pragma once
++#include <complex>
++#include <cstddef>
++#include <vector>
++
++#ifndef POCKETFFT_CACHE_SIZE
++#define POCKETFFT_CACHE_SIZE 1000000
++#endif
++#include "pocketfft/pocketfft_hdronly.h"
++
++typedef float fftwf_complex[2];
++
++#define FFTW_FORWARD (-1)
++#define FFTW_BACKWARD (+1)
++#define FFTW_MEASURE (0U)
++#define FFTW_ESTIMATE (1U << 6)
++#define FFTW_PATIENT (1U << 5)
++#define FFTW_ESTIMATE_PATIENT FFTW_ESTIMATE
++
++struct js8_fftwf_plan_s {
++    enum Kind { C2C, R2C } kind;
++    std::size_t n;
++    void *in;
++    void *out;
++    bool forward;
++};
++typedef js8_fftwf_plan_s *fftwf_plan;
++
++inline fftwf_plan fftwf_plan_dft_1d(int n, fftwf_complex *in, fftwf_complex *out, int sign, unsigned) {
++    return new js8_fftwf_plan_s{js8_fftwf_plan_s::C2C, static_cast<std::size_t>(n), in, out, sign == FFTW_FORWARD};
++}
++
++inline fftwf_plan fftwf_plan_dft_r2c_1d(int n, float *in, fftwf_complex *out, unsigned) {
++    return new js8_fftwf_plan_s{js8_fftwf_plan_s::R2C, static_cast<std::size_t>(n), in, out, true};
++}
++
++inline void fftwf_execute(fftwf_plan const p) {
++    if (!p) return;
++    pocketfft::shape_t const shape{p->n};
++    auto *out = reinterpret_cast<std::complex<float> *>(p->out);
++    if (p->kind == js8_fftwf_plan_s::C2C) {
++        pocketfft::stride_t const stride{static_cast<std::ptrdiff_t>(sizeof(std::complex<float>))};
++        pocketfft::c2c(shape, stride, stride, {0}, p->forward,
++                       reinterpret_cast<std::complex<float> const *>(p->in), out, 1.0f, 1);
++    } else {
++        // FFTW r2c may run in place (input aliased with output); pocketfft
++        // needs separate buffers, so copy the input first in that case.
++        auto const *in = reinterpret_cast<float const *>(p->in);
++        std::vector<float> copy;
++        if (p->in == p->out) { copy.assign(in, in + p->n); in = copy.data(); }
++        pocketfft::stride_t const sin{static_cast<std::ptrdiff_t>(sizeof(float))};
++        pocketfft::stride_t const sout{static_cast<std::ptrdiff_t>(sizeof(std::complex<float>))};
++        pocketfft::r2c(shape, sin, sout, 0, true, in, out, 1.0f, 1);
++    }
++}
++
++inline void fftwf_destroy_plan(fftwf_plan p) { delete p; }
+diff --git a/src/decoder/improved/compat/qt_shim.h b/src/decoder/improved/compat/qt_shim.h
+new file mode 100644
+index 0000000..05bb87b
+--- /dev/null
++++ b/src/decoder/improved/compat/qt_shim.h
+@@ -0,0 +1,57 @@
++// Stand-ins for the few Qt pieces the JS8Call-improved decoder uses: debug
++// logging (compiled out) and environment-variable switches. Not Qt.
++#pragma once
++#include <cstdlib>
++#include <cstring>
++
++class QLoggingCategory {
++  public:
++    bool isDebugEnabled() const noexcept { return false; }
++    bool isInfoEnabled() const noexcept { return false; }
++    bool isWarningEnabled() const noexcept { return false; }
++};
++
++// Swallows anything streamed into it.
++class QDebug {
++  public:
++    template <typename T> QDebug &operator<<(T const &) { return *this; }
++    QDebug &noquote() { return *this; }
++    QDebug &nospace() { return *this; }
++    QDebug &space() { return *this; }
++    QDebug &quote() { return *this; }
++};
++
++enum QtMsgType { QtDebugMsg, QtWarningMsg, QtCriticalMsg, QtFatalMsg, QtInfoMsg };
++
++#define Q_DECLARE_LOGGING_CATEGORY(name) QLoggingCategory &name()
++#define Q_LOGGING_CATEGORY(name, ...)                                          \
++    QLoggingCategory &name() {                                                 \
++        static QLoggingCategory category;                                      \
++        return category;                                                       \
++    }
++// A single statement that never runs, so it is safe inside if/else.
++#define qCDebug(category) while (false) QDebug()
++#define qCInfo(category) while (false) QDebug()
++#define qCWarning(category) while (false) QDebug()
++#define qDebug() while (false) QDebug()
++#define qWarning() while (false) QDebug()
++
++inline bool qEnvironmentVariableIsSet(char const *name) noexcept {
++    char const *v = std::getenv(name);
++    return v != nullptr && *v != '\0';
++}
++
++inline int qEnvironmentVariableIntValue(char const *name, bool *ok = nullptr) noexcept {
++    char const *v = std::getenv(name);
++    if (ok) *ok = false;
++    if (!v || !*v) return 0;
++    char *end = nullptr;
++    long value = std::strtol(v, &end, 0);
++    if (end == v || *end != '\0') return 0;
++    if (ok) *ok = true;
++    return static_cast<int>(value);
++}
++
++template <typename T> constexpr T const &qBound(T const &lo, T const &v, T const &hi) {
++    return v < lo ? lo : (hi < v ? hi : v);
++}
+diff --git a/src/decoder/improved/compat/vendor/Eigen/Dense b/src/decoder/improved/compat/vendor/Eigen/Dense
+new file mode 100644
+index 0000000..f728261
+--- /dev/null
++++ b/src/decoder/improved/compat/vendor/Eigen/Dense
+@@ -0,0 +1,2 @@
++#pragma once
++#include <Eigen/Dense>
+diff --git a/src/decoder/improved/improved_decoder.cpp b/src/decoder/improved/improved_decoder.cpp
+new file mode 100644
+index 0000000..1d9591f
+--- /dev/null
++++ b/src/decoder/improved/improved_decoder.cpp
+@@ -0,0 +1,173 @@
++// js8core entry point for the JS8Call-improved decoder.
++//
++// The upstream decoder (vendor/js8call-improved, GPLv3) is compiled in this
++// translation unit unchanged; Qt logging, FFTW and the Boost helpers it uses
++// come from the stand-ins in compat/. This file only replaces upstream's Qt
++// Worker: it keeps one decoder per submode alive between calls (soft combining
++// and frequency tracking need that history), converts js8core::DecodeState to
++// upstream's dec_data, and converts upstream events to js8core events.
++
++#include "js8core/decoder.hpp"
++
++#include <array>
++#include <chrono>
++#include <memory>
++#include <mutex>
++#include <variant>
++
++#include "JS8_Mode/JS8.cpp"
++
++#undef fftw_mutex // compat/commons.h maps the upstream global onto this function
++namespace js8core::improved {
++std::mutex &fftw_mutex() {
++    static std::mutex m;
++    return m;
++}
++} // namespace js8core::improved
++
++Q_LOGGING_CATEGORY(decoder_js8, "decoder.js8", QtWarningMsg)
++
++namespace js8core {
++
++namespace {
++
++events::Variant convert(JS8::Event::Variant const &in) {
++    return std::visit(
++        [](auto const &e) -> events::Variant {
++            using E = std::decay_t<decltype(e)>;
++            if constexpr (std::is_same_v<E, JS8::Event::DecodeStarted>) {
++                return events::DecodeStarted{e.submodes};
++            } else if constexpr (std::is_same_v<E, JS8::Event::SyncStart>) {
++                return events::SyncStart{e.position, e.size};
++            } else if constexpr (std::is_same_v<E, JS8::Event::SyncState>) {
++                events::SyncState s;
++                s.kind = e.type == JS8::Event::SyncState::Type::DECODED
++                             ? events::SyncState::Kind::Decoded
++                             : events::SyncState::Kind::Candidate;
++                s.mode = e.mode;
++                s.frequency = e.frequency;
++                s.dt = e.dt;
++                if (s.kind == events::SyncState::Kind::Decoded) s.sync.decoded = e.sync.decoded;
++                else s.sync.candidate = e.sync.candidate;
++                return s;
++            } else if constexpr (std::is_same_v<E, JS8::Event::Decoded>) {
++                events::Decoded d;
++                d.utc = e.utc;
++                d.snr = e.snr;
++                d.xdt = e.xdt;
++                d.frequency = e.frequency;
++                d.data = e.data;
++                d.type = e.type;
++                d.quality = e.quality;
++                d.mode = e.mode;
++                return d;
++            } else {
++                return events::DecodeFinished{e.decoded};
++            }
++        },
++        in);
++}
++
++// One decoder per submode, created on first use and kept for the life of the
++// decode thread, like upstream's Worker::Impl.
++struct Decoders {
++    using Duration = js8::OptionalWorkBudget::Duration;
++    static constexpr std::size_t kStages = js8::OptionalWorkBudget::stages;
++
++    std::unique_ptr<::DecodeMode<::ModeA>> a;
++    std::unique_ptr<::DecodeMode<::ModeB>> b;
++    std::unique_ptr<::DecodeMode<::ModeC>> c;
++    std::unique_ptr<::DecodeMode<::ModeE>> e;
++    std::unique_ptr<::DecodeMode<::ModeI>> i;
++    std::unique_ptr<dec_data> data = std::make_unique<dec_data>();
++
++    // Learned cost of each submode's pass and of each optional stage, used to
++    // skip optional work when the next decode is due (order: I, E, C, B, A).
++    std::array<Duration, 5> mode_cost{};
++    std::array<std::array<Duration, kStages>, 5> stage_cost{};
++    std::array<bool, 5> mode_observed{};
++};
++
++} // namespace
++
++std::size_t improved_decode(DecodeState const &state,
++                            std::function<void(events::Variant const &)> emit_fn,
++                            std::chrono::steady_clock::time_point next_ready) {
++    static thread_local Decoders decoders;
++    auto &d = *decoders.data;
++
++    // Upstream's decode data: the sample ring and parameters.
++    std::size_t const n = std::min<std::size_t>(state.samples.size(), JS8_RX_SAMPLE_SIZE);
++    std::copy_n(state.samples.begin(), n, d.d2);
++    std::fill(d.d2 + n, d.d2 + JS8_RX_SAMPLE_SIZE, std::int16_t{0});
++    auto const &p = state.params;
++    d.params.nutc = p.utc;
++    d.params.nfqso = p.nfqso;
++    d.params.newdat = p.newdat;
++    d.params.nfa = p.nfa;
++    d.params.nfb = p.nfb;
++    d.params.syncStats = p.syncStats;
++    d.params.kin = p.kin;
++    d.params.kposA = p.kposA; d.params.kposB = p.kposB; d.params.kposC = p.kposC;
++    d.params.kposE = p.kposE; d.params.kposI = p.kposI;
++    d.params.kszA = p.kszA; d.params.kszB = p.kszB; d.params.kszC = p.kszC;
++    d.params.kszE = p.kszE; d.params.kszI = p.kszI;
++    d.params.nsubmodes = p.nsubmodes;
++
++    JS8::Event::Emitter emit = [&](JS8::Event::Variant const &event) {
++        if (emit_fn) emit_fn(convert(event));
++    };
++
++    // Deadline for optional work: none means "do everything".
++    js8::OptionalWorkSignal signal;
++    bool const bounded = next_ready != std::chrono::steady_clock::time_point{};
++    if (bounded) signal.nextReady(next_ready);
++
++    int const set = p.nsubmodes;
++    std::size_t total = 0;
++    emit(JS8::Event::DecodeStarted{set});
++
++    struct Entry { int bit; int kpos; int ksz; };
++    std::array<Entry, 5> const entries{{
++        {4, p.kposI, p.kszI}, {3, p.kposE, p.kszE}, {2, p.kposC, p.kszC},
++        {1, p.kposB, p.kszB}, {0, p.kposA, p.kszA}}};
++
++    for (std::size_t index = 0; index < entries.size(); ++index) {
++        auto const &entry = entries[index];
++        if ((set & (1 << entry.bit)) == 0) continue;
++
++        Decoders::Duration reserve{0};
++        bool unknown_mandatory = false;
++        for (std::size_t later = index + 1; later < entries.size(); ++later) {
++            if ((set & (1 << entries[later].bit)) == 0) continue;
++            if (!decoders.mode_observed[later]) unknown_mandatory = true;
++            else reserve += decoders.mode_cost[later];
++        }
++        js8::OptionalWorkBudget budget{bounded ? &signal : nullptr, reserve,
++                                       decoders.stage_cost[index], unknown_mandatory};
++        auto const started = js8::OptionalWorkBudget::Clock::now();
++
++        auto run = [&](auto &ptr) {
++            using Mode = typename std::remove_reference_t<decltype(ptr)>::element_type;
++            if (!ptr) ptr = std::make_unique<Mode>();
++            return (*ptr)(d, entry.kpos, entry.ksz, emit, &budget);
++        };
++        switch (entry.bit) {
++        case 4: total += run(decoders.i); break;
++        case 3: total += run(decoders.e); break;
++        case 2: total += run(decoders.c); break;
++        case 1: total += run(decoders.b); break;
++        default: total += run(decoders.a); break;
++        }
++
++        auto const took = std::chrono::duration_cast<Decoders::Duration>(
++            js8::OptionalWorkBudget::Clock::now() - started);
++        decoders.mode_cost[index] = std::max(decoders.mode_cost[index] * 9 / 10, took + took / 4);
++        decoders.mode_observed[index] = true;
++    }
++
++    emit(JS8::Event::DecodeFinished{total});
++    return total;
++}
++
++} // namespace js8core
+diff --git a/src/engine/engine.cpp b/src/engine/engine.cpp
+index b2f707e..84df91b 100644
+--- a/src/engine/engine.cpp
++++ b/src/engine/engine.cpp
+@@ -1660,15 +1660,16 @@ class Js8EngineImpl final : public Js8Engine {
+       if (callbacks_.on_log) {
+         char message[512];
+         std::snprintf(message, sizeof(message),
+-                      "Calling legacy_decode: nsubmodes=0x%x, freq_range=%d-%d Hz, "
++                      "Calling %s decoder: nsubmodes=0x%x, freq_range=%d-%d Hz, "
+                       "nfqso=%d Hz, sample_rate=%d, buffer_size=%zu, callback=%s",
++                      improved_decoder_enabled() ? "improved" : "legacy",
+                       task.params.nsubmodes, task.params.nfa, task.params.nfb,
+                       task.params.nfqso, config_.sample_rate_hz, task.samples.size(),
+                       callbacks_.on_event ? "SET" : "NULL");
+         log_info(message);
+       }
+ 
+-      std::size_t const count = legacy_decode(task, [this, &task, session = request.session](events::Variant const& event) {
++      std::size_t const count = run_decoder(task, [this, &task, session = request.session](events::Variant const& event) {
+         if (!running_.load(std::memory_order_acquire) ||
+             session != session_generation_.load(std::memory_order_acquire)) return;
+         if (auto const* decoded = std::get_if<events::Decoded>(&event)) {
+@@ -1684,7 +1685,7 @@ class Js8EngineImpl final : public Js8Engine {
+       if (callbacks_.on_log && running_.load(std::memory_order_acquire) &&
+           request.session == session_generation_.load(std::memory_order_acquire)) {
+         char message[256];
+-        std::snprintf(message, sizeof(message), "legacy_decode returned: %zu decodes",
++        std::snprintf(message, sizeof(message), "decoder returned: %zu decodes",
+                       count);
+         log_info(message);
+       }
+diff --git a/tools/decoder_compare.cpp b/tools/decoder_compare.cpp
+new file mode 100644
+index 0000000..81b404b
+--- /dev/null
++++ b/tools/decoder_compare.cpp
+@@ -0,0 +1,307 @@
++// Side-by-side test of js8core's legacy decoder and the JS8Call-improved
++// decoder on identical synthetic signals. Scenario design follows upstream's
++// tools/decoder_comparison_benchmark.cpp (JS8Call-improved, GPLv3).
++//
++//   js8core-decoder-compare [trials=40] [modes=ABCE]
++//
++// SNR is in the 2500 Hz reference bandwidth JS8 reports. Each trial runs in
++// a fresh thread so both decoders start with no history, except "repeat",
++// which sends the same frame in two successive periods inside one trial.
++
++#include <array>
++#include <chrono>
++#include <cmath>
++#include <complex>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <functional>
++#include <random>
++#include <string>
++#include <thread>
++#include <vector>
++
++#include "js8core/decoder.hpp"
++#include "js8core/protocol/constants.hpp"
++#include "js8core/protocol/costas.hpp"
++
++using namespace js8core;
++
++namespace {
++
++constexpr int kRate = 12000;
++constexpr int kSymbols = 79;
++constexpr double kPi = 3.14159265358979323846;
++
++struct TestMode {
++    char name;
++    int bit;
++    int nsps;
++    int seconds;
++    double start_s;
++    protocol::CostasType costas;
++    std::vector<double> snrs;
++};
++
++std::array<char const *, 6> const kMessages = {"TESTTEST1234", "TESTTEST1235", "AAAAAAAAAAAA",
++                                               "ZZZZZZZZZZZZ", "ABCDEFGH1234", "0123456789AB"};
++
++struct Station {
++    int message;
++    double freq;
++    double rel_db;       // power relative to the first station
++    double offset_sym;   // timing offset, symbols
++    double drift_hz_s;   // linear frequency drift
++};
++
++// Real FSK signal, phase-continuous, random start phase, plus white noise.
++std::vector<std::int16_t> synth(TestMode const &m, std::vector<Station> const &stations, double snr_db,
++                                std::uint32_t seed) {
++    std::vector<double> x(static_cast<std::size_t>(protocol::kJs8NtMax * kRate), 0.0);
++    double const sigma = 1000.0;
++    double const amp0 = std::sqrt(2.0 * sigma * sigma * (2500.0 / 6000.0) * std::pow(10.0, snr_db / 10.0));
++    double const baud = static_cast<double>(kRate) / m.nsps;
++    std::mt19937 rng(seed);
++    std::uniform_real_distribution<double> ph(-kPi, kPi);
++    for (auto const &s : stations) {
++        std::array<int, kSymbols> tones{};
++        legacy_encode(0, protocol::costas(m.costas), kMessages[static_cast<std::size_t>(s.message)], tones.data());
++        double const amp = amp0 * std::pow(10.0, s.rel_db / 20.0);
++        int const start = static_cast<int>(std::lround((m.start_s + s.offset_sym * m.nsps / kRate) * kRate));
++        double phase = ph(rng);
++        for (int k = 0; k < kSymbols; ++k) {
++            for (int n = 0; n < m.nsps; ++n) {
++                int const idx = start + k * m.nsps + n;
++                double const t = static_cast<double>(k * m.nsps + n) / kRate;
++                double const f = s.freq + tones[static_cast<std::size_t>(k)] * baud + s.drift_hz_s * t;
++                phase += 2.0 * kPi * f / kRate;
++                if (idx >= 0 && idx < m.seconds * kRate) x[static_cast<std::size_t>(idx)] += amp * std::cos(phase);
++            }
++        }
++    }
++    std::normal_distribution<double> noise(0.0, sigma);
++    std::vector<std::int16_t> out(x.size(), 0);
++    for (int i = 0; i < m.seconds * kRate; ++i) {
++        double const v = std::clamp(x[static_cast<std::size_t>(i)] + noise(rng), -32768.0, 32767.0);
++        out[static_cast<std::size_t>(i)] = static_cast<std::int16_t>(std::lround(v));
++    }
++    return out;
++}
++
++using DecodeFn = std::function<std::size_t(DecodeState const &, std::function<void(events::Variant const &)>)>;
++
++struct Outcome {
++    unsigned found_mask = 0;
++    int false_decodes = 0;
++    double ms = 0;
++};
++
++Outcome decode(DecodeFn const &fn, TestMode const &m, std::vector<std::int16_t> samples, unsigned expected) {
++    DecodeState st;
++    st.samples = std::move(samples);
++    st.params.nfqso = 1500;
++    st.params.nfa = 1000;
++    st.params.nfb = 2000;
++    st.params.nsubmodes = 1 << m.bit;
++    int const sz = m.seconds * kRate;
++    switch (m.bit) {
++    case 0: st.params.kszA = sz; break;
++    case 1: st.params.kszB = sz; break;
++    case 2: st.params.kszC = sz; break;
++    case 3: st.params.kszE = sz; break;
++    default: st.params.kszI = sz; break;
++    }
++    Outcome o;
++    auto const t0 = std::chrono::steady_clock::now();
++    fn(st, [&](events::Variant const &ev) {
++        if (auto const *d = std::get_if<events::Decoded>(&ev)) {
++            bool hit = false;
++            for (std::size_t i = 0; i < kMessages.size(); ++i) {
++                if (d->data == kMessages[i] && (expected & (1u << i))) { o.found_mask |= 1u << i; hit = true; }
++            }
++            if (!hit) ++o.false_decodes;
++        }
++    });
++    o.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
++    return o;
++}
++
++DecodeFn const kLegacy = [](DecodeState const &s, std::function<void(events::Variant const &)> e) {
++    return legacy_decode(s, std::move(e));
++};
++DecodeFn const kImproved = [](DecodeState const &s, std::function<void(events::Variant const &)> e) {
++    return improved_decode(s, std::move(e));
++};
++
++template <typename F> void in_fresh_thread(F f) { std::thread(f).join(); }
++
++struct Tally {
++    int found = 0, expected = 0, falses = 0;
++    double ms = 0;
++    int runs = 0;
++};
++
++void row(char const *label, Tally const &a, Tally const &b) {
++    std::printf("  %-28s legacy %3d/%-3d  improved %3d/%-3d  (false %d/%d, ms %.0f/%.0f)\n", label, a.found,
++                a.expected, b.found, b.expected, a.falses, b.falses, a.ms / std::max(1, a.runs),
++                b.ms / std::max(1, b.runs));
++    std::fflush(stdout);
++}
++
++int popcount(unsigned v) { return __builtin_popcount(v); }
++
++void scenario(char const *label, TestMode const &m, int trials, double snr,
++              std::function<std::vector<Station>(int trial)> make) {
++    Tally a, b;
++    for (int t = 0; t < trials; ++t) {
++        auto const stations = make(t);
++        unsigned expected = 0;
++        for (auto const &s : stations) expected |= 1u << s.message;
++        auto const samples = synth(m, stations, snr, 0x3722026u + 7919u * static_cast<unsigned>(t));
++        in_fresh_thread([&] {
++            auto o = decode(kLegacy, m, samples, expected);
++            a.found += popcount(o.found_mask); a.expected += popcount(expected); a.falses += o.false_decodes; a.ms += o.ms; ++a.runs;
++        });
++        in_fresh_thread([&] {
++            auto o = decode(kImproved, m, samples, expected);
++            b.found += popcount(o.found_mask); b.expected += popcount(expected); b.falses += o.false_decodes; b.ms += o.ms; ++b.runs;
++        });
++    }
++    row(label, a, b);
++}
++
++// The same frame in two successive periods; counts a decode in either.
++void repeat_scenario(TestMode const &m, int trials, double snr) {
++    Tally a, b;
++    for (int t = 0; t < trials; ++t) {
++        std::vector<Station> s{{t % 6, 1503.7 + (t % 7) * 13.1, 0, 0, 0}};
++        unsigned const expected = 1u << s[0].message;
++        auto const p1 = synth(m, s, snr, 0x51u + 31u * static_cast<unsigned>(t));
++        auto const p2 = synth(m, s, snr, 0x9e37u + 31u * static_cast<unsigned>(t));
++        for (int which = 0; which < 2; ++which) {
++            Tally &tl = which == 0 ? a : b;
++            DecodeFn const &fn = which == 0 ? kLegacy : kImproved;
++            in_fresh_thread([&] {
++                auto o1 = decode(fn, m, p1, expected);
++                auto o2 = decode(fn, m, p2, expected);
++                tl.found += popcount(o1.found_mask | o2.found_mask);
++                tl.expected += 1;
++                tl.falses += o1.false_decodes + o2.false_decodes;
++                tl.ms += o1.ms + o2.ms; tl.runs += 2;
++            });
++        }
++    }
++    char label[64];
++    std::snprintf(label, sizeof label, "repeat x2 @ %.0f dB", snr);
++    row(label, a, b);
++}
++
++} // namespace
++
++// 16-bit mono 12 kHz WAV (as in JS8Call-improved media/tests); mode from the
++// first letter of the file name. Prints what each decoder found.
++int wav_main(int argc, char **argv) {
++    int total_a = 0, total_b = 0;
++    for (int i = 1; i < argc; ++i) {
++        std::FILE *f = std::fopen(argv[i], "rb");
++        if (!f) { std::printf("cannot open %s\n", argv[i]); return 1; }
++        std::vector<char> bytes;
++        char buf[65536];
++        std::size_t got;
++        while ((got = std::fread(buf, 1, sizeof buf, f)) > 0) bytes.insert(bytes.end(), buf, buf + got);
++        std::fclose(f);
++        // Find the "data" chunk.
++        std::size_t pos = 12, data_at = 0, data_len = 0;
++        while (pos + 8 <= bytes.size()) {
++            std::uint32_t len = 0;
++            std::memcpy(&len, &bytes[pos + 4], 4);
++            if (std::memcmp(&bytes[pos], "data", 4) == 0) { data_at = pos + 8; data_len = len; break; }
++            pos += 8 + len + (len & 1);
++        }
++        data_len = std::min(data_len, bytes.size() - data_at);
++        std::vector<std::int16_t> samples(static_cast<std::size_t>(protocol::kJs8NtMax * kRate), 0);
++        std::size_t const n = std::min(samples.size(), data_len / 2);
++        std::memcpy(samples.data(), &bytes[data_at], n * 2);
++        std::string const name = argv[i];
++        char const mode_letter = name[name.find_last_of('/') == std::string::npos ? 0 : name.find_last_of('/') + 1];
++        TestMode m{'A', 0, 1920, 15, 0.5, protocol::CostasType::Original, {}};
++        if (mode_letter == 'E') m = TestMode{'E', 3, 3840, 30, 0.5, protocol::CostasType::Modified, {}};
++        if (mode_letter == 'B') m = TestMode{'B', 1, 1200, 10, 0.2, protocol::CostasType::Modified, {}};
++        if (mode_letter == 'C') m = TestMode{'C', 2, 600, 6, 0.1, protocol::CostasType::Modified, {}};
++        for (int which = 0; which < 2; ++which) {
++            std::vector<std::string> found;
++            double ms = 0;
++            in_fresh_thread([&] {
++                DecodeState st;
++                st.samples = samples;
++                st.params.nfqso = 1500; st.params.nfa = 200; st.params.nfb = 3000;
++                st.params.nsubmodes = 1 << m.bit;
++                int const sz = static_cast<int>(std::min<std::size_t>(n, static_cast<std::size_t>(m.seconds * kRate)));
++                if (m.bit == 0) st.params.kszA = sz; else if (m.bit == 1) st.params.kszB = sz;
++                else if (m.bit == 2) st.params.kszC = sz; else st.params.kszE = sz;
++                auto const t0 = std::chrono::steady_clock::now();
++                (which == 0 ? kLegacy : kImproved)(st, [&](events::Variant const &ev) {
++                    if (auto const *d = std::get_if<events::Decoded>(&ev)) {
++                        char line[96];
++                        std::snprintf(line, sizeof line, "%4.0f Hz %+3d dB %s", d->frequency, d->snr, d->data.c_str());
++                        found.push_back(line);
++                    }
++                });
++                ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
++            });
++            (which == 0 ? total_a : total_b) += static_cast<int>(found.size());
++            std::printf("%s %-9s %zu decodes, %.0f ms\n", name.substr(name.find_last_of('/') + 1).c_str(),
++                        which == 0 ? "legacy" : "improved", found.size(), ms);
++            for (auto const &l : found) std::printf("      %s\n", l.c_str());
++        }
++    }
++    std::printf("TOTAL legacy %d, improved %d\n", total_a, total_b);
++    return 0;
++}
++
++int main(int argc, char **argv) {
++    if (argc > 1 && std::string(argv[1]).find(".wav") != std::string::npos) return wav_main(argc, argv);
++    int const trials = argc > 1 ? std::atoi(argv[1]) : 40;
++    std::string const which = argc > 2 ? argv[2] : "ABCE";
++
++    std::vector<TestMode> const modes = {
++        {'A', 0, 1920, 15, 0.5, protocol::CostasType::Original, {-16, -18, -19, -20, -21, -22, -23}},
++        {'B', 1, 1200, 10, 0.2, protocol::CostasType::Modified, {-14, -16, -17, -18, -19, -20, -21}},
++        {'C', 2, 600, 6, 0.1, protocol::CostasType::Modified, {-11, -13, -14, -15, -16, -17, -18}},
++        {'E', 3, 3840, 30, 0.5, protocol::CostasType::Modified, {-19, -21, -22, -23, -24, -25, -26}},
++    };
++
++    for (auto const &m : modes) {
++        if (which.find(m.name) == std::string::npos) continue;
++        std::printf("Mode %c (%d trials per row)\n", m.name, trials);
++        for (double snr : m.snrs) {
++            char label[64];
++            std::snprintf(label, sizeof label, "single @ %.0f dB", snr);
++            scenario(label, m, trials, snr, [](int t) {
++                return std::vector<Station>{{t % 6, 1503.7 + (t % 7) * 13.1, 0, 0.0, 0}};
++            });
++        }
++        double const mid = m.snrs[m.snrs.size() / 2];
++        double const baud = static_cast<double>(kRate) / m.nsps;
++        char label[64];
++        std::snprintf(label, sizeof label, "drift 0.05 Hz/s @ %.0f dB", mid + 2);
++        scenario(label, m, trials, mid + 2, [](int t) {
++            return std::vector<Station>{{t % 6, 1503.7, 0, 0.0, 0.05}};
++        });
++        std::snprintf(label, sizeof label, "late 0.4 sym @ %.0f dB", mid + 2);
++        scenario(label, m, trials, mid + 2, [](int t) {
++            return std::vector<Station>{{t % 6, 1503.7, 0, 0.4, 0}};
++        });
++        std::snprintf(label, sizeof label, "2 stations 1.5 baud, -6 dB");
++        scenario(label, m, trials, m.snrs[0], [baud](int t) {
++            return std::vector<Station>{{t % 6, 1503.7, 0, 0.0, 0}, {(t + 1) % 6, 1503.7 + 1.5 * baud, -6, 0.03, 0}};
++        });
++        std::snprintf(label, sizeof label, "3 stations 1 baud apart");
++        scenario(label, m, trials, m.snrs[0], [baud](int t) {
++            return std::vector<Station>{{t % 6, 1503.7, 0, 0.0, 0}, {(t + 1) % 6, 1503.7 + baud, -3, 0.03, 0},
++                                        {(t + 2) % 6, 1503.7 + 2 * baud, -6, 0.06, 0}};
++        });
++        repeat_scenario(m, trials, m.snrs[m.snrs.size() - 2]);
++    }
++    return 0;
++}
+diff --git a/tools/js8i/sync_from_upstream.sh b/tools/js8i/sync_from_upstream.sh
+new file mode 100755
+index 0000000..6c713e4
+--- /dev/null
++++ b/tools/js8i/sync_from_upstream.sh
+@@ -0,0 +1,48 @@
++#!/usr/bin/env bash
++# Copy the JS8Call-improved decoder into core/vendor/js8call-improved.
++#
++#   tools/js8i/sync_from_upstream.sh /path/to/JS8Call-improved
++#
++# Files are copied unchanged, with one exception: JS8.cpp loses its Qt thread
++# wrapper (the "Worker" and "Public Interface - Decoding" sections, which need
++# QObject/moc). Everything the decoder itself needs is kept. Qt logging, FFTW
++# and the few Boost helpers are supplied by small stand-ins in
++# src/decoder/improved/compat/. The upstream commit is recorded in UPSTREAM.md.
++set -euo pipefail
++src="${1:?path to a JS8Call-improved checkout}"
++here="$(cd "$(dirname "$0")/../.." && pwd)"
++dst="$here/vendor/js8call-improved"
++rm -rf "$dst"; mkdir -p "$dst/JS8_Mode"
++
++headers=(bp_math.h coherent_likelihood.h decoder_aided_redemod.h FrequencyTracker.h
++         ldpc_feedback.h optional_work.h sic_refinement.h soft_combiner.h whitening_processor.h)
++for h in "${headers[@]}" FrequencyTracker.cpp; do cp "$src/JS8_Mode/$h" "$dst/JS8_Mode/$h"; done
++
++# Drop from the "Worker" banner up to (not including) the "Public Interface - Encoding" banner.
++awk '
++  /^\/\*+\/$/ { banner = $0; getline title;
++                if (title ~ /^\/\/ Worker$/) { skipping = 1 }
++                if (title ~ /^\/\/ Public Interface - Encoding$/) { skipping = 0 }
++                if (!skipping) { print banner; print title }
++                next }
++  !skipping { print }
++' "$src/JS8_Mode/JS8.cpp" > "$dst/JS8_Mode/JS8.cpp"
++grep -q "class Worker" "$dst/JS8_Mode/JS8.cpp" && { echo "cut failed: Worker still present" >&2; exit 1; }
++grep -q "^void encode(int const type" "$dst/JS8_Mode/JS8.cpp" || { echo "cut failed: encode() missing" >&2; exit 1; }
++
++cp "$src/LICENSE" "$dst/LICENSE"
++rev="$(git -C "$src" rev-parse HEAD 2>/dev/null || echo unknown)"
++date="$(git -C "$src" log -1 --format=%cd --date=short 2>/dev/null || echo unknown)"
++cat > "$dst/UPSTREAM.md" <<MD
++# JS8Call-improved decoder (vendored)
++
++Source: https://github.com/JS8Call-improved/JS8Call-improved
++Commit: $rev ($date)
++License: GPLv3 (see LICENSE), the same as this project.
++
++Copied by \`core/tools/js8i/sync_from_upstream.sh\`. Files are unchanged, except
++that \`JS8_Mode/JS8.cpp\` has its Qt thread wrapper removed (sections "Worker"
++and "Public Interface - Decoding"). Do not edit these files by hand: change the
++stand-ins in \`core/src/decoder/improved/compat/\` or re-run the script.
++MD
++echo "Synced $rev into $dst"
