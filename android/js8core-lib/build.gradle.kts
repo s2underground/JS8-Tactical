@@ -9,7 +9,8 @@ val eigenIncludeDir = rootProject.projectDir.parentFile.resolve("vendor")
 
 android {
     namespace = "com.js8call.core"
-    compileSdk = 34
+    compileSdk = 36
+    ndkVersion = "26.1.10909125"
 
     defaultConfig {
         minSdk = 26  // Android 8.0 (required for Oboe)
@@ -98,9 +99,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
     // Package native libraries
     packaging {
@@ -140,4 +138,10 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }

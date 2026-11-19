@@ -9,7 +9,8 @@ plugins {
 
 android {
     namespace = "com.js8call.example"
-    compileSdk = 34
+    compileSdk = 36
+    ndkVersion = "26.1.10909125"
 
     defaultConfig {
         applicationId = "com.s2underground.js8tactical"
@@ -76,9 +77,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
     buildFeatures {
         viewBinding = true
@@ -108,7 +106,8 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
 
     // Map tab: MapLibre Native (BSD-2), vector maps, works offline with local tiles
-    implementation("org.maplibre.gl:android-sdk:11.8.0")
+    // OpenGL ES backend (13.x defaults to Vulkan); 13.1+ fixes the HeatmapLayer crash (#4217).
+    implementation("org.maplibre.gl:android-sdk-opengl:13.7.1")
 
     // Material Design
     implementation("com.google.android.material:material:1.11.0")
@@ -120,13 +119,19 @@ dependencies {
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
 
     // Room Database
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.room:room-runtime:2.7.2")
+    implementation("androidx.room:room-ktx:2.7.2")
+    ksp("androidx.room:room-compiler:2.7.2")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }

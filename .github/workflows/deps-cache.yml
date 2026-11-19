@@ -45,7 +45,7 @@ jobs:
           done
           test -n "${SDKMANAGER}"
           yes | "${SDKMANAGER}" --licenses > /dev/null
-          "${SDKMANAGER}" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;${ANDROID_NDK_VERSION}" "cmake;3.22.1"
+          "${SDKMANAGER}" --install "platform-tools" "platforms;android-34" "platforms;android-36" "build-tools;34.0.0" "build-tools;35.0.0" "ndk;${ANDROID_NDK_VERSION}" "cmake;3.22.1"
           echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
 
@@ -56,21 +56,32 @@ jobs:
           ./android/hamlib/build-hamlib-android.sh
 
       - name: Build and test (fills the Gradle cache)
+        id: build
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug test lint || ./gradlew --no-daemon assembleDebug test
+          set +e
+          ./gradlew --no-daemon --continue assembleDebug test 2>&1 | tee ../build-log.txt
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          # Make sure lint dependencies are cached too (not fatal).
+          ./gradlew --no-daemon lintDebug > /dev/null 2>&1 || true
 
       - name: Package cache
+        if: always()
         run: |
           tar -C "$HOME/.gradle" -cf - caches/modules-2 wrapper/dists | zstd -T0 -10 -o gradle-cache.tar.zst
           tar -C android -cf - libs/hamlib | zstd -T0 -10 -o hamlib-libs.tar.zst
           ls -la *.tar.zst
 
       - name: Publish release asset
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view build-cache >/dev/null 2>&1 || gh release create build-cache --prerelease --title "Build cache (dev only)" --notes "Gradle dependency cache and prebuilt Hamlib for offline development builds. Not an app release."
-          gh release upload build-cache gradle-cache.tar.zst hamlib-libs.tar.zst --clobber
+          gh release upload build-cache gradle-cache.tar.zst hamlib-libs.tar.zst build-log.txt --clobber
           gh release edit build-cache --notes "Gradle dependency cache and prebuilt Hamlib for offline development builds. Not an app release. Commit ${GITHUB_SHA::8}, built $(date -u +%Y-%m-%dT%H:%MZ)."
+
+      - name: Fail if the build failed
+        if: steps.build.outputs.status != '0'
+        run: exit 1
