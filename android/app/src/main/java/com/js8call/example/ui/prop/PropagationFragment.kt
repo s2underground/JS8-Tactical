@@ -132,7 +132,7 @@ class PropagationFragment : Fragment() {
                 addOverlay(st)
                 render()
             }
-            m.addOnMapClickListener { latLng -> onTap(latLng); true }
+            m.addOnMapClickListener { latLng -> guarded("Prop tap") { onTap(latLng) }; true }
             m.addOnCameraIdleListener { renderDetail() }
         }
 
@@ -298,7 +298,7 @@ class PropagationFragment : Fragment() {
 
         // Cheap layers straight away: night side, terminator, my marker.
         val st = style
-        if (st != null) {
+        if (st != null) guarded("Prop layers") {
             val line = PropagationModel.terminator(t)
             (st.getSource(S_TERMINATOR) as? GeoJsonSource)?.setGeoJson(
                 Feature.fromGeometry(LineString.fromLngLats(line.map { Point.fromLngLat(it.lon, it.lat) })),
@@ -326,8 +326,8 @@ class PropagationFragment : Fragment() {
             all.forEach { o -> m[o.call] = o.grid ?: traffic.gridFor(o.call); o.by?.let { b -> m[b] = traffic.gridFor(b) } }
         }
         val gridFor: (String) -> String? = { grids[it] }
-        worker.execute {
-            if (gen != generation) return@execute
+        submit(worker, "Prop render") {
+            if (gen != generation) return@submit
             val key = "${all.size}|${listening.size}|$profile|$me"
             val cached = learned
             val p = if (cached != null && cached.first == key && now - learnedAtMs < 5 * 60_000L) {
@@ -354,8 +354,8 @@ class PropagationFragment : Fragment() {
             }
             val grid = p.coverage(band, t, GRID_W, GRID_H, MAX_LAT, -MAX_LAT, -180.0, 180.0)
             val bitmap = grid?.let { toBitmap(it, GRID_W, GRID_H) }
-            if (gen != generation) return@execute
-            main.post { if (gen == generation) deliver(heard, heardMe, net, rows, bitmap, t, p, listenedHours) }
+            if (gen != generation) return@submit
+            main.post { if (gen == generation) guarded("Prop deliver") { deliver(heard, heardMe, net, rows, bitmap, t, p, listenedHours) } }
         }
     }
 
@@ -402,36 +402,41 @@ class PropagationFragment : Fragment() {
     }
 
     /** Sharper heatmap for the area on screen once zoomed in past a whole-world view. */
-    private fun renderDetail() {
-        val m = map ?: return
-        val st = style ?: return
-        val p = predictor ?: return
-        val showPredicted = view?.findViewById<Chip>(R.id.prop_show_predicted)?.isChecked != false
+    private fun renderDetail() = guarded("Prop detail") {
+        val m = map ?: return@guarded
+        val st = style ?: return@guarded
+        val p = predictor ?: return@guarded
+        val v = view ?: return@guarded
+        if (v.width == 0 || v.height == 0) return@guarded
+        val showPredicted = v.findViewById<Chip>(R.id.prop_show_predicted)?.isChecked != false
         val bounds = m.projection.visibleRegion.latLngBounds
         val north = bounds.latitudeNorth.coerceIn(-MAX_LAT, MAX_LAT)
         val south = bounds.latitudeSouth.coerceIn(-MAX_LAT, MAX_LAT)
         val west = bounds.longitudeWest
         val east = bounds.longitudeEast
         val layer = st.getLayer(L_DETAIL)
-        if (!showPredicted || m.cameraPosition.zoom < 2.6 || east <= west || east - west > 200 || north <= south) {
+        val sane = listOf(north, south, west, east).all { it.isFinite() }
+        if (!sane || !showPredicted || m.cameraPosition.zoom < 2.6 || east <= west || east - west > 200 || north <= south) {
             layer?.setProperties(PropertyFactory.visibility(Property.NONE))
-            return
+            return@guarded
         }
         val gen = ++detailGeneration
         val band = this.band
         val t = selectedTime()
-        detailWorker.execute {
-            if (gen != detailGeneration) return@execute
-            val grid = p.coverage(band, t, DETAIL_W, DETAIL_H, north, south, west, east) ?: return@execute
+        submit(detailWorker, "Prop detail") {
+            if (gen != detailGeneration) return@submit
+            val grid = p.coverage(band, t, DETAIL_W, DETAIL_H, north, south, west, east) ?: return@submit
             val bmp = toBitmap(grid, DETAIL_W, DETAIL_H)
             main.post {
-                if (gen != detailGeneration) return@post
+                if (gen != detailGeneration || view == null) return@post
                 val s = style ?: return@post
-                (s.getSource(S_DETAIL) as? ImageSource)?.apply {
-                    setCoordinates(LatLngQuad(LatLng(north, west), LatLng(north, east), LatLng(south, east), LatLng(south, west)))
-                    setImage(bmp)
+                guarded("Prop detail draw") {
+                    (s.getSource(S_DETAIL) as? ImageSource)?.apply {
+                        setCoordinates(LatLngQuad(LatLng(north, west), LatLng(north, east), LatLng(south, east), LatLng(south, west)))
+                        setImage(bmp)
+                    }
+                    s.getLayer(L_DETAIL)?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
                 }
-                s.getLayer(L_DETAIL)?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
             }
         }
     }
@@ -666,6 +671,35 @@ class PropagationFragment : Fragment() {
     }
 
     // ------------------------------------------------------------- helpers
+
+    /** Run [block] on [pool]; an error is recorded for the error report instead of closing the app. */
+    private fun submit(pool: java.util.concurrent.ExecutorService, where: String, block: () -> Unit) {
+        try {
+            pool.execute {
+                try { block() } catch (e: Throwable) { reportError(where, e) }
+            }
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            // Tab is closing; nothing to draw.
+        }
+    }
+
+    private inline fun guarded(where: String, block: () -> Unit) {
+        try { block() } catch (e: Exception) { reportError(where, e) }
+    }
+
+    private fun reportError(where: String, e: Throwable) {
+        if (e is OutOfMemoryError) System.gc()
+        com.js8call.example.CrashReporter.recordNonFatal(where, e)
+        main.post {
+            val v = view ?: return@post
+            if (!errorShown) {
+                errorShown = true
+                Snackbar.make(v, R.string.prop_error_saved, Snackbar.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private var errorShown = false
 
     private fun fmtHours(h: Float) = if (h % 1f == 0f) h.toInt().toString() else String.format(Locale.US, "%.1f", h)
     private fun fmtK(k: Double) = if (k % 1.0 == 0.0) k.toInt().toString() else String.format(Locale.US, "%.1f", k)

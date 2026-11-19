@@ -422,4 +422,10 @@
     <string name="prop_station_reset_yes">Delete log</string>
     <string name="prop_solar_share">Share over the air</string>
     <string name="prop_solar_body2">Current: SFI %1$d, K %2$s (%3$s). Saved NOAA outlook covers %4$d more days.\n\nThese numbers matter less than you might think: on real reception data, month-old values cost under 1%% accuracy. Off-grid, the app uses the saved outlook, then the value from 27 days earlier. You can enter numbers heard on WWV (18 min past the hour) or a net, or share yours with the net as a #SWX line.</string>
+    <string name="prop_error_saved">The Prop tab hit an error and recovered. A report was saved; it will be offered next time the app opens.</string>
+    <string name="crash_title">Error report</string>
+    <string name="crash_body">The app ran into a problem last time. You can share this report with the developer; it contains no messages or locations, just what failed and where.</string>
+    <string name="crash_share">Share</string>
+    <string name="crash_copy">Copy</string>
+    <string name="crash_dismiss">Dismiss</string>
 </resources>

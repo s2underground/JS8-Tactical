@@ -187,8 +187,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        CrashReporter.install(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        if (savedInstanceState == null) CrashReporter.showIfPending(this)
 
         // Set up bottom navigation
         bottomNav = findViewById(R.id.bottom_navigation)
