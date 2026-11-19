@@ -55,7 +55,6 @@ import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.FillLayer
-import org.maplibre.android.style.layers.HeatmapLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
@@ -212,18 +211,14 @@ class PropagationFragment : Fragment() {
             PropertyFactory.lineWidth(1.2f),
             PropertyFactory.lineOpacity(Expression.get("o")),
         ))
-        st.addLayer(HeatmapLayer(L_HEARD_HEAT, S_HEARD).withProperties(
-            PropertyFactory.heatmapWeight(Expression.get("w")),
-            PropertyFactory.heatmapIntensity(Expression.interpolate(Expression.linear(), Expression.zoom(),
-                Expression.stop(0, 0.8f), Expression.stop(6, 1.6f))),
-            PropertyFactory.heatmapRadius(Expression.interpolate(Expression.linear(), Expression.zoom(),
-                Expression.stop(0, 14f), Expression.stop(3, 26f), Expression.stop(7, 48f))),
-            PropertyFactory.heatmapOpacity(0.85f),
-            PropertyFactory.heatmapColor(Expression.interpolate(Expression.linear(), Expression.heatmapDensity(),
-                Expression.stop(0, Expression.rgba(79, 195, 247, 0)),
-                Expression.stop(0.25, Expression.rgba(79, 195, 247, 0.45)),
-                Expression.stop(0.6, Expression.rgba(127, 211, 250, 0.75)),
-                Expression.stop(1, Expression.rgba(230, 247, 255, 0.95)))),
+        // Soft glow for stations heard. Deliberately not a HeatmapLayer: MapLibre 11.8 crashes in
+        // RenderHeatmapLayer::update -> RenderLayer::updateTile (fixed upstream in android-v13.1.0, #4217).
+        st.addLayer(CircleLayer(L_HEARD_HEAT, S_HEARD).withProperties(
+            PropertyFactory.circleRadius(Expression.interpolate(Expression.linear(), Expression.zoom(),
+                Expression.stop(0, 12f), Expression.stop(3, 22f), Expression.stop(7, 44f))),
+            PropertyFactory.circleBlur(1f),
+            PropertyFactory.circleColor("#7FD3FA"),
+            PropertyFactory.circleOpacity(Expression.min(Expression.literal(0.75), Expression.product(Expression.get("w"), Expression.literal(0.55)))),
         ))
         st.addLayer(CircleLayer(L_HEARD_DOTS, S_HEARD).withProperties(
             PropertyFactory.circleRadius(4f),
