@@ -62,6 +62,8 @@ object CalcViews {
             )
         }
         "feedline" -> feedline(ctx, defaultBand)
+        "airtime" -> airtime(ctx)
+        "rf" -> rf(ctx, defaultBand)
         "swr" -> swr(ctx)
         else -> TextView(ctx).apply { text = "Calculator \"$id\"" }
     }
@@ -171,6 +173,75 @@ object CalcViews {
             addView(labeled(ctx, "Length, feet", length))
             addView(labeled(ctx, "Radio power, watts", power))
         })
+        card.addView(result)
+        show()
+        return card
+    }
+
+    /** How long a message takes at each speed, framed exactly as the radio would send it. */
+    private fun airtime(ctx: Context): View {
+        val card = card(ctx, "How long will my message take?")
+        val result = resultView(ctx)
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
+        val myCall = prefs.getString("callsign", "").orEmpty().ifBlank { "N0CALL" }
+        val myGrid = prefs.getString("grid", "").orEmpty()
+        val msg = EditText(ctx).apply {
+            setText("W1AW MEET AT THE RIVER BRIDGE AT 1800")
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            textSize = 14f
+            setTextColor(0xFFE6EAF0.toInt())
+        }
+        fun show() {
+            val text = msg.text.toString().trim().uppercase()
+            if (text.isEmpty()) { result.text = "Type a message."; return }
+            val lines = Calculators.Speed.entries.map { sp ->
+                val frames = try {
+                    com.js8call.core.JS8Engine.countFrames(myCall, myGrid, "", text, sp.submode)
+                } catch (_: Throwable) { -1 }
+                if (frames > 0) "• ${sp.label}: $frames frame${if (frames == 1) "" else "s"}, about ${Calculators.duration(Calculators.airtimeSeconds(frames, sp))}"
+                else "• ${sp.label}: can't count here"
+            }
+            result.text = "Sent from $myCall:\n" + lines.joinToString("\n") +
+                "\nShorter words and fewer characters mean fewer frames. Your callsign and the recipient's take space in the first frame."
+        }
+        msg.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) = show()
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+        card.addView(labeled(ctx, "Message (as you would type it, e.g. \"W1AW HELLO\")", msg))
+        card.addView(result)
+        show()
+        return card
+    }
+
+    /** Dial frequency + audio offset = where the signal really is. */
+    private fun rf(ctx: Context, defaultBand: Band?): View {
+        val card = card(ctx, "Where is a signal on the band?")
+        val result = resultView(ctx)
+        var band = defaultBand ?: Band.B40
+        val offset = number(ctx, "Offset (Hz)", "1500")
+        fun show() {
+            val off = offset.text.toString().toDoubleOrNull()
+            if (off == null || off < 0 || off > 3500) { result.text = "Enter an offset between 0 and 3,000 Hz."; return }
+            val rf = Calculators.rfMHz(band.mhz, off)
+            val area = when {
+                off < 500 -> "below the usual JS8 area"
+                off < 1000 -> "the heartbeat area (500–1,000 Hz)"
+                off <= 2500 -> "the traffic area (1,000–2,500 Hz)"
+                else -> "above the usual traffic area"
+            }
+            result.text = String.format(Locale.US, "• Dial %.3f MHz + %.0f Hz = %.6f MHz on the air\n• That offset is in %s.", band.mhz, off, rf, area)
+        }
+        val chips = ChipGroup(ctx).apply { isSingleSelection = true; isSingleLine = true }
+        BANDS.forEach { b -> chips.addView(Chip(ctx).apply { text = b.label; isCheckable = true; isChecked = b == band; setOnClickListener { band = b; show() } }) }
+        offset.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) = show()
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+        card.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(chips) })
+        card.addView(labeled(ctx, "Audio offset on the waterfall, Hz", offset))
         card.addView(result)
         show()
         return card

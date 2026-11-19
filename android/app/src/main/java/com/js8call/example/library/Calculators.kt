@@ -77,6 +77,20 @@ object Calculators {
         return FeedlineResult(db, out, 100.0 * (1 - out / powerInW))
     }
 
+    /** JS8 speeds: name, seconds per frame (one frame per time slot), submode number for the engine. */
+    enum class Speed(val label: String, val periodS: Int, val submode: Int, val bandwidthHz: Int, val limitDb: Int) {
+        SLOW("Slow", 30, 4, 25, -28), NORMAL("Normal", 15, 0, 50, -24), FAST("Fast", 10, 1, 80, -20), TURBO("Turbo", 6, 2, 160, -18)
+    }
+
+    /** On-air time for a message of [frames] frames: each frame takes one whole time slot. */
+    fun airtimeSeconds(frames: Int, speed: Speed): Int = frames * speed.periodS
+
+    /** "1 min 15 s", "45 s" */
+    fun duration(seconds: Int): String = if (seconds >= 60) "${seconds / 60} min ${seconds % 60} s" else "$seconds s"
+
+    /** Where a JS8 signal actually is on the radio: dial frequency plus audio offset. */
+    fun rfMHz(dialMHz: Double, offsetHz: Double) = dialMHz + offsetHz / 1_000_000.0
+
     /** "33.1 ft (10.1 m)" */
     fun ftAndM(ft: Double): String = String.format(java.util.Locale.US, "%.1f ft (%.2f m)", ft, ft / FT_PER_M)
 

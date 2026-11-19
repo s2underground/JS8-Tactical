@@ -7,7 +7,7 @@ object Library {
     @Volatile private var cache: List<GuideText.Guide>? = null
 
     /** Sections in display order; anything else goes last. */
-    val SECTIONS = listOf("Start here", "Antennas", "Operating", "Tools")
+    val SECTIONS = listOf("Start here", "JS8 from zero", "Antennas", "Operating", "Tools")
 
     fun all(ctx: Context): List<GuideText.Guide> {
         cache?.let { return it }

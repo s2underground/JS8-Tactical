@@ -66,5 +66,6 @@ On the **Radio** tab, switch **Monitoring** on. The waterfall shows the audio fr
 
 > NOTE: You chose "listen", so the message box and report buttons are hidden on the Traffic tab. Tap the "Listening only" line there, or change "I am a…" in Settings, to show them.
 
+[[guide:js8-01-radio|New to radio? Start the "JS8 from zero" series]]
 [[guide:antenna-basics|Better reception starts with the antenna: Antenna basics]]
 [[guide:antenna-field|Quick antennas from wire and paracord]]

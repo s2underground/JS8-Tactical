@@ -102,4 +102,20 @@ class LibraryTest {
         assertEquals(72.4, r.powerOutW, 0.1)
         assertEquals("66.1 ft (20.15 m)", Calculators.ftAndM(66.12))
     }
+
+    @Test
+    fun js8TimingAndOffsets() {
+        // Each frame takes a whole slot.
+        assertEquals(45, Calculators.airtimeSeconds(3, Calculators.Speed.NORMAL))
+        assertEquals(90, Calculators.airtimeSeconds(3, Calculators.Speed.SLOW))
+        assertEquals(18, Calculators.airtimeSeconds(3, Calculators.Speed.TURBO))
+        assertEquals("1 min 15 s", Calculators.duration(75))
+        assertEquals("45 s", Calculators.duration(45))
+        // Speeds match the JS8Call table and the engine's submode numbers.
+        assertEquals(listOf(30, 15, 10, 6), Calculators.Speed.entries.map { it.periodS })
+        assertEquals(listOf(4, 0, 1, 2), Calculators.Speed.entries.map { it.submode })
+        assertEquals(listOf(-28, -24, -20, -18), Calculators.Speed.entries.map { it.limitDb })
+        // Dial + offset.
+        assertEquals(7.0795, Calculators.rfMHz(7.078, 1500.0), 1e-9)
+    }
 }

@@ -6,6 +6,10 @@ order: 20
 ---
 This guide takes you from "I have a radio" to "I sent a message and someone heard it". Work through it in order; each step links to the part of the app it talks about.
 
+If radio is new to you, read the "JS8 from zero" series first; this guide assumes you know what a band, a dial frequency and a time slot are.
+
+[[guide:js8-01-radio|JS8 from zero: radio in plain words]]
+
 # What you need
 - **An HF transceiver** that does USB (upper sideband). Almost all do.
 - **An antenna** for the band you'll use, and the coax (feedline) to reach it. If you don't have one yet, the antenna guides show you how to build one from wire.

@@ -97,7 +97,8 @@ class LibraryFragment : Fragment() {
                 letterSpacing = 0.08f
                 setPadding(dp(4), dp(14), 0, dp(6))
             })
-            items.forEach { list.addView(card(it, highlight = it.meta.id == start)) }
+            // The chosen role's Start-here guide goes first in its section.
+            items.sortedBy { if (it.meta.id == start) 0 else 1 }.forEach { list.addView(card(it, highlight = it.meta.id == start)) }
         }
         if (query.isBlank()) {
             list.addView(text("REFERENCE MANUALS", 12f, color(R.color.tac_text_dim), bold = true).apply {

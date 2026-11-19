@@ -16,7 +16,7 @@ A small bag that turns any trees into a working station:
 - A printout of your lengths in case the tablet is busy.
 
 # Getting a line into a tree
-[[diagram:throw-line|Throw the weight and light line over a branch, then use it to pull up the paracord, then the antenna.]]
+[[diagram:throw-line|Three steps: throw the weighted light line over a branch, use it to pull paracord over, then haul the antenna up with the paracord.]]
 
 1. Pick a branch that's high, strong and clear of power lines (look up first).
 2. Lay the throw line out on the ground in loose loops so it can pay out without tangling.

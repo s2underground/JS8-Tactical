@@ -25,8 +25,11 @@ package com.js8call.example.library
 object GuideText {
 
     /** What guides may embed; the test checks every bundled guide against these. */
-    val DIAGRAMS = setOf("wave", "dipole-current", "nvis", "skywave", "dipole-pattern", "inverted-v", "efhw", "vertical", "choke", "throw-line")
-    val CALCS = setOf("dipole", "efhw", "vertical", "nvis", "wavelength", "feedline", "swr")
+    val DIAGRAMS = setOf(
+        "wave", "dipole-current", "nvis", "skywave", "dipole-pattern", "inverted-v", "efhw", "vertical", "choke", "throw-line",
+        "passband", "waterfall", "timeslots", "frames", "line-of-sight",
+    )
+    val CALCS = setOf("dipole", "efhw", "vertical", "nvis", "wavelength", "feedline", "swr", "airtime", "rf")
     val APP_TARGETS = setOf("traffic", "team", "map", "prop", "radio", "digest", "settings", "library")
 
     data class Meta(val id: String, val title: String, val summary: String, val section: String, val order: Int)

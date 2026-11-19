@@ -40,7 +40,7 @@ class DiagramView(context: Context, private val diagram: String) : View(context)
     private val small = Paint(text).apply { color = dim; textSize = 11f * d }
     private val path = Path()
 
-    private val animated = diagram in setOf("wave", "dipole-current", "nvis", "skywave")
+    private val animated = diagram in setOf("wave", "dipole-current", "nvis", "skywave", "waterfall")
     private val reduceMotion: Boolean =
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
 
@@ -51,7 +51,8 @@ class DiagramView(context: Context, private val diagram: String) : View(context)
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val h = (w * 0.52f).toInt().coerceIn((150 * d).toInt(), (300 * d).toInt())
+        val ratio = when (diagram) { "throw-line" -> 0.62f; "waterfall" -> 0.6f; "frames" -> 0.45f; else -> 0.52f }
+        val h = (w * ratio).toInt().coerceIn((160 * d).toInt(), (340 * d).toInt())
         setMeasuredDimension(w, h)
     }
 
@@ -71,6 +72,11 @@ class DiagramView(context: Context, private val diagram: String) : View(context)
             "vertical" -> vertical(c, w, h)
             "choke" -> choke(c, w, h)
             "throw-line" -> throwLine(c, w, h)
+            "passband" -> passband(c, w, h)
+            "waterfall" -> waterfall(c, w, h)
+            "timeslots" -> timeslots(c, w, h)
+            "frames" -> frames(c, w, h)
+            "line-of-sight" -> lineOfSight(c, w, h)
             else -> c.drawText("Diagram \"$diagram\"", 12 * d, 24 * d, small)
         }
         if (animated && !reduceMotion && isShown) postInvalidateDelayed(33)
@@ -256,21 +262,194 @@ class DiagramView(context: Context, private val diagram: String) : View(context)
         center(c, "stops RF coming back down the outside of the coax", w / 2, cy + h * 0.42f, small)
     }
 
+    /** Three steps: throw a weighted line over a branch, pull paracord over, haul the antenna up. */
     private fun throwLine(c: Canvas, w: Float, h: Float) {
-        val gy = h * 0.88f
-        groundLine(c, w, gy)
-        val tx = w * 0.6f
-        c.drawLine(tx, gy, tx, h * 0.25f, line.apply { color = ground; strokeWidth = 7 * d }); line.color = ink; line.strokeWidth = 2.5f * d
-        c.drawLine(tx, h * 0.3f, tx + w * 0.15f, h * 0.18f, line.apply { color = ground; strokeWidth = 4 * d }); line.color = ink; line.strokeWidth = 2.5f * d
-        // Arc of the throw.
-        path.reset(); path.moveTo(w * 0.15f, gy - 30 * d); path.quadTo(w * 0.45f, h * 0.0f, tx + w * 0.1f, h * 0.22f)
-        c.drawPath(path, dash)
-        path.reset(); path.moveTo(tx + w * 0.1f, h * 0.22f); path.lineTo(tx + w * 0.14f, gy - 6 * d)
-        c.drawPath(path, line.apply { color = accent }); line.color = ink
-        c.drawCircle(tx + w * 0.14f, gy - 10 * d, 5 * d, fill.apply { color = accent }); fill.color = ink
-        c.drawText("throw weight + light line over a branch", 10 * d, 16 * d, small)
-        c.drawText("then pull up paracord, then the antenna", 10 * d, 30 * d, small)
-        c.drawText("stand clear; never near power lines", 10 * d, gy - 8 * d, small.apply { color = red }); small.color = dim
+        val pw = w / 3f
+        val gy = h * 0.82f
+        val titles = listOf("1. Throw the weight", "2. Pull paracord over", "3. Haul up the antenna")
+        for (k in 0..2) {
+            val px = k * pw
+            // Panel frame and title.
+            if (k > 0) c.drawLine(px, 6 * d, px, h - 6 * d, Paint(thin).apply { color = 0xFF2A313B.toInt() })
+            center(c, titles[k], px + pw / 2, 16 * d, text.apply { color = accent }); text.color = ink
+            c.drawLine(px + 4 * d, gy, px + pw - 4 * d, gy, Paint(line).apply { color = ground; strokeWidth = 3 * d })
+            // Tree: trunk, a branch reaching left, some foliage.
+            val tx = px + pw * 0.78f; val by = h * 0.3f; val bx = px + pw * 0.5f
+            c.drawLine(tx, gy, tx, h * 0.14f, Paint(line).apply { color = ground; strokeWidth = 7 * d })
+            c.drawLine(tx, by + 14 * d, bx, by, Paint(line).apply { color = ground; strokeWidth = 4 * d })
+            c.drawCircle(tx, h * 0.17f, pw * 0.14f, Paint(fill).apply { color = 0x553F7D4F })
+            c.drawCircle(bx + 6 * d, by - 8 * d, pw * 0.09f, Paint(fill).apply { color = 0x553F7D4F })
+            // Person.
+            val fx = px + pw * 0.14f
+            person(c, fx, gy, k == 0)
+            val handX = fx + 9 * d; val handY = gy - 30 * d
+            val over = bx + 10 * d // where lines cross the branch
+            when (k) {
+                0 -> {
+                    // Thrown arc to just past the branch; weight falling on the far side.
+                    path.reset(); path.moveTo(handX, handY); path.quadTo((handX + over) / 2, by - h * 0.32f, over, by - 2 * d)
+                    c.drawPath(path, dash)
+                    c.drawLine(over, by - 2 * d, over + 4 * d, by + h * 0.22f, Paint(dash).apply { color = accent })
+                    c.drawCircle(over + 4 * d, by + h * 0.22f, 5 * d, Paint(fill).apply { color = accent })
+                    c.drawText("throw bag", over - 6 * d - small.measureText("throw bag"), by + h * 0.22f + 4 * d, small)
+                    c.drawText("light line", (handX + over) / 2 - 46 * d, by - h * 0.06f, small)
+                }
+                1 -> {
+                    // Light line over the branch; paracord (orange) tied on and being pulled up.
+                    val thin2 = Paint(line).apply { color = ink; strokeWidth = 1.4f * d }
+                    c.drawLine(handX, handY, over, by - 2 * d, thin2)
+                    c.drawLine(over, by - 2 * d, over + 2 * d, by + h * 0.3f, thin2)
+                    val cord = Paint(line).apply { color = 0xFFE07A2E.toInt(); strokeWidth = 3 * d }
+                    c.drawLine(over + 2 * d, by + h * 0.3f, over + 6 * d, gy - 2 * d, cord)
+                    c.drawCircle(over + 2 * d, by + h * 0.3f, 3 * d, Paint(fill).apply { color = 0xFFE07A2E.toInt() })
+                    c.drawText("knot", over + 8 * d, by + h * 0.3f + 4 * d, small)
+                    c.drawText("paracord", handX + 6 * d, gy - 14 * d, small.apply { color = 0xFFE07A2E.toInt() }); small.color = dim
+                }
+                else -> {
+                    // Paracord over the branch to the end insulator; antenna wire running away to the left.
+                    val cord = Paint(line).apply { color = 0xFFE07A2E.toInt(); strokeWidth = 3 * d }
+                    val insX = over + 2 * d; val insY = by + 16 * d
+                    c.drawLine(insX, by - 2 * d, insX, insY - 4 * d, cord)
+                    c.drawLine(insX, by - 2 * d, tx - 4 * d, gy - 30 * d, cord)
+                    c.drawRect(insX - 4 * d, insY - 5 * d, insX + 4 * d, insY + 5 * d, Paint(fill).apply { color = 0xFFDDDDDD.toInt() })
+                    c.drawLine(insX, insY + 5 * d, px + 6 * d, gy - h * 0.24f, Paint(line).apply { color = cyan })
+                    c.drawText("insulator", insX - 8 * d - small.measureText("insulator"), insY - 10 * d, small)
+                    c.drawText("antenna wire", px + 8 * d, gy - h * 0.24f - 10 * d, small.apply { color = cyan }); small.color = dim
+                    c.drawText("tie off", tx - 8 * d - small.measureText("tie off"), gy - 6 * d, small)
+                }
+            }
+        }
+        center(c, "Look up first: never throw anywhere near power lines.", w / 2, h - 18 * d, small.apply { color = red })
+        center(c, "Stand clear when throwing: the weight comes back down.", w / 2, h - 4 * d, small)
+        small.color = dim
+    }
+
+    /** A stick figure standing on the ground at x, optionally with an arm raised to throw. */
+    private fun person(c: Canvas, x: Float, gy: Float, throwing: Boolean) {
+        val p = Paint(line).apply { strokeWidth = 2 * d; color = ink }
+        val hip = gy - 18 * d; val neck = gy - 38 * d
+        c.drawLine(x, gy, x + 4 * d, hip, p); c.drawLine(x + 8 * d, gy, x + 4 * d, hip, p)
+        c.drawLine(x + 4 * d, hip, x + 4 * d, neck, p)
+        c.drawCircle(x + 4 * d, neck - 6 * d, 5 * d, p)
+        if (throwing) c.drawLine(x + 4 * d, neck + 4 * d, x + 9 * d, neck - 10 * d, p) else c.drawLine(x + 4 * d, neck + 4 * d, x + 13 * d, neck + 8 * d, p)
+        c.drawLine(x + 4 * d, neck + 4 * d, x - 4 * d, neck + 14 * d, p)
+    }
+
+    /** USB: the radio's dial frequency plus audio tones; signal = dial + offset. */
+    private fun passband(c: Canvas, w: Float, h: Float) {
+        val l = w * 0.08f; val r = w * 0.95f; val y = h * 0.62f
+        fun xAt(hz: Float) = l + (r - l) * hz / 3000f
+        c.drawRect(xAt(300f), y - h * 0.38f, xAt(2800f), y, Paint(fill).apply { color = 0x1F4FC3F7 })
+        c.drawRect(xAt(500f), y - h * 0.38f, xAt(1000f), y, Paint(fill).apply { color = 0x26F2A33A })
+        c.drawLine(l, y, r, y, line)
+        c.drawLine(l, y - h * 0.45f, l, y + 6 * d, line.apply { color = accent }); line.color = ink
+        c.drawText("dial 7.078 MHz", l + 4 * d, y - h * 0.4f, text.apply { color = accent }); text.color = ink
+        // A few signals: heartbeats low, traffic higher.
+        listOf(620f to 0.5f, 840f to 0.35f, 1210f to 0.8f, 1500f to 1f, 1890f to 0.6f, 2240f to 0.7f).forEach { (hz, a) ->
+            c.drawRect(xAt(hz) - 3 * d, y - h * 0.3f * a, xAt(hz) + 3 * d, y, Paint(fill).apply { color = if (hz < 1000) accent else green })
+        }
+        for (hz in listOf(0, 500, 1000, 1500, 2000, 2500, 3000)) {
+            c.drawLine(xAt(hz.toFloat()), y, xAt(hz.toFloat()), y + 5 * d, thin)
+            center(c, "$hz", xAt(hz.toFloat()), y + 17 * d, small)
+        }
+        center(c, "heartbeats", xAt(750f), y - h * 0.4f + 26 * d, small.apply { color = accent })
+        center(c, "traffic 1,000–2,500 Hz", xAt(1750f), y - h * 0.4f + 26 * d, small.apply { color = green }); small.color = dim
+        center(c, "audio offset (Hz) above the dial", (l + r) / 2, y + 32 * d, small)
+        center(c, "offset 1,500 Hz: 7.078 MHz + 1.5 kHz = 7.0795 MHz", (l + r) / 2, h - 8 * d, small)
+    }
+
+    /** A scrolling waterfall: JS8 signals as short stripes in time slots, noise speckle behind. */
+    private fun waterfall(c: Canvas, w: Float, h: Float) {
+        val top = 18 * d; val bottom = h - 22 * d; val l = 30 * d; val r = w - 8 * d
+        val span = bottom - top
+        val slotPx = span / 3.2f
+        val scroll = phase() * slotPx
+        c.drawRect(l, top, r, bottom, Paint(fill).apply { color = 0xFF07101F.toInt() })
+        // Noise: a fixed pseudo-random speckle that scrolls.
+        val speck = Paint(fill).apply { color = 0x223D6FA8 }
+        var seed = 12345
+        repeat(260) {
+            seed = seed * 1103515245 + 12345
+            val fx = ((seed ushr 8) and 0xFFFF) / 65535f
+            seed = seed * 1103515245 + 12345
+            val fy = ((seed ushr 8) and 0xFFFF) / 65535f
+            val yy = top + ((fy * span + scroll) % span)
+            c.drawRect(l + fx * (r - l), yy, l + fx * (r - l) + 2 * d, yy + 2 * d, speck)
+        }
+        // Slot boundaries and signals (newest at the top, scrolling down).
+        val sig = listOf(Triple(0.18f, 0, 0xFFF2A33A.toInt()), Triple(0.45f, 1, 0xFF4CC38A.toInt()), Triple(0.62f, 0, 0xFF4FC3F7.toInt()), Triple(0.80f, 2, 0xFF4CC38A.toInt()))
+        for (slot in -1..4) {
+            val y0 = top + slot * slotPx + scroll
+            if (y0 > top && y0 < bottom) c.drawLine(l, y0, r, y0, Paint(thin).apply { color = 0x55FFFFFF })
+            sig.forEach { (fx, every, color) ->
+                if ((slot + 10) % 3 == every || (every == 0 && slot % 2 == 0)) {
+                    val ys = (y0 + slotPx * 0.08f).coerceIn(top, bottom); val ye = (y0 + slotPx * 0.9f).coerceIn(top, bottom)
+                    if (ye > ys) c.drawRect(l + fx * (r - l) - 3 * d, ys, l + fx * (r - l) + 3 * d, ye, Paint(fill).apply { this.color = color })
+                }
+            }
+        }
+        c.drawText("time ↓", 2 * d, top + 12 * d, small)
+        center(c, "offset →  (low tones left, high right)", (l + r) / 2, h - 6 * d, small)
+        center(c, "each stripe = one frame (most of one time slot)", (l + r) / 2, top - 4 * d, small)
+    }
+
+    /** Time slots: everyone starts sending at the same instants; a late clock misses the start. */
+    private fun timeslots(c: Canvas, w: Float, h: Float) {
+        val l = w * 0.06f; val r = w * 0.97f
+        val slots = 4
+        val sw = (r - l) / slots
+        val rows = listOf("Station A" to listOf(0, 2), "Station B" to listOf(1, 3), "Late clock (3 s)" to listOf(1))
+        rows.forEachIndexed { i, (label, on) ->
+            val y = h * (0.26f + i * 0.2f)
+            c.drawText(label, l, y - 8 * d, small.apply { color = if (i == 2) red else dim }); small.color = dim
+            on.forEach { s0 ->
+                val shift = if (i == 2) sw * 0.2f else 0f
+                val x0 = l + s0 * sw + sw * 0.03f + shift; val x1 = x0 + sw * 0.84f
+                c.drawRect(x0, y, x1, y + 14 * d, Paint(fill).apply { color = if (i == 2) red else if (i == 0) cyan else green })
+            }
+        }
+        for (k in 0..slots) {
+            val x = l + k * sw
+            c.drawLine(x, h * 0.16f, x, h * 0.84f, dash)
+            center(c, "${k * 15} s", x, h * 0.92f, small)
+        }
+        center(c, "Normal: a slot every 15 s; each send lasts ~12.6 s", (l + r) / 2, h * 0.1f, small)
+        center(c, "clock >2 s off: starts late, not decoded", (l + r) / 2, h - 2 * d, small.apply { color = red }); small.color = dim
+    }
+
+    /** A message split into frames, one per slot; a lost frame leaves a gap. */
+    private fun frames(c: Canvas, w: Float, h: Float) {
+        val parts = listOf("KX4ABC: W1AW", "MEET AT RIVE", "R BRIDGE 18", "00 ♢")
+        val l = w * 0.04f; val r = w * 0.96f
+        val bw = (r - l) / parts.size
+        val y = h * 0.34f
+        parts.forEachIndexed { i, p ->
+            val x0 = l + i * bw + 3 * d; val x1 = l + (i + 1) * bw - 3 * d
+            val lost = i == 2
+            c.drawRect(x0, y, x1, y + 36 * d, Paint(fill).apply { color = if (lost) 0x33FF7B7B else 0x334FC3F7 })
+            c.drawRect(x0, y, x1, y + 36 * d, Paint(thin).apply { color = if (lost) red else cyan })
+            center(c, p, (x0 + x1) / 2, y + 23 * d, small.apply { color = if (lost) red else ink })
+            center(c, "slot ${i + 1}", (x0 + x1) / 2, y - 6 * d, small)
+        }
+        small.color = dim
+        center(c, "missed (fading or interference)", l + 2.5f * bw, y + 52 * d, small.apply { color = red }); small.color = dim
+        center(c, "app shows: W1AW MEET AT RIVE [missing frame] 00", (l + r) / 2, h - 28 * d, small.apply { color = ink }); small.color = dim
+        center(c, "♢ marks the last frame: the message is complete", (l + r) / 2, h - 10 * d, small)
+    }
+
+    /** VHF/UHF: line of sight, blocked by the earth's curve and hills; HF bends back from the sky. */
+    private fun lineOfSight(c: Canvas, w: Float, h: Float) {
+        val gy = h * 0.85f
+        path.reset(); path.moveTo(0f, gy); path.quadTo(w / 2, gy - h * 0.18f, w, gy)
+        c.drawPath(path, Paint(line).apply { color = ground; strokeWidth = 3 * d })
+        val ax = w * 0.08f; val bx = w * 0.92f
+        c.drawLine(ax, gy - 2 * d, ax, gy - 34 * d, line); c.drawLine(bx, gy - 2 * d, bx, gy - 34 * d, line)
+        c.drawLine(ax, gy - 34 * d, w * 0.47f, gy - h * 0.16f, Paint(line).apply { color = green; strokeWidth = 2 * d })
+        c.drawLine(w * 0.47f, gy - h * 0.16f, w * 0.6f, gy - h * 0.13f, Paint(dash).apply { color = red })
+        center(c, "VHF/UHF: straight lines, blocked by hills and the horizon", w / 2, gy - h * 0.25f, small.apply { color = green })
+        path.reset(); path.moveTo(ax, gy - 34 * d); path.quadTo(w / 2, -h * 0.25f, bx, gy - 34 * d)
+        c.drawPath(path, Paint(line).apply { color = cyan; strokeWidth = 2 * d })
+        center(c, "HF (JS8): bent back down by the ionosphere", w / 2, 16 * d, small.apply { color = cyan }); small.color = dim
     }
 
     // ---------------------------------------------------------------- helpers
@@ -316,7 +495,12 @@ class DiagramView(context: Context, private val diagram: String) : View(context)
             "efhw" to "An end-fed half-wave: wire from a 49 to 1 transformer near the ground up to a tree, with a short counterpoise.",
             "vertical" to "A quarter-wave vertical with radials on the ground.",
             "choke" to "A choke: coax wound into a coil, or through ferrite, stops RF on the outside of the coax.",
-            "throw-line" to "Getting a line into a tree: throw weight and light line over a branch, then pull up paracord, then the antenna.",
+            "throw-line" to "Three steps: throw a weighted light line over a branch, use it to pull paracord over, then use the paracord to haul up the antenna's end insulator. Never near power lines.",
+            "passband" to "The radio's dial frequency plus audio tones. Heartbeats use 500 to 1000 hertz, traffic 1000 to 2500. A signal's real frequency is the dial plus its offset.",
+            "waterfall" to "A waterfall display: time runs downward, audio offset runs left to right. Each JS8 frame shows as a short stripe filling most of a time slot.",
+            "timeslots" to "Time slots: stations start sending at the same instants every 15 seconds. A clock more than about two seconds off starts in the wrong place and is not decoded.",
+            "frames" to "A message split into frames, one per time slot. A missed frame leaves a gap in the message; the diamond marks the last frame.",
+            "line-of-sight" to "VHF and UHF travel in straight lines and are blocked by the curve of the earth; HF is bent back down by the ionosphere.",
         )
     }
 }
