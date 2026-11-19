@@ -57,6 +57,18 @@ class DigestTest {
     }
 
     @Test
+    fun answersToMyQueriesNeedNoReply() {
+        val d = DigestBuilder.build(input(listOf(
+            msg("KD8SKZ", "KX4ME", "GRID EN90QK", 1.0),
+            msg("KD8SKZ", "KX4ME", "HEARTBEAT SNR -19", 1.2),
+            msg("W5EEE", "KX4ME", "GRID?", 0.5),                 // a question still waits for us
+        )))
+        val forYou = d.sections[1].lines
+        assertEquals(1, forYou.size)
+        assertTrue(forYou[0].text, forYou[0].text.contains("GRID?"))
+    }
+
+    @Test
     fun unansweredTrafficForMeAndMyGroups() {
         val a = msg("W5EEE", "KX4ME", "WHAT IS YOUR QTH", 3.0)
         val b = msg("W6FFF", "KX4ME", "PSE QSL", 2.0, complete = false)

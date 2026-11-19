@@ -17,6 +17,10 @@ import java.util.TimeZone
  */
 object DigestBuilder {
 
+    /** Replies that close an exchange: answers to GRID?, SNR?, INFO?, STATUS?, HEARING?, and ACK/73. Questions don't match. */
+    private val answerOnly = Regex("""^(?:HEARTBEAT\s+SNR|SNR|GRID|HEARING|INFO|STATUS|ACK|NACK|RR|QSL|73|SK|FB)\b(?!\?)""")
+
+
     data class Msg(
         val id: Long,
         val sender: String?,
@@ -113,7 +117,11 @@ object DigestBuilder {
         if (resolved.isNotEmpty()) alertLines += Line("Now reporting OK: ${resolved.sorted().joinToString(", ")}", tone = Tone.GREEN)
 
         // ---- For you: addressed to me or my groups; unanswered = nothing sent back to them since.
-        val toMe = inWindow.filter { it.recipient?.uppercase() in mine && it.sender != null && it.sender.uppercase() != me }
+        val toMe = inWindow.filter {
+            it.recipient?.uppercase() in mine && it.sender != null && it.sender.uppercase() != me &&
+                // Answers to our own queries (GRID EN90, SNR -12, ACK…) need no reply.
+                !answerOnly.containsMatchIn(it.body.trim().uppercase())
+        }
         val unanswered = toMe.filter { m -> input.sent.none { s -> s.timeMs > m.timeMs && s.to?.uppercase() in setOf(m.sender!!.uppercase(), m.recipient?.uppercase()) } }
         val forYou = unanswered.sortedByDescending { it.timeMs }.take(8).map { m ->
             val partial = if (!m.complete) " [incomplete]" else ""

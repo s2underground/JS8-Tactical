@@ -155,8 +155,14 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     /** Receiver running or not (from the Radio screen's state). */
     fun setListening(on: Boolean) {
+        val wasListening = listening
         listening = on
-        if (!on) listeningLog.flush()
+        if (!on) {
+            listeningLog.flush()
+            // Receiver off: nothing is still arriving, so close half-received transmissions now
+            // (otherwise "RX…" stays on a station until the idle timeout).
+            if (wasListening) { engine.tick(System.currentTimeMillis() + 10 * 60_000L); requestPublish() }
+        }
     }
 
     fun requestCompose(text: String) { _pendingCompose.value = text }
