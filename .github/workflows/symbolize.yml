@@ -1,0 +1,31 @@
+# Manual: put function names to native crash offsets in libmaplibre.so.
+name: Symbolize native crash
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "MapLibre release tag"
+        default: android-v11.8.0
+      offsets:
+        description: "Space-separated hex offsets (rel pc)"
+        default: "666720 68a114 6c7680 6db614 6da3e8 4e8bac"
+
+permissions:
+  contents: write
+
+jobs:
+  symbolize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Symbolize
+        run: tools/symbolize/symbolize.sh "${{ inputs.tag }}" ${{ inputs.offsets }}
+      - name: Publish report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view diagnostics >/dev/null 2>&1 || \
+            gh release create diagnostics --prerelease --title "Diagnostics" --notes "Crash symbolization reports (not part of the app)."
+          cp out/report.txt symbolize-report.txt
+          gh release upload diagnostics symbolize-report.txt --clobber
