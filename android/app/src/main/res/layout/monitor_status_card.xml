@@ -77,7 +77,13 @@
             android:layout_marginStart="4dp"
             android:contentDescription="@string/monitor_toggle"
             android:minHeight="48dp"
-            android:saveEnabled="false" />
+            android:saveEnabled="false"
+            android:switchPadding="8dp"
+            android:text="@string/monitor_switch_label"
+            android:textAppearance="?attr/textAppearanceLabelLarge"
+            android:textColor="?attr/colorOnSurface"
+            app:thumbTint="@color/receiver_switch_thumb"
+            app:trackDecorationTint="@color/receiver_switch_outline" />
     </LinearLayout>
 
     <LinearLayout

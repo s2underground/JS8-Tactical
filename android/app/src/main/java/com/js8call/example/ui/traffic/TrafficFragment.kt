@@ -154,6 +154,9 @@ class TrafficFragment : Fragment() {
         // Start/stop and audio setup live on the Radio tab for now.
         pill.setOnClickListener {
             requireActivity().findViewById<NavigationBarView>(R.id.bottom_navigation)?.selectedItemId = R.id.navigation_monitor
+            if (monitor.isRunning.value != true) {
+                android.widget.Toast.makeText(requireContext(), "Turn on the Receiver switch at the top right", android.widget.Toast.LENGTH_LONG).show()
+            }
         }
 
         // Digest: a tab on the side rail; on phones in portrait (five tabs max) this button is the way in.

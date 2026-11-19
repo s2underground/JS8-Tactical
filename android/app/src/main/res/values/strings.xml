@@ -18,6 +18,8 @@
     <string name="monitor_state_transmitting">Transmitting</string>
     <string name="monitor_state_error">Error</string>
     <string name="monitor_toggle">Monitoring</string>
+    <!-- Label beside the Radio tab's on/off switch -->
+    <string name="monitor_switch_label">Receiver</string>
     <string name="monitor_more">More options</string>
     <string name="monitor_telemetry">TX %1$d Hz</string>
     <string name="monitor_telemetry_separator" translatable="false">" · "</string>

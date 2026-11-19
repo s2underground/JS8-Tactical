@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Receiver switch: a light thumb when off so it can't disappear on the dark theme. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="?attr/colorOnPrimary" android:state_checked="true" />
+    <item android:color="@color/tac_text_dim" />
+</selector>
