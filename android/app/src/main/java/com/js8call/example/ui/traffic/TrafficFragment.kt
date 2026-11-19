@@ -70,11 +70,47 @@ class TrafficFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         clockHandler.post(clockTick)
+        applyRole()
     }
 
     override fun onPause() {
         super.onPause()
         clockHandler.removeCallbacks(clockTick)
+    }
+
+    /** Listener role: send controls hidden (a banner says how to bring them back). */
+    private fun applyRole() {
+        val v = view ?: return
+        val listener = com.js8call.example.ui.onboarding.RoleChooser.isListener(requireContext())
+        v.findViewById<View>(R.id.compose_container)?.isVisible = !listener
+        v.findViewById<View>(R.id.tpl_row)?.isVisible = !listener
+        val parent = v.findViewById<View>(R.id.compose_container)?.parent as? ViewGroup ?: return
+        var banner = parent.findViewWithTag<TextView>("listener_banner")
+        if (listener && banner == null) {
+            banner = TextView(requireContext()).apply {
+                tag = "listener_banner"
+                text = "Listening only. Tap here to show the send controls."
+                setTextColor(ContextCompat.getColor(requireContext(), R.color.tac_text_dim))
+                textSize = 13f
+                val d = resources.displayMetrics.density
+                setPadding((16 * d).toInt(), (10 * d).toInt(), (16 * d).toInt(), (10 * d).toInt())
+                setBackgroundColor(ContextCompat.getColor(requireContext(), R.color.tac_panel))
+                setOnClickListener {
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle("Show send controls?")
+                        .setMessage("You chose \"listen\" at first start. Switching to Operator shows the message box and report buttons. Only transmit with a transmitter you're allowed to use.")
+                        .setPositiveButton("Switch to Operator") { _, _ ->
+                            PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
+                                .putString(com.js8call.example.ui.onboarding.RoleChooser.KEY, com.js8call.example.ui.onboarding.RoleChooser.OPERATOR).apply()
+                            applyRole()
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                }
+            }
+            parent.addView(banner)
+        }
+        banner?.isVisible = listener
     }
 
     override fun onDestroyView() {

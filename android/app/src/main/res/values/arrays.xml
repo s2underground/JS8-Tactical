@@ -167,4 +167,14 @@
         <item>720</item>
         <item>8760</item>
     </string-array>
+    <string-array name="role_entries">
+        <item>Listener (receive only; send controls hidden)</item>
+        <item>Operator (send and receive)</item>
+        <item>Net control (team, groups, Digest)</item>
+    </string-array>
+    <string-array name="role_values">
+        <item>listener</item>
+        <item>operator</item>
+        <item>netcontrol</item>
+    </string-array>
 </resources>

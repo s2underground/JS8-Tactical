@@ -191,6 +191,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         if (savedInstanceState == null) CrashReporter.showIfPending(this)
+        // First run: Listener / Operator / Net control (sets the Start-here guide).
+        if (savedInstanceState == null) window.decorView.post {
+            if (!isFinishing) com.js8call.example.ui.onboarding.RoleChooser.showIfFirstRun(this)
+        }
 
         // Set up bottom navigation
         bottomNav = findViewById(R.id.bottom_navigation)

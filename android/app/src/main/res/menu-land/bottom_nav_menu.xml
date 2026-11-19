@@ -26,9 +26,9 @@
         android:title="@string/nav_monitor" />
 
     <item
-        android:id="@+id/navigation_digest"
-        android:icon="@drawable/ic_digest"
-        android:title="@string/nav_digest" />
+        android:id="@+id/navigation_library"
+        android:icon="@drawable/ic_library"
+        android:title="@string/nav_library" />
 
     <item
         android:id="@+id/navigation_settings"

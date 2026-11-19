@@ -249,6 +249,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         setUpAtak()
         setUpHistory()
+        findPreference<Preference>("open_library")?.setOnPreferenceClickListener {
+            com.js8call.example.ui.library.AppLinks.open(this, "library")
+            true
+        }
 
         logPreference = findPreference("log_messages_to_file")
         logPreference?.setOnPreferenceChangeListener { _, newValue ->

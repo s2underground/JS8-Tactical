@@ -361,6 +361,7 @@
     <!-- Propagation tab -->
     <string name="nav_digest">Digest</string>
     <string name="nav_team">Team</string>
+    <string name="nav_library">Library</string>
     <string name="nav_propagation">Prop</string>
     <string name="prop_desc">Map of estimated HF coverage and stations actually heard</string>
     <string name="prop_time_desc">Hours from now</string>
@@ -452,4 +453,8 @@
     <string name="settings_history_clear">Clear message history now</string>
     <string name="settings_history_clear_confirm">All messages, sent traffic and the list of stations heard will be deleted from this device. Propagation learning (Prop tab) is kept; reset it there if you want that gone too.</string>
     <string name="settings_atak_legend">Dot colours in ATAK</string>
+    <!-- Library / role -->
+    <string name="settings_library">Library: guides and calculators</string>
+    <string name="settings_library_summary">How to listen, set up a station, build antennas; works offline</string>
+    <string name="settings_role">I am a…</string>
 </resources>
