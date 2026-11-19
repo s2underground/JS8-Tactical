@@ -237,9 +237,22 @@ class JS8EngineService : Service() {
 
             if (audioActive && rigConnected && !isRigPttReady(generation)) {
                 activeEngine.setTransmitReady(false)
+                // Field report: radio stuck keyed at zero watts. Audio is held here until PTT is
+                // "ready" for this TX generation; if the generation moved on after PTT was keyed,
+                // nothing asked again and the hold never ended. Ask again (no-op if a command is
+                // already pending), and give up safely if audio still can't start.
+                requestRigPtt(true, generation)
+                val now = SystemClock.uptimeMillis()
+                if (pttHoldSinceMs == 0L) pttHoldSinceMs = now
+                if (now - pttHoldSinceMs > PTT_HOLD_LIMIT_MS) {
+                    pttHoldSinceMs = 0L
+                    failTransmitForPtt(generation, "Radio keyed but audio could not start; transmit stopped and PTT released")
+                    return
+                }
                 txMonitorHandler.postDelayed(this, TX_PREKEY_MONITOR_INTERVAL_MS)
                 return
             }
+            pttHoldSinceMs = 0L
 
             if (audioActive && !txMonitorWasAudioActive) {
                 txMonitorWasAudioActive = true
@@ -348,6 +361,7 @@ class JS8EngineService : Service() {
                 }
                 setFrequency(frequencyHz)
             }
+            ACTION_HALT_TX -> haltTransmit()
             ACTION_SET_TX_OFFSET -> {
                 val offsetHz = intent.getFloatExtra(EXTRA_TX_OFFSET_HZ, 1500f)
                 Log.i(TAG, "Setting TX offset to $offsetHz Hz")
@@ -1819,6 +1833,9 @@ class JS8EngineService : Service() {
      */
     private var cpuLock: android.os.PowerManager.WakeLock? = null
 
+    /** Since when TX audio has been held waiting for PTT (0 = not waiting). */
+    private var pttHoldSinceMs = 0L
+
     /** When a stopping engine began releasing its audio (0 = none in progress). */
     @Volatile private var engineStoppingSinceMs = 0L
 
@@ -3087,6 +3104,7 @@ class JS8EngineService : Service() {
 
     private fun startTxMonitor() {
         txMonitorHandler.removeCallbacks(txMonitorRunnable)
+        pttHoldSinceMs = 0L
         txMonitorActive = true
         txMonitorWasAudioActive = false
         txSentStartMs = 0L
@@ -3234,6 +3252,34 @@ class JS8EngineService : Service() {
             }
         }
         if (scheduleNext) postTxWork { runRigPttCommand() }
+    }
+
+    /**
+     * Operator pressed Stop: end the send now and unkey, whatever state TX is in.
+     * Reported as refused so the queue drops it instead of retrying.
+     */
+    private fun haltTransmit() {
+        val generation = synchronized(pttStateLock) {
+            rigPttDesired = false
+            rigPttDesiredGeneration = txPttGeneration
+            rigPttCompletion = null
+            if (!rigPttCommandPending && rigPttAsserted) {
+                rigPttCommandPending = true
+                postTxWork { runRigPttCommand() }
+            }
+            txPttGeneration
+        }
+        Log.w(TAG, "Transmit halted by operator (generation $generation)")
+        txMonitorActive = false
+        txMonitorHandler.removeCallbacks(txMonitorRunnable)
+        pttHoldSinceMs = 0L
+        engine?.setTransmitReady(false)
+        engine?.stopTransmit()
+        txSessionActive = false
+        txAudioActive = false
+        txMonitorWasAudioActive = false
+        trusdxTxIntentActive = false
+        broadcastTxState(TX_STATE_FAILED, refused = true)
     }
 
     private fun failTransmitForPtt(generation: Int, message: String) {
@@ -4323,6 +4369,8 @@ class JS8EngineService : Service() {
         const val ACTION_SWITCH_AUDIO_DEVICE = "com.js8call.example.ACTION_SWITCH_AUDIO_DEVICE"
         const val ACTION_SET_FREQUENCY = "com.js8call.example.ACTION_SET_FREQUENCY"
         const val ACTION_SET_TX_OFFSET = "com.js8call.example.ACTION_SET_TX_OFFSET"
+        /** Stop the current send immediately and release PTT. */
+        const val ACTION_HALT_TX = "com.js8call.example.ACTION_HALT_TX"
         const val ACTION_ENGINE_STATE = "com.js8call.example.ACTION_ENGINE_STATE"
         const val ACTION_DECODE = "com.js8call.example.ACTION_DECODE"
         const val ACTION_SPECTRUM = "com.js8call.example.ACTION_SPECTRUM"
@@ -4425,6 +4473,8 @@ class JS8EngineService : Service() {
         private const val PTT_LEAD_TIME_MS = 500
         private const val PTT_COMMAND_RETRIES = 1
         private const val TX_PREKEY_MONITOR_INTERVAL_MS = 25L
+        /** Longest the radio may sit keyed with audio held back before the send is abandoned. */
+        private const val PTT_HOLD_LIMIT_MS = 4_000L
         private const val TX_MONITOR_INTERVAL_MS = 250L
         private const val SCO_START_WAIT_INTERVAL_MS = 200L
         private const val SCO_START_MAX_ATTEMPTS = 10

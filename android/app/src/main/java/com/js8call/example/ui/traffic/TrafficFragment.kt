@@ -142,7 +142,7 @@ class TrafficFragment : Fragment() {
             val running = monitor.isRunning.value == true
             val tx = transmit.txState.value == TransmitState.TRANSMITTING
             val (label, text, bg) = when {
-                tx -> Triple(R.string.traffic_state_tx, R.color.tac_ground, R.drawable.bg_pill_tx)
+                tx -> Triple(R.string.traffic_state_tx_stop, R.color.tac_ground, R.drawable.bg_pill_tx)
                 running -> Triple(R.string.traffic_state_rx, R.color.tac_good_text, R.drawable.bg_pill_rx)
                 else -> Triple(R.string.traffic_state_off, R.color.tac_text_dim, R.drawable.bg_pill_off)
             }
@@ -154,6 +154,16 @@ class TrafficFragment : Fragment() {
         transmit.txState.observe(viewLifecycleOwner) { renderPill() }
         // Start/stop and audio setup live on the Radio tab for now.
         pill.setOnClickListener {
+            // While sending, the TX pill is the stop button: drop the queue and unkey now.
+            if (transmit.txState.value == TransmitState.TRANSMITTING) {
+                transmit.cancelAll()
+                requireContext().startService(
+                    android.content.Intent(requireContext(), com.js8call.example.service.JS8EngineService::class.java)
+                        .setAction(com.js8call.example.service.JS8EngineService.ACTION_HALT_TX),
+                )
+                Snackbar.make(requireView(), "Transmit stopped", Snackbar.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             requireActivity().findViewById<NavigationBarView>(R.id.bottom_navigation)?.selectedItemId = R.id.navigation_monitor
             if (monitor.isRunning.value != true) {
                 android.widget.Toast.makeText(requireContext(), "Turn on the Receiver switch at the top right", android.widget.Toast.LENGTH_LONG).show()
