@@ -39,6 +39,11 @@ import java.util.TimeZone
  */
 class TrafficFragment : Fragment() {
 
+    private companion object {
+        /** JS8 queries that only mean something when addressed. */
+        val ALLCALL_QUERY = Regex("""^(?:SNR|GRID|INFO|STATUS|HEARING)\?$|^QUERY MSGS\??$""")
+    }
+
     private lateinit var traffic: TrafficViewModel
     private lateinit var monitor: MonitorViewModel
     private lateinit var transmit: TransmitViewModel
@@ -236,13 +241,25 @@ class TrafficFragment : Fragment() {
         val liveFrom: TextView = view.findViewById(R.id.live_from)
         val liveText: TextView = view.findViewById(R.id.live_text)
 
-        val stations = StationAdapter { row ->
+        val stations = StationAdapter(onLongClick = { stationLongPress(it) }) { row ->
             when {
                 row.key == TrafficViewModel.TEAM -> openTeam()
+                row.key == TrafficViewModel.WATCH -> askWatch()
                 // Tapping the selected station again goes back to everyone.
                 row.selected && row.key != TrafficViewModel.ALL -> traffic.select(TrafficViewModel.ALL)
                 else -> traffic.select(row.key)
             }
+        }
+        stationLongPress = { row ->
+            if (row.isGroup && (row.key.startsWith("@") || row.key.startsWith("#"))) {
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Stop watching ${row.key}?")
+                    .setMessage("It disappears from this list (it comes back if new traffic to it is heard).")
+                    .setPositiveButton("Stop watching") { _, _ -> traffic.unwatch(row.key) }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+                true
+            } else false
         }
         view.findViewById<View>(R.id.thread_clear).setOnClickListener { traffic.select(TrafficViewModel.ALL) }
         stationList.layoutManager = LinearLayoutManager(requireContext())
@@ -357,6 +374,29 @@ class TrafficFragment : Fragment() {
         )
     }
 
+    private var stationLongPress: (TrafficViewModel.StationRow) -> Boolean = { false }
+
+    /** "+ Watch a group or #tag": add an @group (traffic to it) or #tag (any message carrying it). */
+    private fun askWatch() {
+        val input = EditText(requireContext()).apply {
+            hint = "@GHOSTNET or #SITREP"
+            isSingleLine = true
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val box = android.widget.FrameLayout(requireContext()).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Watch a group or tag")
+            .setMessage("@NAME shows traffic sent to that group. #TAG shows every message that contains the tag. Long-press it later to stop watching.")
+            .setView(box)
+            .setPositiveButton("Watch") { _, _ ->
+                val added = traffic.watch(input.text.toString())
+                if (added == null) Snackbar.make(requireView(), "Type a group like @GHOSTNET or a tag like #SITREP", Snackbar.LENGTH_LONG).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
     private fun emptyText(): String {
         val running = monitor.isRunning.value == true
         val key = traffic.selected.value ?: TrafficViewModel.ALL
@@ -370,8 +410,11 @@ class TrafficFragment : Fragment() {
     private fun send(text: String, copies: Int): Boolean {
         if (!readyToSend()) return false
         val target = traffic.sendTarget()
+        // A query typed to everyone ("STATUS?", "GRID?") needs an address or no one's software
+        // treats it as a question: send it to @ALLCALL, as JS8Call does.
+        val effective = target ?: ALLCALL_QUERY.takeIf { it.matches(text.trim().uppercase()) }?.let { "@ALLCALL" }
         repeat(copies) {
-            if (target == null) transmit.queueManualMessage(text) else transmit.queueThreadMessage(target, text)
+            if (effective == null) transmit.queueManualMessage(text) else transmit.queueThreadMessage(effective, text)
         }
         val msg = if (copies > 1) getString(R.string.traffic_queued_n, copies) else getString(R.string.traffic_queued)
         Snackbar.make(requireView(), msg, Snackbar.LENGTH_SHORT).show()

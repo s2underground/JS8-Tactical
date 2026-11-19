@@ -41,6 +41,7 @@ internal fun ago(ms: Long, now: Long = System.currentTimeMillis()): String {
 
 /** Groups, "All traffic" and stations in the left column. */
 class StationAdapter(
+    private val onLongClick: (TrafficViewModel.StationRow) -> Boolean = { false },
     private val onClick: (TrafficViewModel.StationRow) -> Unit,
 ) : ListAdapter<TrafficViewModel.StationRow, StationAdapter.Holder>(Diff) {
 
@@ -71,6 +72,7 @@ class StationAdapter(
         h.itemView.isSelected = row.selected
         h.itemView.setBackgroundResource(if (row.selected) R.drawable.bg_station_selected else R.drawable.bg_station_row)
         h.itemView.setOnClickListener { onClick(row) }
+        h.itemView.setOnLongClickListener { onLongClick(row) }
         h.itemView.contentDescription = listOf(row.label, row.detail, h.last.text).joinToString(", ")
     }
 

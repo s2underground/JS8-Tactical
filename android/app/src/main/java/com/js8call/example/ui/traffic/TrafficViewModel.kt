@@ -471,7 +471,31 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Where Send goes for the current selection: a callsign, a group, or null for an open broadcast. */
-    fun sendTarget(): String? = selectedKey.takeIf { it != ALL }
+    fun sendTarget(): String? = selectedKey.takeIf { it != ALL && !it.startsWith("#") }
+
+    /** Add an @group or #tag to watch (Settings → My Groups holds the list). */
+    fun watch(entry: String): String? {
+        val e = entry.trim().uppercase().replace(Regex("\\s+"), "")
+        val norm = when {
+            e.startsWith("#") || e.startsWith("@") -> e
+            else -> "@$e"
+        }
+        if (norm.length < 2) return null
+        val prefs = PreferenceManager.getDefaultSharedPreferences(getApplication())
+        val list = prefs.getString("my_groups", "").orEmpty().split(',', ' ', ';').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
+        if (norm !in list) prefs.edit().putString("my_groups", (list + norm).joinToString(",")).apply()
+        select(norm)
+        return norm
+    }
+
+    /** Stop watching an @group or #tag. */
+    fun unwatch(entry: String) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(getApplication())
+        val list = prefs.getString("my_groups", "").orEmpty().split(',', ' ', ';').map { it.trim().uppercase() }
+            .filter { it.isNotEmpty() && it != entry && "@$it" != entry }
+        prefs.edit().putString("my_groups", list.joinToString(",")).apply()
+        if (selectedKey == entry) select(ALL) else publish()
+    }
 
     /**
      * Test builds only: a few minutes of made-up traffic, including two damaged
@@ -522,7 +546,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     private fun publish() {
         val now = System.currentTimeMillis()
         lastViewedMs[selectedKey] = now
-        val all = engine.messages()
+        val all = engine.messages().filterNot { isOwnEcho(it) }
         val messages = all.filterNot { isBeacon(it) }
         // Heartbeat replies ("X: ME HEARTBEAT SNR -19") are the best "they heard me" evidence: scan everything.
         noteNetEvidence(all)
@@ -534,13 +558,28 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val groupKeys = (myGroups + messages.mapNotNull { it.recipient }.filter { it.startsWith("@") })
             .filterNot { it == "@HB" }
             .distinct()
+        // Watched #tags (e.g. #SITREP, #SWX): every message that carries the tag.
+        val tagRows = myTags().map { t ->
+            val tagged = messages.filter { hasTag(it, t) }
+            StationRow(
+                key = t, label = t, isGroup = true, color = ACCENT,
+                detail = if (tagged.isEmpty()) "Watching · nothing yet" else "${tagged.size} message${if (tagged.size == 1) "" else "s"}",
+                lastHeardMs = tagged.maxOfOrNull { it.lastHeardMs } ?: 0L,
+                unread = tagged.count { it.lastHeardMs > (lastViewedMs[t] ?: viewedBaselineMs) },
+                selected = t == selectedKey, receiving = false,
+            )
+        }
         val byRecipient = messages.groupBy { it.recipient }
         val groupRows = groupKeys.map { g ->
             val inGroup = byRecipient[g].orEmpty()
             val last = inGroup.maxOfOrNull { it.lastHeardMs } ?: 0L
             StationRow(
                 key = g, label = g, isGroup = true, color = ACCENT,
-                detail = if (inGroup.isEmpty()) "No traffic yet" else "${inGroup.size} message${if (inGroup.size == 1) "" else "s"}",
+                detail = when {
+                    inGroup.isNotEmpty() -> "${inGroup.size} message${if (inGroup.size == 1) "" else "s"}"
+                    g in myGroups -> "Watching · nothing yet"
+                    else -> "No traffic yet"
+                },
                 lastHeardMs = last,
                 unread = inGroup.count { it.lastHeardMs > (lastViewedMs[g] ?: viewedBaselineMs) },
                 selected = g == selectedKey,
@@ -566,6 +605,10 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         // Team shortcut (opens the Team tab): how many members were heard in the last 24 h.
         val roster = TeamRoster.decode(PreferenceManager.getDefaultSharedPreferences(getApplication()).getString(TeamRoster.KEY, null))
         val heardBase = heard.filter { now - it.value.lastHeardMs < 24 * 3_600_000L }.keys.map(TeamMember::baseOf).toSet()
+        val watchRow = StationRow(
+            key = WATCH, label = "+ Watch a group or #tag", isGroup = true, color = ACCENT,
+            detail = "e.g. @GHOSTNET, #SITREP", lastHeardMs = 0L, unread = 0, selected = false, receiving = false,
+        )
         val teamRow = StationRow(
             key = TEAM, label = "My team", isGroup = true, color = ACCENT,
             detail = if (roster.isEmpty()) "Add your team's callsigns" else "${roster.count { it.baseCall in heardBase }} of ${roster.size} heard in 24 h",
@@ -578,17 +621,19 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             lastHeardMs = messages.maxOfOrNull { it.lastHeardMs } ?: 0L,
             unread = 0, selected = selectedKey == ALL, receiving = false,
         )
-        _stations.value = listOf(allRow, teamRow) + groupRows + stationRows
+        _stations.value = listOf(allRow, teamRow) + groupRows + tagRows + watchRow + stationRows
 
         // Thread for the selection.
         val key = selectedKey
         val incoming = when {
             key == ALL -> messages
             key.startsWith("@") -> messages.filter { it.recipient == key }
+            key.startsWith("#") -> messages.filter { hasTag(it, key) }
             else -> messages.filter { it.sender == key || it.recipient == key }
         }.map { ThreadItem.Incoming(it, colorFor(it.sender)) }
         val mine = when {
             key == ALL -> outgoing
+            key.startsWith("#") -> outgoing.filter { Regex("(^|\\s)" + Regex.escape(key) + "(\\s|$|:)").containsMatchIn(it.text.uppercase()) }
             else -> outgoing.filter { it.to == key }
         }
         _thread.value = (incoming + mine).sortedBy { it.timeMs }
@@ -640,12 +685,12 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun teamMessages(): List<TeamBoard.Msg> =
-        engine.messages().filterNot { isBeacon(it) }.map { TeamBoard.Msg(it.sender, it.bodyText, it.lastHeardMs) }
+        engine.messages().filterNot { isBeacon(it) || isOwnEcho(it) }.map { TeamBoard.Msg(it.sender, it.bodyText, it.lastHeardMs) }
 
     /** Everything the Digest tab needs for the window starting at [sinceMs]. */
     fun digestInput(sinceMs: Long, now: Long = System.currentTimeMillis()): DigestBuilder.Input {
         val prefs = PreferenceManager.getDefaultSharedPreferences(getApplication())
-        val messages = engine.messages().filterNot { isBeacon(it) }.map { m ->
+        val messages = engine.messages().filterNot { isBeacon(it) || isOwnEcho(it) }.map { m ->
             DigestBuilder.Msg(m.id, m.sender, m.recipient, m.bodyText, m.lastHeardMs, m.isComplete, m.missingFrames, m.bestSnr)
         }
         val sent = outgoing.map { DigestBuilder.Sent(it.to, it.text, it.sentMs) }
@@ -703,6 +748,19 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         return r
     }
 
+    /**
+     * Our own transmission decoded back by our receiver (the radio's RX audio isn't muted
+     * during TX on some rigs). Shown already as a "You" bubble, so the copy is hidden:
+     * anything from our callsign, and headless pieces on the lane we just sent on.
+     */
+    private fun isOwnEcho(m: RolledMessage): Boolean {
+        val sender = m.sender
+        if (sender != null) return isMe(sender)
+        return outgoing.any { o ->
+            kotlin.math.abs(o.laneHz - m.laneHz) <= 25f && kotlin.math.abs(o.sentMs - m.lastHeardMs) <= 90_000L
+        }
+    }
+
     private fun isBeacon(m: RolledMessage): Boolean {
         if (m.recipient == "@HB") return true
         val body = m.bodyText.uppercase()
@@ -714,9 +772,17 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     private fun myGroups(): List<String> {
         val raw = PreferenceManager.getDefaultSharedPreferences(getApplication())
             .getString("my_groups", "").orEmpty()
-        return raw.split(',', ' ', ';').map { it.trim().uppercase() }.filter { it.length > 1 }
+        return raw.split(',', ' ', ';').map { it.trim().uppercase() }.filter { it.length > 1 && !it.startsWith("#") }
             .map { if (it.startsWith("@")) it else "@$it" }
     }
+
+    /** Watched hashtags from the same list (entries starting with #). */
+    private fun myTags(): List<String> =
+        PreferenceManager.getDefaultSharedPreferences(getApplication()).getString("my_groups", "").orEmpty()
+            .split(',', ' ', ';').map { it.trim().uppercase() }.filter { it.length > 1 && it.startsWith("#") }.distinct()
+
+    private fun hasTag(m: RolledMessage, tag: String): Boolean =
+        Regex("(^|\\s)" + Regex.escape(tag) + "(\\s|$|:)").containsMatchIn(m.bodyText.uppercase())
 
     companion object {
         @Volatile private var instance: TrafficViewModel? = null
@@ -734,7 +800,9 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
         const val ALL = "*"
         /** Station-list row that opens the Team tab. */
-        const val TEAM = "#TEAM"
+        const val TEAM = "§TEAM"
+        /** Station-list row that adds a group or tag to watch. */
+        const val WATCH = "§WATCH"
         private const val TICK_MS = 5_000L
         private const val ACCENT = 0xFFF2A33A.toInt()
 
