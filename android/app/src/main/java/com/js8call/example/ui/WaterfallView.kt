@@ -23,6 +23,21 @@ class WaterfallView @JvmOverloads constructor(
         color = Color.argb(180, 255, 0, 0)
         style = Paint.Style.FILL
     }
+    private val density = resources.displayMetrics.density
+    private val scalePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(200, 230, 234, 240)
+        textSize = 11f * resources.displayMetrics.scaledDensity
+        setShadowLayer(3f, 0f, 0f, Color.BLACK)
+    }
+    private val tickPaint = Paint().apply { color = Color.argb(160, 230, 234, 240); strokeWidth = 1f * resources.displayMetrics.density }
+    private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(230, 242, 163, 58) }
+    private val labelText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(11, 14, 18)
+        textSize = 12f * resources.displayMetrics.scaledDensity
+        isFakeBoldText = true
+    }
+    /** Finger position while dragging, so the marker and its label follow it before it is set. */
+    private var dragHz: Float? = null
     private val srcRect = Rect()
     private val dstRect = Rect()
 
@@ -79,8 +94,12 @@ class WaterfallView @JvmOverloads constructor(
         val displayStartBin = renderer?.getDisplayStartBin() ?: 0
         val displayEndBin = renderer?.getDisplayEndBin() ?: -1
         if (currentBinHz > 0 && displayEndBin > displayStartBin) {
+            drawScale(canvas, currentBinHz, displayStartBin, displayEndBin)
+        }
+        if (currentBinHz > 0 && displayEndBin > displayStartBin) {
             val usableBins = displayEndBin - displayStartBin
-            val binIndex = (txOffsetHz / currentBinHz).toInt()
+            val shownHz = dragHz ?: txOffsetHz
+            val binIndex = (shownHz / currentBinHz).toInt()
             val displayBinIndex = binIndex - displayStartBin
 
             if (displayBinIndex in 0 until usableBins) {
@@ -99,35 +118,93 @@ class WaterfallView @JvmOverloads constructor(
                     height.toFloat(),
                     markerPaint
                 )
+                drawTxLabel(canvas, xPosition, shownHz)
             }
         }
     }
 
+    private fun hzToX(hz: Float, binHz: Float, start: Int, end: Int): Float =
+        (hz / binHz - start) * width.toFloat() / (end - start)
+
+    /** Ticks every 500 Hz along the bottom, labelled every 1 kHz. */
+    private fun drawScale(canvas: Canvas, binHz: Float, start: Int, end: Int) {
+        val lowHz = start * binHz
+        val highHz = end * binHz
+        val tick = 6f * density
+        var hz = (kotlin.math.ceil(lowHz / 500f) * 500f)
+        while (hz <= highHz) {
+            val x = hzToX(hz, binHz, start, end)
+            val major = hz.toInt() % 1000 == 0
+            canvas.drawLine(x, height - (if (major) tick * 1.6f else tick), x, height.toFloat(), tickPaint)
+            if (major && hz > 0f) {
+                val label = "${(hz / 1000).toInt()}k"
+                val w = scalePaint.measureText(label)
+                canvas.drawText(label, (x - w / 2f).coerceIn(2f, width - w - 2f), height - tick * 2f, scalePaint)
+            }
+            hz += 500f
+        }
+    }
+
+    /** "TX 1500 Hz" tag at the top of the marker. */
+    private fun drawTxLabel(canvas: Canvas, x: Float, hz: Float) {
+        val text = "TX ${hz.toInt()} Hz"
+        val pad = 4f * density
+        val w = labelText.measureText(text) + pad * 2
+        val h = labelText.textSize + pad * 1.5f
+        val left = (x - w / 2f).coerceIn(0f, (width - w).coerceAtLeast(0f))
+        // A quarter of the way down: clear of the Traffic strip's station tags (top row and middle row).
+        val top = height * 0.25f
+        canvas.drawRoundRect(left, top, left + w, top + h, pad, pad, labelBg)
+        canvas.drawText(text, left + pad, top + h - pad, labelText)
+    }
+
+    private fun hzAt(x: Float): Float? {
+        val binHz = renderer?.getCurrentBinHz() ?: 0f
+        val start = renderer?.getDisplayStartBin() ?: 0
+        val end = renderer?.getDisplayEndBin() ?: -1
+        if (binHz <= 0f || end <= start) return null
+        val pixelsPerBin = width.toFloat() / (end - start)
+        val bin = (x.coerceIn(0f, width.toFloat()) / pixelsPerBin).toInt() + start
+        return bin * binHz
+    }
+
     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
-        when (event.action) {
-            android.view.MotionEvent.ACTION_DOWN -> {
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_MOVE -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                dragHz = hzAt(event.x)
+                postInvalidate()
                 return true
             }
             android.view.MotionEvent.ACTION_UP -> {
-                val currentBinHz = renderer?.getCurrentBinHz() ?: 0f
-                val displayStartBin = renderer?.getDisplayStartBin() ?: 0
-                val displayEndBin = renderer?.getDisplayEndBin() ?: -1
-                if (currentBinHz > 0 && displayEndBin > displayStartBin) {
-                    val usableBins = displayEndBin - displayStartBin
-                    val pixelsPerBin = width.toFloat() / usableBins
-                    val xPosition = event.x.coerceIn(0f, width.toFloat())
-                    val binIndex = (xPosition / pixelsPerBin).toInt()
-                    val actualBinIndex = binIndex + displayStartBin
-                    val newOffsetHz = actualBinIndex * currentBinHz
-
+                dragHz = null
+                val newOffsetHz = hzAt(event.x)
+                if (newOffsetHz != null) {
                     txOffsetHz = newOffsetHz
                     onOffsetChanged?.invoke(txOffsetHz)
-                    android.util.Log.d("WaterfallView", "TX offset set to $txOffsetHz Hz at x=$xPosition (bin=$actualBinIndex)")
+                    // A prompt, not a limit: most radios' SSB filters stop around 2,700 Hz.
+                    if (txOffsetHz > PASSBAND_TOP_HZ) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "TX ${txOffsetHz.toInt()} Hz is above what most radios pass (about 2,700 Hz). Your signal may not go out.",
+                            android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                    }
                 }
+                postInvalidate()
+                return true
+            }
+            android.view.MotionEvent.ACTION_CANCEL -> {
+                dragHz = null
+                postInvalidate()
                 return true
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    companion object {
+        private const val PASSBAND_TOP_HZ = 2700f
     }
 
     override fun onAttachedToWindow() {

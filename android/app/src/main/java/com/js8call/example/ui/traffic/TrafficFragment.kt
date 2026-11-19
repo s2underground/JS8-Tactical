@@ -200,6 +200,12 @@ class TrafficFragment : Fragment() {
         waterfall.onOffsetChanged = { hz ->
             monitor.setTxOffset(hz)
             waterfall.txOffsetHz = hz
+            // Same as the Radio tab: the service uses this offset for automatic replies.
+            requireContext().startService(
+                android.content.Intent(requireContext(), com.js8call.example.service.JS8EngineService::class.java)
+                    .setAction(com.js8call.example.service.JS8EngineService.ACTION_SET_TX_OFFSET)
+                    .putExtra(com.js8call.example.service.JS8EngineService.EXTRA_TX_OFFSET_HZ, hz),
+            )
         }
         monitor.status.observe(viewLifecycleOwner) { status ->
             waterfall.txOffsetHz = status.txOffsetHz

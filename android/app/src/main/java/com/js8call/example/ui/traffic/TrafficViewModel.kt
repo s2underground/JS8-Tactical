@@ -371,6 +371,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         messages.forEach { m ->
             if (m.id in reportedIds) return@forEach
             val sender = m.sender ?: return@forEach
+            // Our own transmissions decoded back (audio loopback) are not evidence of anything.
+            if (isMe(sender)) { reportedIds += m.id; return@forEach }
             val body = m.bodyText.uppercase()
             val to = m.recipient?.uppercase()
             var used = false

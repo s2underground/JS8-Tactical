@@ -241,7 +241,13 @@ class WaterfallRenderer {
         canvas.drawColor(Color.BLACK)
         canvas.drawBitmap(temp, 0f, 0f, null)
 
-        val actualEndBin = if (endBin > 0) endBin else bins.size
+        var actualEndBin = if (endBin > 0) endBin else bins.size
+        // Show the audio range a radio actually passes (0–3.5 kHz), not the whole sound card band:
+        // more detail where JS8 lives, and a tap can't land at 5 kHz by accident.
+        if (currentBinHz > 0f) {
+            val cap = kotlin.math.ceil(DISPLAY_MAX_HZ / currentBinHz).toInt()
+            if (cap > startBin + 10 && cap < actualEndBin) actualEndBin = cap
+        }
         displayStartBin = startBin
         displayEndBin = actualEndBin
         val usableBins = actualEndBin - startBin
@@ -335,4 +341,9 @@ class WaterfallRenderer {
     private val dbMinHistory = mutableListOf<Float>()
     private val dbMaxHistory = mutableListOf<Float>()
     private val historySize = 20
+
+    companion object {
+        /** Highest audio frequency the waterfall shows. */
+        const val DISPLAY_MAX_HZ = 3500f
+    }
 }
