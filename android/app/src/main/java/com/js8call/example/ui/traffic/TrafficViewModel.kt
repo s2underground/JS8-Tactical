@@ -473,6 +473,14 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     /** Where Send goes for the current selection: a callsign, a group, or null for an open broadcast. */
     fun sendTarget(): String? = selectedKey.takeIf { it != ALL && !it.startsWith("#") }
 
+    /** Unread stored messages (the inbox), set by the screen that observes the message database. */
+    private var inboxUnread = 0
+    fun setInboxUnread(count: Int) {
+        if (count == inboxUnread) return
+        inboxUnread = count
+        publish()
+    }
+
     /** Add an @group or #tag to watch (Settings → My Groups holds the list). */
     fun watch(entry: String): String? {
         val e = entry.trim().uppercase().replace(Regex("\\s+"), "")
@@ -592,9 +600,13 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             .sortedByDescending { it.value.lastHeardMs }
             .map { (call, h) ->
                 val fromThem = bySender[call].orEmpty()
+                val unreadForMe = fromThem.count { isMe(it.recipient) && it.lastHeardMs > (lastViewedMs[call] ?: viewedBaselineMs) }
                 StationRow(
                     key = call, label = call, isGroup = false, color = colorFor(call),
-                    detail = listOfNotNull(h.grid, "+${h.laneHz.toInt()} Hz", "${h.snr} dB").joinToString(" · "),
+                    detail = listOfNotNull(
+                        if (unreadForMe > 0) "► FOR YOU" else null,
+                        h.grid, "+${h.laneHz.toInt()} Hz", "${h.snr} dB",
+                    ).joinToString(" · "),
                     lastHeardMs = h.lastHeardMs,
                     unread = fromThem.count { it.lastHeardMs > (lastViewedMs[call] ?: viewedBaselineMs) },
                     selected = call == selectedKey,
@@ -605,6 +617,11 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         // Team shortcut (opens the Team tab): how many members were heard in the last 24 h.
         val roster = TeamRoster.decode(PreferenceManager.getDefaultSharedPreferences(getApplication()).getString(TeamRoster.KEY, null))
         val heardBase = heard.filter { now - it.value.lastHeardMs < 24 * 3_600_000L }.keys.map(TeamMember::baseOf).toSet()
+        val inboxRow = StationRow(
+            key = INBOX, label = "Inbox", isGroup = true, color = ACCENT,
+            detail = "Stored messages (MSG) sent to you or your groups",
+            lastHeardMs = 0L, unread = inboxUnread, selected = false, receiving = false,
+        )
         val watchRow = StationRow(
             key = WATCH, label = "+ Watch a group or #tag", isGroup = true, color = ACCENT,
             detail = "e.g. @GHOSTNET, #SITREP", lastHeardMs = 0L, unread = 0, selected = false, receiving = false,
@@ -621,7 +638,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             lastHeardMs = messages.maxOfOrNull { it.lastHeardMs } ?: 0L,
             unread = 0, selected = selectedKey == ALL, receiving = false,
         )
-        _stations.value = listOf(allRow, teamRow) + groupRows + tagRows + watchRow + stationRows
+        _stations.value = listOf(allRow, inboxRow, teamRow) + groupRows + tagRows + watchRow + stationRows
 
         // Thread for the selection.
         val key = selectedKey
@@ -787,6 +804,14 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     companion object {
         @Volatile private var instance: TrafficViewModel? = null
 
+        /** True when [call] is this station's callsign (ignoring /P and other suffixes). */
+        fun isMyCall(context: android.content.Context, call: String?): Boolean {
+            if (call.isNullOrBlank()) return false
+            val me = PreferenceManager.getDefaultSharedPreferences(context).getString("callsign", "").orEmpty()
+                .trim().uppercase().substringBefore('/')
+            return me.isNotEmpty() && call.trim().uppercase().substringBefore('/') == me
+        }
+
         /**
          * The one Traffic model for the whole app. It lives as long as the process
          * (not one screen), so decodes keep landing in history, Digest, Team, ATAK
@@ -803,6 +828,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         const val TEAM = "§TEAM"
         /** Station-list row that adds a group or tag to watch. */
         const val WATCH = "§WATCH"
+        /** Station-list row that opens the stored-message inbox. */
+        const val INBOX = "§INBOX"
         private const val TICK_MS = 5_000L
         private const val ACCENT = 0xFFF2A33A.toInt()
 

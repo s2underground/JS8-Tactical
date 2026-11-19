@@ -245,6 +245,8 @@ class TrafficFragment : Fragment() {
             when {
                 row.key == TrafficViewModel.TEAM -> openTeam()
                 row.key == TrafficViewModel.WATCH -> askWatch()
+                row.key == TrafficViewModel.INBOX ->
+                    androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_messages)
                 // Tapping the selected station again goes back to everyone.
                 row.selected && row.key != TrafficViewModel.ALL -> traffic.select(TrafficViewModel.ALL)
                 else -> traffic.select(row.key)

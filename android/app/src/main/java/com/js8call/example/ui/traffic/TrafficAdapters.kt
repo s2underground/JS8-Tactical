@@ -133,7 +133,20 @@ class ThreadAdapter(
         h.from.text = sender ?: ctx.getString(R.string.traffic_unknown_sender, m.laneHz.toInt())
         h.from.setTextColor(item.color)
         h.to.isVisible = m.recipient != null
-        h.to.text = ctx.getString(R.string.traffic_to, m.recipient ?: "")
+        val forMe = TrafficViewModel.isMyCall(ctx, m.recipient)
+        if (forMe) {
+            // Addressed to this station: make it impossible to miss.
+            h.to.text = ctx.getString(R.string.traffic_to_you)
+            h.to.setTextColor(ContextCompat.getColor(ctx, R.color.tac_ground))
+            h.to.setBackgroundResource(R.drawable.bg_pill_tx)
+            val p = (6 * ctx.resources.displayMetrics.density).toInt()
+            h.to.setPadding(p, p / 3, p, p / 3)
+        } else {
+            h.to.text = ctx.getString(R.string.traffic_to, m.recipient ?: "")
+            h.to.setTextColor(ContextCompat.getColor(ctx, R.color.tac_accent))
+            h.to.background = null
+            h.to.setPadding(0, 0, 0, 0)
+        }
         h.copies.isVisible = m.copies > 1
         h.copies.text = ctx.getString(R.string.traffic_copies, m.copies)
 

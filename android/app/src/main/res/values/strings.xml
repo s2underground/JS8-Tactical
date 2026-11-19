@@ -321,6 +321,7 @@
     <string name="traffic_send_x3">Send ×3</string>
     <string name="traffic_demo_loaded">Sample traffic loaded (test build)</string>
     <string name="traffic_clear_selection">Everyone</string>
+    <string name="traffic_to_you">→ YOU</string>
     <string name="traffic_state_tx_stop">TX · tap to stop</string>
     <string name="tpl_heartbeat">♥ Heartbeat</string>
     <string name="tpl_checkin">Check-in</string>

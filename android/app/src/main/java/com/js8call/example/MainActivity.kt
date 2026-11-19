@@ -235,6 +235,7 @@ class MainActivity : AppCompatActivity() {
         monitorViewModel.isRunning.observe(this) { running -> trafficViewModel.setListening(running == true) }
 
         // Observe unread count for badge on Messages tab
+        messagesViewModel.totalUnreadCount.observe(this) { count -> trafficViewModel.setInboxUnread(count ?: 0) }
         messagesViewModel.totalUnreadCount.observe(this) { count ->
             // Phones in portrait have no Messages tab (five-tab limit); Traffic covers it there.
             if (bottomNav.menu.findItem(R.id.navigation_messages) == null) return@observe
