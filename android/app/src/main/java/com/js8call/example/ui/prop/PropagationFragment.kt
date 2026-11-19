@@ -111,7 +111,7 @@ class PropagationFragment : Fragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        traffic = ViewModelProvider(requireActivity())[TrafficViewModel::class.java]
+        traffic = TrafficViewModel.of(requireContext())
         cache = ViewModelProvider(requireActivity())[PropCache::class.java]
         weather = traffic.weather
         val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())

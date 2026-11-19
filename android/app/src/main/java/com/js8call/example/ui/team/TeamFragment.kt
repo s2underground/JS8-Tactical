@@ -57,7 +57,7 @@ class TeamFragment : Fragment() {
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val ctx = requireContext()
-        traffic = ViewModelProvider(requireActivity())[TrafficViewModel::class.java]
+        traffic = TrafficViewModel.of(requireContext())
         cache = ViewModelProvider(requireActivity())[PropCache::class.java]
 
         val root = LinearLayout(ctx).apply {
@@ -142,12 +142,13 @@ class TeamFragment : Fragment() {
                 android.util.Log.w("TeamFragment", "predictor build failed", e)
                 Predictor(me, wx, profile)
             }
-            view?.post {
+            // Main looper, not view.post: if the view is gone by now, "building" must still clear.
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
                 predictor = p
                 predictorAtMs = now
                 building = false
                 lastKey = null
-                refresh()
+                if (view != null) refresh()
             }
         }
     }

@@ -31,7 +31,7 @@ class GuideFragment : Fragment() {
         val ctx = requireContext()
         val id = arguments?.getString(ARG_ID).orEmpty()
         val guide = Library.get(ctx, id)
-        val band = try { ViewModelProvider(requireActivity())[TrafficViewModel::class.java].currentBand() } catch (_: Exception) { null }
+        val band = try { TrafficViewModel.of(requireContext()).currentBand() } catch (_: Exception) { null }
 
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL

@@ -57,7 +57,7 @@ class TrafficFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val provider = ViewModelProvider(requireActivity())
-        traffic = provider[TrafficViewModel::class.java]
+        traffic = TrafficViewModel.of(requireContext())
         monitor = provider[MonitorViewModel::class.java]
         transmit = provider[TransmitViewModel::class.java]
 

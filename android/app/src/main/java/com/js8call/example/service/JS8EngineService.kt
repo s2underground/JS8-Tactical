@@ -296,6 +296,8 @@ class JS8EngineService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // Make sure Traffic is listening even if Android restarted this service without the app's screen.
+        runCatching { com.js8call.example.ui.traffic.TrafficViewModel.of(applicationContext) }
         createNotificationChannel()
         createRigTransports()
         txHandlerThread.start()
@@ -398,6 +400,7 @@ class JS8EngineService : Service() {
         messageLogger?.shutdown()
 
         stopEngine()
+        holdCpu(false)
         txHandlerThread.quitSafely()
     }
 
@@ -1787,7 +1790,31 @@ class JS8EngineService : Service() {
         }
     }
 
+    /**
+     * Keeps the CPU awake while the receiver runs, so decoding (and the Traffic
+     * history, Digest and ATAK output fed by it) carries on with the screen off.
+     * Held only while the engine is running or starting.
+     */
+    private var cpuLock: android.os.PowerManager.WakeLock? = null
+
+    private fun holdCpu(on: Boolean) {
+        try {
+            if (on) {
+                val lock = cpuLock ?: (getSystemService(POWER_SERVICE) as android.os.PowerManager)
+                    .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "JS8Tactical:receiver")
+                    .apply { setReferenceCounted(false) }
+                    .also { cpuLock = it }
+                if (!lock.isHeld) lock.acquire()
+            } else {
+                cpuLock?.takeIf { it.isHeld }?.release()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "wake lock ${if (on) "acquire" else "release"} failed", e)
+        }
+    }
+
     private fun broadcastEngineState(state: String) {
+        holdCpu(state == STATE_RUNNING || state == STATE_STARTING)
         val intent = Intent(ACTION_ENGINE_STATE).apply {
             putExtra(EXTRA_STATE, state)
         }

@@ -70,15 +70,17 @@ class ObservationStore(private val file: File, private val keepMs: Long = 30 * D
     }
 
     @Synchronized
-    fun add(o: Observation, persist: Boolean = true) {
+    fun add(o: Observation, persist: Boolean = true): Boolean {
         load()
         // One entry per station, band, kind and 15-minute window is plenty.
-        val dup = items.any {
+        // Newest last, so scan backwards: a duplicate is almost always recent.
+        val dup = items.asReversed().any {
             it.call == o.call && it.by == o.by && it.band == o.band && it.kind == o.kind && abs(it.timeMs - o.timeMs) < 15 * 60_000L
         }
-        if (dup) return
+        if (dup) return false
         items += o
         if (persist) runCatching { file.appendText(o.encode() + "\n") }
+        return true
     }
 
     @Synchronized

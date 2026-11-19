@@ -43,7 +43,7 @@ class DigestFragment : Fragment() {
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val ctx = requireContext()
         windowHours = savedInstanceState?.getInt("window", 24) ?: 24
-        traffic = ViewModelProvider(requireActivity())[TrafficViewModel::class.java]
+        traffic = TrafficViewModel.of(requireContext())
 
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL

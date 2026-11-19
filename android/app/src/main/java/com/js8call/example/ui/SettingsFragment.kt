@@ -334,7 +334,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     // ------------------------------------------------------------------ history
 
     private fun setUpHistory() {
-        val traffic = ViewModelProvider(requireActivity())[com.js8call.example.ui.traffic.TrafficViewModel::class.java]
+        val traffic = com.js8call.example.ui.traffic.TrafficViewModel.of(requireContext())
         findPreference<ListPreference>(com.js8call.example.ui.traffic.TrafficHistory.KEY_KEEP_HOURS)?.setOnPreferenceChangeListener { _, _ ->
             // Applied after the value is saved.
             Handler(Looper.getMainLooper()).post { if (isAdded) traffic.historySettingChanged(); updateHistorySummary() }
@@ -357,7 +357,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     private fun updateHistorySummary() {
-        val traffic = ViewModelProvider(requireActivity())[com.js8call.example.ui.traffic.TrafficViewModel::class.java]
+        val traffic = com.js8call.example.ui.traffic.TrafficViewModel.of(requireContext())
         val kb = traffic.historySizeBytes() / 1024.0
         findPreference<Preference>("history_clear")?.summary = when {
             kb <= 0.0 -> "Nothing saved on this device"

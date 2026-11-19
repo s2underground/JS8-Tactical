@@ -84,7 +84,7 @@ class MapFragment : Fragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        traffic = ViewModelProvider(requireActivity())[TrafficViewModel::class.java]
+        traffic = TrafficViewModel.of(requireContext())
         // Keep areas viewed online available offline.
         OfflineManager.getInstance(requireContext()).setMaximumAmbientCacheSize(AMBIENT_CACHE_BYTES, null)
 

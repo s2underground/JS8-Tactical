@@ -24,6 +24,7 @@ import com.js8call.example.reports.Reports
 import com.js8call.example.rollup.HeaderParser
 import com.js8call.example.rollup.RolledMessage
 import com.js8call.example.rollup.RollupEngine
+import com.js8call.example.service.JS8EngineService
 import java.io.File
 
 /**
@@ -161,9 +162,52 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     fun requestCompose(text: String) { _pendingCompose.value = text }
     fun composeConsumed() { _pendingCompose.value = null }
 
+    /**
+     * Traffic listens to the engine service itself, not through the screen, so
+     * nothing is missed while the app is in the background or the screen is off.
+     */
+    private val serviceReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
+            try {
+                when (intent.action) {
+                    JS8EngineService.ACTION_DECODE -> addFrame(
+                        intent.getIntExtra(JS8EngineService.EXTRA_UTC, 0),
+                        intent.getIntExtra(JS8EngineService.EXTRA_SNR, 0),
+                        intent.getFloatExtra(JS8EngineService.EXTRA_FREQ, 0f),
+                        intent.getStringExtra(JS8EngineService.EXTRA_TEXT) ?: "",
+                        intent.getIntExtra(JS8EngineService.EXTRA_TYPE, 0),
+                        intent.getIntExtra(JS8EngineService.EXTRA_MODE, 0),
+                    )
+                    JS8EngineService.ACTION_TX_SENT -> {
+                        val text = intent.getStringExtra(JS8EngineService.EXTRA_TX_SENT_TEXT) ?: return
+                        addOutgoing(text, intent.getFloatExtra(JS8EngineService.EXTRA_TX_SENT_FREQ, 0f))
+                    }
+                    JS8EngineService.ACTION_RADIO_FREQUENCY -> {
+                        val hz = intent.getLongExtra(JS8EngineService.EXTRA_RADIO_FREQUENCY_HZ, 0L)
+                        if (hz > 0) setDialFrequency(hz)
+                    }
+                    JS8EngineService.ACTION_ENGINE_STATE ->
+                        setListening(intent.getStringExtra(JS8EngineService.EXTRA_STATE) == JS8EngineService.STATE_RUNNING)
+                }
+            } catch (e: Exception) {
+                // One bad frame must never take the traffic picture down.
+                android.util.Log.w("TrafficViewModel", "broadcast ${intent.action} failed", e)
+            }
+        }
+    }
+
     init {
         handler.postDelayed(ticker, TICK_MS)
         loadHistory()
+        androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(application).registerReceiver(
+            serviceReceiver,
+            android.content.IntentFilter().apply {
+                addAction(JS8EngineService.ACTION_DECODE)
+                addAction(JS8EngineService.ACTION_TX_SENT)
+                addAction(JS8EngineService.ACTION_RADIO_FREQUENCY)
+                addAction(JS8EngineService.ACTION_ENGINE_STATE)
+            },
+        )
     }
 
     // ---------------------------------------------------------------- history
@@ -277,8 +321,20 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
-        if (!replaying) publish()
+        if (!replaying) requestPublish()
     }
+
+    /**
+     * A busy slot ends with a burst of decodes at once; rebuild the picture once
+     * for the burst instead of once per frame.
+     */
+    private fun requestPublish() {
+        if (publishPending) return
+        publishPending = true
+        handler.postDelayed(publishSoon, 300L)
+    }
+    private var publishPending = false
+    private val publishSoon = Runnable { publishPending = false; publish() }
 
     /** Dial frequency from rig control (null or 0 when there is none). */
     fun setDialFrequency(hz: Long?) {
@@ -298,9 +354,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     fun gridFor(call: String): String? = heard[call]?.grid
 
     private fun observe(o: Observation) {
-        val before = observationStore.all().size
-        observationStore.add(o, persist = demoBand == null)
-        if (observationStore.all().size != before) _observationsVersion.value = (_observationsVersion.value ?: 0) + 1
+        if (observationStore.add(o, persist = demoBand == null)) _observationsVersion.value = (_observationsVersion.value ?: 0) + 1
     }
 
     /**
@@ -368,7 +422,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val shownTo = to ?: firstToken(text)?.takeIf { it.startsWith("@") || looksLikeCall(it) }
         val shownBody = if (to == null && shownTo != null) text.trim().removePrefix(shownTo).trim() else body
         outgoing += ThreadItem.Outgoing(shownTo, shownBody.ifEmpty { text.trim() }, sentMs, frequency)
-        if (!replaying) publish()
+        if (!replaying) requestPublish()
     }
 
     fun select(key: String) {
@@ -439,8 +493,9 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val groupKeys = (myGroups + messages.mapNotNull { it.recipient }.filter { it.startsWith("@") })
             .filterNot { it == "@HB" }
             .distinct()
+        val byRecipient = messages.groupBy { it.recipient }
         val groupRows = groupKeys.map { g ->
-            val inGroup = messages.filter { it.recipient == g }
+            val inGroup = byRecipient[g].orEmpty()
             val last = inGroup.maxOfOrNull { it.lastHeardMs } ?: 0L
             StationRow(
                 key = g, label = g, isGroup = true, color = ACCENT,
@@ -452,10 +507,11 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             )
         }.sortedByDescending { it.lastHeardMs }
 
+        val bySender = messages.groupBy { it.sender }
         val stationRows = heard.entries
             .sortedByDescending { it.value.lastHeardMs }
             .map { (call, h) ->
-                val fromThem = messages.filter { it.sender == call }
+                val fromThem = bySender[call].orEmpty()
                 StationRow(
                     key = call, label = call, isGroup = false, color = colorFor(call),
                     detail = listOfNotNull(h.grid, "+${h.laneHz.toInt()} Hz", "${h.snr} dB").joinToString(" · "),
@@ -509,7 +565,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                 MapStation(call, grid, pos, colorFor(call), h.lastHeardMs, h.snr)
             },
             reports = messages.mapNotNull { m ->
-                val report = Reports.parse(m.bodyText) ?: return@mapNotNull null
+                val report = parsedReport(m) ?: return@mapNotNull null
                 val pos = report.location ?: return@mapNotNull null
                 MapReport(m.id, report, m.sender, pos, m.lastHeardMs, colorFor(m.sender), m.firstHeardMs)
             },
@@ -592,6 +648,20 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Report parsing is regex work; cache it per message until its text changes. */
+    private val reportCache = HashMap<Long, Pair<String, Reports.Report?>>()
+    private fun parsedReport(m: RolledMessage): Reports.Report? {
+        val body = m.bodyText
+        reportCache[m.id]?.let { (text, r) -> if (text == body) return r }
+        val r = Reports.parse(body)
+        reportCache[m.id] = body to r
+        if (reportCache.size > 4 * (engine.messages().size + 64)) {
+            val live = engine.messages().mapTo(HashSet()) { it.id }
+            reportCache.keys.retainAll(live)
+        }
+        return r
+    }
+
     private fun isBeacon(m: RolledMessage): Boolean {
         if (m.recipient == "@HB") return true
         val body = m.bodyText.uppercase()
@@ -606,6 +676,19 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     companion object {
+        @Volatile private var instance: TrafficViewModel? = null
+
+        /**
+         * The one Traffic model for the whole app. It lives as long as the process
+         * (not one screen), so decodes keep landing in history, Digest, Team, ATAK
+         * and the propagation log while the app is in the background.
+         * Call on the main thread.
+         */
+        fun of(context: android.content.Context): TrafficViewModel =
+            instance ?: synchronized(this) {
+                instance ?: TrafficViewModel(context.applicationContext as Application).also { instance = it }
+            }
+
         const val ALL = "*"
         /** Station-list row that opens the Team tab. */
         const val TEAM = "#TEAM"

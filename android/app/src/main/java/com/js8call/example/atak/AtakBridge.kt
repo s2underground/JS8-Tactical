@@ -70,6 +70,8 @@ object AtakBridge {
      */
     fun sync(ctx: Context, points: List<Cot.Point>, nowMs: Long = System.currentTimeMillis()) {
         if (!enabled(ctx)) return
+        // Forget points that are gone (pruned history), so this map can't grow for days.
+        if (lastSent.size > points.size + 200) lastSent.keys.retainAll(points.mapTo(HashSet()) { it.uid })
         val due = points.filter { p ->
             if (p.staleMs <= nowMs) return@filter false
             val prev = lastSent[p.uid]
