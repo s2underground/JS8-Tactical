@@ -34,7 +34,7 @@ object CrashReporter {
     private const val FILE = "crash-report.txt"
     private const val PREFS = "crash_reporter"
     private const val KEY_LAST_EXIT = "last_exit_seen"
-    private const val KEY_LAST_NATIVE_TRACE = "last_native_trace"
+    private const val KEY_LAST_NATIVE_TRACE = "last_native_trace_v2"
     private const val MAX_BYTES = 64 * 1024
 
     private var appContext: Context? = null
@@ -141,23 +141,7 @@ object CrashReporter {
     private fun nativeStrings(e: ApplicationExitInfo): String {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return ""
         val bytes = runCatching { e.traceInputStream?.use { it.readBytes() } }.getOrNull() ?: return "(no native trace available)\n"
-        val out = LinkedHashSet<String>()
-        val run = StringBuilder()
-        fun flush() {
-            if (run.length >= 5) {
-                val t = run.toString().trim()
-                if (t.length >= 5 && t.any { it.isLetter() }) out += t
-            }
-            run.setLength(0)
-        }
-        for (b in bytes) {
-            val c = b.toInt() and 0xFF
-            if (c in 0x20..0x7E) run.append(c.toChar()) else flush()
-            if (out.size >= 160) break
-        }
-        flush()
-        val text = out.joinToString("\n")
-        return "Trace strings (${bytes.size} bytes):\n" + text.take(10_000) + "\n"
+        return Tombstone.summarize(bytes)
     }
 
     private fun append(title: String, error: Throwable) {
