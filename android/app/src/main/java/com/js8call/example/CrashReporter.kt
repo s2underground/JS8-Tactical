@@ -284,7 +284,8 @@ object CrashReporter {
         val pending = file(ctx).takeIf { it.exists() }?.readText().orEmpty()
         if (pending.isNotBlank()) sb.append("== Pending report\n").append(pending).append('\n')
         val past = File(ctx.filesDir, ARCHIVE).takeIf { it.exists() }?.readText().orEmpty()
-        sb.append("== Past crash/ANR reports\n").append(if (past.isBlank()) "(none)\n" else past.takeLast(48_000)).append('\n')
+        sb.append("== Past crash/ANR reports (each shown once, oldest first)\n")
+            .append(if (past.isBlank()) "(none)\n" else distinctReports(past).takeLast(48_000)).append('\n')
         val drops = com.js8call.example.service.UsbDropouts.text(ctx)
         sb.append("== Radio USB dropouts\n").append(if (drops.isBlank()) "(none recorded)\n" else drops.takeLast(12_000)).append('\n')
         val echoes = com.js8call.example.ui.traffic.OwnEchoLog.text(ctx)
@@ -300,7 +301,10 @@ object CrashReporter {
             // The engine logs several debug lines a second; drop those so the report reaches back
             // hours instead of two minutes.
             val noise = Regex("Audio: \\d+ samples|Decode ready|Decode started|Decode finished|legacy_decode|Submode [A-Z]:|" +
-                "processNextTxIfIdle|ACTION_PROCESS_TX_QUEUE|BLASTBufferQueue|VRI\\[|InsetsController|Ring buffer aligned|spectrum")
+                "processNextTxIfIdle|ACTION_PROCESS_TX_QUEUE|BLASTBufferQueue|VRI\\[|InsetsController|Ring buffer aligned|spectrum|" +
+                // Twice-a-second engine status lines: idle TX audio, audio submits, empty decode passes.
+                "TX audio: .*active=0|Audio submit|DecodeStarted|DecodeFinished: count=0|Spectrum broadcasts|" +
+                "AutofillManager|SmartClip|ImeFocusController|ImeTracker|InputTransport")
             val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "60000"))
             proc.inputStream.bufferedReader().useLines { lines ->
                 lines.filterNot { noise.containsMatchIn(it) }.toList().takeLast(4000).joinToString("\n")
@@ -309,6 +313,14 @@ object CrashReporter {
         sb.append(log.takeLast(220_000))
         return sb.toString()
     }
+
+    /** The archive repeats every report each time it was shown; keep each one once, in order. */
+    internal fun distinctReports(past: String): String =
+        past.split(Regex("(?m)^(?=##### |===== )"))
+            .map { it.trimEnd() }
+            .filter { it.startsWith("===== ") }
+            .distinct()
+            .joinToString("\n\n", postfix = "\n")
 
     private fun stamp(ms: Long): String =
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(ms))
