@@ -405,6 +405,9 @@ class TrafficFragment : Fragment() {
                 .show()
         }
         view.findViewById<View>(R.id.thread_clear).setOnClickListener { traffic.select(TrafficViewModel.ALL) }
+        view.findViewById<com.google.android.material.button.MaterialButton>(R.id.thread_relay).setOnClickListener {
+            if (relayVia != null) { relayVia = null; renderRelay() } else showRelayFinder()
+        }
         stationList.layoutManager = LinearLayoutManager(requireContext())
         stationList.adapter = stations
         stationList.itemAnimator = null
@@ -436,10 +439,8 @@ class TrafficFragment : Fragment() {
         traffic.selected.observe(viewLifecycleOwner) {
             thread.notifyDataSetChanged()
             view.findViewById<View>(R.id.thread_clear).isVisible = it != TrafficViewModel.ALL
-            view.findViewById<EditText>(R.id.compose_input).hint = when (it) {
-                TrafficViewModel.ALL -> getString(R.string.traffic_hint_all)
-                else -> getString(R.string.traffic_hint_to, it)
-            }
+            if (relayFor != it) { relayVia = null; relayFor = null }
+            renderRelay()
         }
         traffic.live.observe(viewLifecycleOwner) { live ->
             liveBar.isVisible = live != null
@@ -524,6 +525,125 @@ class TrafficFragment : Fragment() {
 
     private var stationLongPress: (TrafficViewModel.StationRow) -> Boolean = { false }
 
+    /** Relay chosen for the selected station ([relayFor]); sends go "RELAY>TARGET>text". */
+    private var relayVia: String? = null
+    private var relayFor: String? = null
+
+    private fun selectedStation(): String? = traffic.selected.value?.takeIf {
+        it != TrafficViewModel.ALL && !it.startsWith("@") && !it.startsWith("#") && !it.startsWith("§")
+    }
+
+    private fun renderRelay() {
+        val v = view ?: return
+        val station = selectedStation()
+        val button = v.findViewById<com.google.android.material.button.MaterialButton>(R.id.thread_relay)
+        button.isVisible = station != null
+        button.text = relayVia?.let { getString(R.string.relay_via, it) } ?: getString(R.string.relay_find)
+        val sel = traffic.selected.value ?: TrafficViewModel.ALL
+        v.findViewById<EditText>(R.id.compose_input).hint = when {
+            sel == TrafficViewModel.ALL -> getString(R.string.traffic_hint_all)
+            relayVia != null && station != null -> getString(R.string.relay_hint, station, relayVia)
+            else -> getString(R.string.traffic_hint_to, sel)
+        }
+    }
+
+    /** Who could carry a message to the selected station, from traffic already heard. */
+    private fun showRelayFinder() {
+        val target = selectedStation() ?: return
+        val ctx = requireContext()
+        val plan = traffic.relayPlan(target)
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val dim = ContextCompat.getColor(ctx, R.color.tac_text_dim)
+        val text = ContextCompat.getColor(ctx, R.color.tac_text)
+        fun line(s: CharSequence, color: Int = text, size: Float = 15f, top: Int = pad / 2) = android.widget.TextView(ctx).apply {
+            this.text = s
+            setTextColor(color)
+            textSize = size
+            setPadding(0, top, 0, 0)
+        }
+        val box = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        box.addView(line(when {
+            plan.targetHeardUs != null -> getString(R.string.relay_direct_ok, target, legWhen(plan.targetHeardUs))
+            plan.weHearTarget != null -> getString(R.string.relay_direct_oneway, target, legWhen(plan.weHearTarget))
+            else -> getString(R.string.relay_direct_none, target)
+        }))
+        var dialog: androidx.appcompat.app.AlertDialog? = null
+        if (plan.options.isEmpty()) {
+            box.addView(line(getString(R.string.relay_none, target), dim, 14f))
+        } else {
+            box.addView(line(getString(R.string.relay_options_header, target), dim, 13.5f, pad))
+            plan.options.forEach { o ->
+                val row = line(
+                    android.text.SpannableStringBuilder().apply {
+                        val start = length
+                        append("via ${o.relay}  ·  ${quality(o.score)}")
+                        setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, length, 0)
+                        append("\n").append(legText("You ↔ ${o.relay}", o.relay, o.toRelay))
+                        append("\n").append(legText("${o.relay} ↔ $target", o.relay, o.relayToTarget, target))
+                    },
+                    text, 14.5f, pad / 2,
+                ).apply {
+                    val tv = android.util.TypedValue()
+                    ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                    setBackgroundResource(tv.resourceId)
+                    setPadding(0, pad / 2, 0, pad / 2)
+                    setOnClickListener {
+                        relayVia = o.relay
+                        relayFor = target
+                        renderRelay()
+                        dialog?.dismiss()
+                    }
+                }
+                box.addView(row)
+            }
+        }
+        box.addView(line(getString(R.string.relay_footer), dim, 12.5f, pad))
+        dialog = MaterialAlertDialogBuilder(ctx)
+            .setTitle(getString(R.string.relay_title, target))
+            .setView(android.widget.ScrollView(ctx).apply { addView(box) })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun quality(score: Double) = when {
+        score >= 0.5 -> "good"
+        score >= 0.25 -> "fair"
+        else -> "weak"
+    }
+
+    private fun ago(ms: Long): String {
+        val min = ms / 60_000L
+        return when {
+            min < 1 -> "just now"
+            min < 60 -> "$min min ago"
+            else -> "${min / 60} h ${min % 60} min ago"
+        }
+    }
+
+    private fun snrText(snr: Int?) = snr?.let { if (it >= 0) "+$it dB" else "\u2212${-it} dB" }
+
+    private fun legWhen(leg: RelayFinder.Leg) = listOfNotNull(snrText(leg.snr)?.let { "at $it" }, ago(leg.ageMs)).joinToString(", ")
+
+    /** One leg in plain words. */
+    private fun legText(label: String, relay: String, leg: RelayFinder.Leg, target: String? = null): String {
+        val snr = snrText(leg.snr)
+        val what = when (leg.kind) {
+            RelayFinder.Leg.Kind.HEARD_US -> "$relay heard you" + (snr?.let { " at $it" } ?: "")
+            RelayFinder.Leg.Kind.WE_HEAR -> "you hear $relay" + (snr?.let { " at $it" } ?: "") + " (no report of it hearing you)"
+            RelayFinder.Leg.Kind.REPORTED -> {
+                val heardBy = leg.reporter ?: relay
+                val heard = if (heardBy == relay) target ?: "" else relay
+                "$heardBy heard $heard" + (snr?.let { " at $it" } ?: "")
+            }
+            RelayFinder.Leg.Kind.WORKED -> "heard working each other"
+            RelayFinder.Leg.Kind.CALLED -> "one called the other, no reply heard"
+        }
+        return "$label: $what, ${ago(leg.ageMs)}"
+    }
+
     /**
      * Start the receiver, but if the saved sound card (the radio interface) isn't plugged
      * in, ask first instead of quietly listening on the tablet's own microphone.
@@ -601,6 +721,12 @@ class TrafficFragment : Fragment() {
     private fun send(text: String, copies: Int): Boolean {
         if (!readyToSend()) return false
         val target = traffic.sendTarget()
+        val via = relayVia
+        if (via != null && target != null && target == relayFor) {
+            repeat(copies) { transmit.queueRelayMessage(via, target, text) }
+            Snackbar.make(requireView(), getString(R.string.relay_queued, target, via), Snackbar.LENGTH_SHORT).show()
+            return true
+        }
         if (target == null && text.trim().uppercase().startsWith("MSG ")) {
             Snackbar.make(requireView(), "A stored message (MSG) goes to one station: pick it in the list first.", Snackbar.LENGTH_LONG).show()
             return false

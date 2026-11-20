@@ -478,6 +478,37 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         rigDialHz ?: PreferenceManager.getDefaultSharedPreferences(getApplication())
             .getString("last_frequency", "")?.trim()?.toLongOrNull()?.takeIf { it > 0 }
 
+    /**
+     * Relay options for reaching [target] on the band we're on now: who heard us, who we
+     * hear, and who has been heard working [target] (see [RelayFinder]).
+     */
+    fun relayPlan(target: String): RelayFinder.Plan {
+        val now = System.currentTimeMillis()
+        val band = currentBand()
+        val label = band?.label
+        val stations = HashMap<String, RelayFinder.Station>()
+        heard.forEach { (call, h) ->
+            val hBand = Band.forDialHz(h.dialHz)
+            if (band != null && hBand != null && hBand != band) return@forEach
+            stations[call.uppercase()] = RelayFinder.Station(call.uppercase(), h.snr, h.lastHeardMs, null, null)
+        }
+        observationStore.all()
+            .filter { it.kind == Observation.Kind.HEARD_ME && (band == null || it.band == band) }
+            .groupBy { it.call.uppercase() }
+            .forEach { (call, list) ->
+                val latest = list.maxBy { it.timeMs }
+                val prev = stations[call]
+                stations[call] = (prev ?: RelayFinder.Station(call, null, null, null, null))
+                    .copy(heardUsSnr = latest.snr, heardUsMs = latest.timeMs)
+            }
+        val links = mapMemory.links()
+            .filter { label == null || it.bands.isEmpty() || label in it.bands }
+            .map { l ->
+                RelayFinder.Link(l.a, l.b, l.lastHeardMs, l.snr, l.reporter, bothWays = l.seen and 3 == 3, hearing = l.seen and 4 != 0)
+            }
+        return RelayFinder.plan(target, stations, links, now)
+    }
+
     /** Band [call] was on when we last heard it (the dial we were on then), else the band we're on now. */
     private fun bandOf(call: String): String? =
         if (demoBand != null) demoBand?.label
@@ -650,6 +681,13 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun addOutgoingAt(text: String, frequency: Float, sentMs: Long) {
+        // A relay we sent ("RELAY>TARGET>TEXT") belongs in the target's thread.
+        relayPattern.matchEntire(text.trim().uppercase())?.let { m ->
+            val (relay, target, body) = m.destructured
+            outgoing += ThreadItem.Outgoing(target, "via $relay: ${body.trim()}", sentMs, frequency)
+            if (!replaying) requestPublish()
+            return
+        }
         val header = HeaderParser.parse(text)
         val to = header?.recipient
         val body = if (header != null) text.substring(minOf(header.headerLength, text.length)).trim() else text.trim()
@@ -1057,6 +1095,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         /** Station-list row that opens the stored-message inbox. */
         const val INBOX = "§INBOX"
         private const val TICK_MS = 5_000L
+        private val relayPattern = Regex("""^([A-Z0-9/]+)>([A-Z0-9/@]+)>(.*)$""")
         /** Waterfall tags disappear after this long without hearing the station. */
         private const val MARKER_MS = 5 * 60_000L
         /** Own echo heard further than this from where we sent it counts as a mismatch. */

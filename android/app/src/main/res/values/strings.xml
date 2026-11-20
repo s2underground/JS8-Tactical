@@ -357,6 +357,17 @@
     <string name="map_reports">Reports</string>
     <string name="map_paths">Paths</string>
     <string name="map_links">Links</string>
+    <string name="relay_find">Relay…</string>
+    <string name="relay_via">via %1$s ✕</string>
+    <string name="relay_title">Reaching %1$s</string>
+    <string name="relay_direct_ok">%1$s heard you %2$s: try direct first.</string>
+    <string name="relay_direct_oneway">You hear %1$s (%2$s), but there\'s no sign it hears you.</string>
+    <string name="relay_direct_none">No recent sign of a path between you and %1$s on this band.</string>
+    <string name="relay_options_header">Stations heard with %1$s, best first. Tap one to send through it:</string>
+    <string name="relay_none">Nobody you can reach has been heard working %1$s in the last 6 hours on this band. Heartbeats and SNR replies build this picture: give it time, or ask a well-placed station HEARING? or QUERY CALL %1$s?</string>
+    <string name="relay_footer">From traffic heard on this band in the last 6 hours. Advice only: paths change.</string>
+    <string name="relay_hint">Message to %1$s via %2$s…</string>
+    <string name="relay_queued">Queued for %1$s via %2$s</string>
     <string name="audio_missing_title">%1$s isn\'t connected</string>
     <string name="audio_missing_text">The radio\'s sound card (%1$s) isn\'t plugged in or hasn\'t come up yet. Plug it in and tap Retry, or listen on the tablet\'s own microphone.</string>
     <string name="audio_missing_retry">Retry</string>

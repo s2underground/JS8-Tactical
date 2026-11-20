@@ -36,6 +36,19 @@
             android:textSize="13sp"
             tools:text="EM73 · +1450 Hz · -11 dB" />
 
+        <!-- Relay finder / "via" state: shown while a station is selected. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/thread_relay"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:text="@string/relay_find"
+            android:textColor="@color/tac_text"
+            android:visibility="gone"
+            app:strokeColor="@color/tac_text_dim"
+            tools:visibility="visible" />
+
         <!-- Back to everyone: shown while a station or group is selected. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/thread_clear"

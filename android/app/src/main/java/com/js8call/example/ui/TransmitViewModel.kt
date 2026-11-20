@@ -175,6 +175,12 @@ class TransmitViewModel internal constructor(application: Application) : Android
         saveAndQueue(upper, null, outgoingSavedMessage(upper, null))
     }
 
+    /** Queue a JS8 relay: sent to [relay], who passes it on to [target]. Saved in [target]'s thread. */
+    fun queueRelayMessage(relay: String, target: String, text: String) {
+        val wire = com.js8call.example.ui.traffic.RelayFinder.relayText(relay, target, text)
+        saveAndQueue(wire, null, target.uppercase(Locale.ROOT) to "via ${relay.uppercase(Locale.ROOT)}: ${text.trim().uppercase(Locale.ROOT)}")
+    }
+
     /** Queue a send typed in [callsign]'s thread, saving it there first. */
     fun queueThreadMessage(callsign: String, text: String) {
         val addressed = threadText(callsign, text)
