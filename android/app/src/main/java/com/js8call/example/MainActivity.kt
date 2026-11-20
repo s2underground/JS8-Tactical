@@ -201,6 +201,7 @@ class MainActivity : AppCompatActivity() {
             ) {
                 bottomNav.menu.findItem(R.id.navigation_messages)?.isChecked = true
             }
+            if (destination.id == R.id.navigation_report_edit) bottomNav.menu.findItem(R.id.navigation_reports)?.isChecked = true
         }
         // A tab is checked only while its own screen shows, so one tap can arrive as either event
         bottomNav.setOnItemSelectedListener { item -> onNavItemTapped(navController, item) }

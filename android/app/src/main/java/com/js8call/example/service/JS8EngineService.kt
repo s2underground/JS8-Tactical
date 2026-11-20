@@ -378,6 +378,28 @@ class JS8EngineService : Service() {
         }
     }
 
+    /** Scheduled reports (Reports tab): queued when their time comes while the receiver runs. */
+    private val reportTicker = object : Runnable {
+        override fun run() {
+            try { sendDueReports() } catch (e: Exception) { Log.e(TAG, "Scheduled report failed", e) }
+            mainHandler.postDelayed(this, REPORT_TICK_MS)
+        }
+    }
+
+    private fun sendDueReports() {
+        if (!engineRunning) return
+        val now = System.currentTimeMillis()
+        val store = com.js8call.example.reports.ReportStore.of(this)
+        if (store.list().none { (it.schedule?.atMs ?: Long.MAX_VALUE) <= now }) return
+        val due = store.takeDue(now)
+        val tx = com.js8call.example.ui.TransmitViewModel.of(this)
+        due.send.forEach { d ->
+            Log.i(TAG, "Scheduled report '${d.displayTitle()}' queued")
+            if (d.to.isBlank()) tx.queueManualMessage(d.onAir) else tx.queueThreadMessage(d.to.uppercase(), d.onAir)
+        }
+        due.missed.forEach { Log.w(TAG, "Scheduled report '${it.displayTitle()}' missed (receiver was off)") }
+    }
+
     override fun onCreate() {
         super.onCreate()
         // Make sure Traffic is listening even if Android restarted this service without the app's screen.
@@ -397,6 +419,7 @@ class JS8EngineService : Service() {
         messageLogger = MessageLogWriter(applicationContext)
         updateMessageLogging()
         scheduleHeartbeat(true)
+        mainHandler.postDelayed(reportTicker, REPORT_TICK_MS)
         initPskReporter()
 
         Log.i(TAG, "Service created")
@@ -505,6 +528,7 @@ class JS8EngineService : Service() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         prefs.unregisterOnSharedPreferenceChangeListener(preferenceChangeListener)
         heartbeatHandler.removeCallbacksAndMessages(null)
+        mainHandler.removeCallbacks(reportTicker)
         messageLogger?.shutdown()
 
         stopEngine()
@@ -4489,6 +4513,7 @@ class JS8EngineService : Service() {
     }
 
     companion object {
+        private const val REPORT_TICK_MS = 15_000L
         /** True while the engine is running (process-wide; read by the send queue). */
         @Volatile var engineRunning: Boolean = false
             private set

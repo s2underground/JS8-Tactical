@@ -212,11 +212,17 @@ class ReportWriterSheet : BottomSheetDialogFragment() {
         val line = Reports.encode(type, values)
         preview?.text = line
         val sent = target?.let { "$it $line" } ?: line
+        val submode = com.js8call.example.service.TxOffsets.submode(requireContext())
         val frames = runCatching {
-            JS8Engine.countFrames(myCall(), myGrid(), "", sent, 0)
+            JS8Engine.countFrames(myCall(), myGrid(), "", sent, submode)
         }.getOrDefault(-1)
         airtime?.text = if (frames > 0) {
-            val seconds = frames * 15
+            val seconds = frames * when (submode) {
+                com.js8call.example.service.JS8EngineService.SUBMODE_SLOW -> 30
+                com.js8call.example.service.JS8EngineService.SUBMODE_FAST -> 10
+                com.js8call.example.service.JS8EngineService.SUBMODE_TURBO -> 6
+                else -> 15
+            }
             getString(R.string.report_airtime, frames, seconds / 60, seconds % 60)
         } else getString(R.string.report_airtime_unknown)
     }

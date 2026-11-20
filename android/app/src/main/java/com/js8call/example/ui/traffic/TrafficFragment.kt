@@ -228,6 +228,7 @@ class TrafficFragment : Fragment() {
             m.add(0, 6, 2, "Heartbeat offset… (${com.js8call.example.ui.HeartbeatOffsetDialog.summary(requireContext())})")
             m.add(0, 4, 3, "Raw decodes, clock and audio details")
             m.add(0, 5, 4, "Inbox (stored messages)")
+            m.add(0, 7, 5, "Reports (saved and scheduled)")
             popup.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> setAutoReply(!prefs.getBoolean(KEY_AUTOREPLY, false))
@@ -238,6 +239,7 @@ class TrafficFragment : Fragment() {
                     4 -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_monitor)
                     5 -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_messages)
                     6 -> com.js8call.example.ui.HeartbeatOffsetDialog.show(requireContext())
+                    7 -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_reports)
                 }
                 renderToggles()
                 true

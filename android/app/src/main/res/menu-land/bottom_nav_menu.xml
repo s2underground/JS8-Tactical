@@ -11,6 +11,11 @@
         android:title="@string/nav_digest" />
 
     <item
+        android:id="@+id/navigation_reports"
+        android:icon="@drawable/ic_reports"
+        android:title="@string/nav_reports" />
+
+    <item
         android:id="@+id/navigation_team"
         android:icon="@drawable/ic_team"
         android:title="@string/nav_team" />

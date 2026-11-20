@@ -83,7 +83,21 @@ object Reports {
         )
     )
 
-    val ALL = listOf(CHECKIN, SPOT, SALUTE, SITREP, POSREP, SWX)
+    /** Local weather observation (later filled from the Anemos plugin). */
+    val WX = Type(
+        "WX", "Weather", listOf(
+            Field("L", "Location", Kind.LOCATION),
+            Field("T", "Observed", Kind.TIME),
+            Field("C", "Conditions", hint = "Clear, overcast, rain, fog, snow…"),
+            Field("TEMP", "Temperature", hint = "e.g. 41F or 5C"),
+            Field("W", "Wind", hint = "e.g. NW 15G25 MPH"),
+            Field("P", "Pressure", hint = "e.g. 1013 MB falling"),
+            Field("R", "Precipitation", hint = "e.g. 0.4 IN last 24 h"),
+            Field("V", "Visibility", hint = "e.g. 2 MI"),
+        )
+    )
+
+    val ALL = listOf(CHECKIN, SPOT, SALUTE, SITREP, POSREP, WX, SWX)
     fun byTag(tag: String) = ALL.firstOrNull { it.tag == tag.uppercase() }
 
     /** Clean a value for the air: upper case, no field separators, single spaces. */
