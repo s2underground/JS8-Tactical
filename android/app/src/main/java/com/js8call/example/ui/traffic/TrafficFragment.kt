@@ -40,6 +40,9 @@ import java.util.TimeZone
 class TrafficFragment : Fragment() {
 
     private companion object {
+        const val ECHO_SHOW_MS = 3 * 60_000L
+        /** The mismatch dialog is shown once per app session. */
+        var echoMismatchShown = false
         const val KEY_AUTOREPLY = "autoreply_enabled"
         const val KEY_SCREEN_ON = "keep_screen_on"
         /** JS8 queries that only mean something when addressed. */
@@ -319,6 +322,33 @@ class TrafficFragment : Fragment() {
         transmit.onAir.observe(viewLifecycleOwner) { air ->
             waterfall.onAirBandwidthHz = air?.second
             waterfall.onAirHz = air?.first
+        }
+        // Our own signal decoded back somewhere other than where we sent it: show where the
+        // receiver heard it (for 3 minutes) and say so once per session, with the numbers.
+        val clearEcho = Runnable { waterfall.heardBackHz = null }
+        traffic.ownEcho.observe(viewLifecycleOwner) { echo ->
+            waterfall.removeCallbacks(clearEcho)
+            val age = echo?.let { System.currentTimeMillis() - it.atMs } ?: Long.MAX_VALUE
+            if (echo == null || !echo.mismatch || age > ECHO_SHOW_MS) {
+                waterfall.heardBackHz = null
+                return@observe
+            }
+            waterfall.heardBackHz = echo.heardHz
+            waterfall.postDelayed(clearEcho, ECHO_SHOW_MS - age)
+            if (!echoMismatchShown) {
+                echoMismatchShown = true
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Your signal was heard at a different offset")
+                    .setMessage(
+                        "Your receiver decoded your own transmission at ${echo.heardHz.toInt()} Hz, " +
+                            "but it was sent at ${echo.sentHz.toInt()} Hz " +
+                            "(${if (echo.offByHz > 0) "+" else ""}${echo.offByHz.toInt()} Hz).\n\n" +
+                            "The waterfall now marks where it was heard in blue. Each reading is saved in " +
+                            "Settings → Diagnostics → Share diagnostic report, so the cause can be pinned down.",
+                    )
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
         }
     }
 

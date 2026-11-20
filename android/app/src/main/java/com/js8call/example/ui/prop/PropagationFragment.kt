@@ -383,11 +383,23 @@ class PropagationFragment : Fragment() {
         val st = style
         if (st != null) {
             val meCalls = traffic.observationStore.all().filter { it.kind == Observation.Kind.HEARD_ME && it.band == band }.map { it.call }.toSet()
+            // Net paths can end at stations we haven't heard ourselves on this band: give those
+            // ends a labelled dot (no heat) so a line never ends in empty map.
+            val heardCalls = heard.map { it.obs.call }.toSet()
+            val ends = net.flatMap { n -> listOfNotNull(n.obs.by?.let { it to n.from }, n.obs.call to n.to) }
+                .filter { it.first !in heardCalls }
+                .distinctBy { it.first }
             (st.getSource(S_HEARD) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(heard.map { w ->
                 Feature.fromGeometry(Point.fromLngLat(w.position.lon, w.position.lat)).apply {
                     addNumberProperty("w", w.weight)
                     addStringProperty("label", w.obs.call)
                     addBooleanProperty("me", w.obs.call in meCalls)
+                }
+            } + ends.map { (call, pos) ->
+                Feature.fromGeometry(Point.fromLngLat(pos.lon, pos.lat)).apply {
+                    addNumberProperty("w", 0.0)
+                    addStringProperty("label", call)
+                    addBooleanProperty("me", false)
                 }
             }))
             (st.getSource(S_NET) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(net.map { n ->

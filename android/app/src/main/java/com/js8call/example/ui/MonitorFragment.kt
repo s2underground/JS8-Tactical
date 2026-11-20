@@ -446,8 +446,9 @@ class MonitorFragment : Fragment() {
             "mixed" -> setOf("60m", "40m", "30m", "20m", "17m", "15m")
             else -> setOf("80m", "60m", "40m", "30m", "20m")
         }
-        val presetPairs = baseEntries.indices.map { baseEntries[it] to baseValues[it] }
-            .filter { rigType != "qmx_serial" || qmxBands.any { band -> it.first.startsWith(band) } }
+        val presetPairs = (baseEntries.indices.map { baseEntries[it] to baseValues[it] } +
+            RadioControls.GHOSTNET.map { it.label to it.hz.toString() })
+            .filter { rigType != "qmx_serial" || qmxBands.any { band -> it.first.removePrefix("GhostNet ").startsWith(band) } }
         val entries = presetPairs.map { it.first }.toMutableList()
         val values = presetPairs.map { it.second }.toMutableList()
 

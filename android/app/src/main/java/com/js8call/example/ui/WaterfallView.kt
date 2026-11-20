@@ -50,7 +50,7 @@ class WaterfallView @JvmOverloads constructor(
     private val onAirLabelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(220, 30, 30) }
     private val onAirText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textSize = 12f * resources.displayMetrics.scaledDensity
+        textSize = 11f * resources.displayMetrics.scaledDensity
         isFakeBoldText = true
     }
     private val scalePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -62,7 +62,7 @@ class WaterfallView @JvmOverloads constructor(
     private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(230, 242, 163, 58) }
     private val labelText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(11, 14, 18)
-        textSize = 12f * resources.displayMetrics.scaledDensity
+        textSize = 11f * resources.displayMetrics.scaledDensity
         isFakeBoldText = true
     }
     /** Finger position while dragging, so the marker and its label follow it before it is set. */
@@ -78,6 +78,20 @@ class WaterfallView @JvmOverloads constructor(
             field = value
             postInvalidate()
         }
+    /**
+     * Where our own signal was last heard back by our receiver, when that differs from where
+     * it was sent (null otherwise): the receiver's view of our transmission, shown as-is.
+     */
+    var heardBackHz: Float? = null
+        set(value) { field = value; postInvalidate() }
+    private val echoFill = Paint().apply { color = Color.argb(70, 64, 224, 255) }
+    private val echoEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(64, 224, 255)
+        style = Paint.Style.STROKE
+        strokeWidth = 2f * resources.displayMetrics.density
+    }
+    private val echoLabelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(64, 224, 255) }
+
     /** Set while a transmission is on the air: the offset and width the engine is sending at. */
     var onAirHz: Float? = null
         set(value) { field = value; postInvalidate() }
@@ -148,7 +162,8 @@ class WaterfallView @JvmOverloads constructor(
             // Labels sit in two lanes clear of the station tags (which use the top edge and the
             // middle): lane A just under the top row of tags, lane B just under the middle row.
             val labelH = labelText.textSize + 6f * density
-            val laneA = 22f * density
+            // Top row of tags ends at 3 dp + 17 dp (StationMarkerOverlay); the middle row starts at height / 2.
+            val laneA = 21f * density
             val laneB = (height / 2f + 19f * density).coerceAtMost(height - labelH)
             val air = onAirHz
             val airW = onAirBandwidthHz ?: bw
@@ -170,6 +185,9 @@ class WaterfallView @JvmOverloads constructor(
                 drawMarker(canvas, hzToPx(txHz), hzToPx(txHz + airW), onAirFill, onAirEdge, "SENDING ${txHz.toInt()} Hz", laneA, onAirLabelBg, onAirText)
             } else {
                 drawMarker(canvas, hzToPx(txHz), hzToPx(txHz + bw), markerPaint, markerEdgePaint, txLabel, laneA, labelBg)
+            }
+            heardBackHz?.let { hz ->
+                drawMarker(canvas, hzToPx(hz), hzToPx(hz + bw), echoFill, echoEdge, "YOUR SIGNAL HEARD AT ${hz.toInt()} Hz", laneB, echoLabelBg)
             }
             // Sending somewhere the TX and HB markers don't show (e.g. a setting changed mid-send):
             // its own marker, so the waterfall always shows exactly what is going out.

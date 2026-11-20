@@ -59,7 +59,11 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     data class Live(val sender: String?, val laneHz: Float, val frames: Int, val text: String, val color: Int)
 
     /** A station placed on the map at the centre of its grid square. */
-    data class MapStation(val call: String, val grid: String, val position: LatLon, val color: Int, val lastHeardMs: Long, val snr: Int)
+    data class MapStation(
+        val call: String, val grid: String, val position: LatLon, val color: Int, val lastHeardMs: Long, val snr: Int,
+        /** Band labels ("40m") it was heard on; empty if not known (heard before bands were kept). */
+        val bands: Set<String> = emptySet(),
+    )
 
     /** A received report with a location. */
     data class MapReport(
@@ -87,6 +91,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val reporter: String?,
         val confirmed: Boolean,
         val lastHeardMs: Long,
+        val bands: Set<String> = emptySet(),
     )
 
     data class MapData(val stations: List<MapStation>, val reports: List<MapReport>, val links: List<MapLink> = emptyList())
@@ -99,7 +104,18 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         var snr: Int,
         var grid: String?,
         val firstHeardMs: Long = lastHeardMs,
+        /** Dial frequency we were on when last heard: waterfall tags only show on that frequency. */
+        var dialHz: Long? = null,
     )
+
+    /**
+     * Our own transmission decoded back by our receiver: where it was heard ([heardHz])
+     * against where we sent it ([sentHz]). Ground truth for the waterfall markers.
+     */
+    data class EchoCheck(val heardHz: Float, val sentHz: Float, val atMs: Long) {
+        val offByHz: Float get() = heardHz - sentHz
+        val mismatch: Boolean get() = kotlin.math.abs(offByHz) > ECHO_TOLERANCE_HZ
+    }
 
     private val engine = RollupEngine()
     private val heard = mutableMapOf<String, Heard>()
@@ -115,6 +131,17 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     val live: LiveData<Live?> = _live
     private val _markers = MutableLiveData<List<Marker>>(emptyList())
     val markers: LiveData<List<Marker>> = _markers
+
+    private val _ownEcho = MutableLiveData<EchoCheck?>(null)
+    /** Latest own-echo reading (null until our receiver decodes one of our own sends). */
+    val ownEcho: LiveData<EchoCheck?> = _ownEcho
+    /** Own-callsign frames decoded back, waiting to be matched to what we sent (offset, time). */
+    private val echoFrames = mutableListOf<Pair<Float, Long>>()
+
+    /** Band/frequency changes clear the waterfall tags right away. */
+    private val dialPrefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "last_frequency") handler.post { refreshMarkers(System.currentTimeMillis()) }
+    }
     private val _mapData = MutableLiveData(MapData(emptyList(), emptyList()))
     val mapData: LiveData<MapData> = _mapData
     private val _selected = MutableLiveData(ALL)
@@ -228,6 +255,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         handler.postDelayed(ticker, TICK_MS)
         loadHistory()
         loadMapMemory()
+        PreferenceManager.getDefaultSharedPreferences(application).registerOnSharedPreferenceChangeListener(dialPrefListener)
         androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(application).registerReceiver(
             serviceReceiver,
             android.content.IntentFilter().apply {
@@ -381,12 +409,12 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             val body = m.bodyText.uppercase()
             if (to != null && !to.startsWith("@") && looksLikeCall(to) && !isMe(to)) {
                 val snr = if (m.isComplete) snrReport.find(body)?.groupValues?.get(1)?.toIntOrNull() else null
-                mapMemory.noteLink(from, to, m.lastHeardMs, snr)
+                mapMemory.noteLink(from, to, m.lastHeardMs, snr, band = bandOf(from))
             }
             if (m.isComplete) {
                 hearingList.find(body)?.groupValues?.get(1)?.split(Regex("\\s+"))
                     ?.filter { looksLikeCall(it) && !isMe(it) }
-                    ?.forEach { mapMemory.noteLink(from, it, m.lastHeardMs, hearing = true) }
+                    ?.forEach { mapMemory.noteLink(from, it, m.lastHeardMs, hearing = true, band = bandOf(from)) }
                 linkIds += m.id
             }
         }
@@ -408,11 +436,14 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         safeEngine { engine.addFrame(frame, now) }
         record(TrafficHistory.Entry.Frame(frame))
         if (frame.isFirst) {
-            HeaderParser.parse(text)?.takeUnless { isMe(it.sender) }?.let { header ->
+            val header = HeaderParser.parse(text)
+            if (header != null && isMe(header.sender) && !replaying && demoBand == null) echoFrames += frequency to now
+            header?.takeUnless { isMe(it.sender) }?.let { header ->
                 val h = heard.getOrPut(header.sender) { Heard(now, frequency, snr, null) }
                 h.lastHeardMs = now
                 h.laneHz = frequency
                 h.snr = snr
+                h.dialHz = if (demoBand != null) null else currentDialHz()
                 gridIn(text)?.let { h.grid = it }
                 if (!replaying) currentBand()?.let { band ->
                     observe(Observation(now, header.sender, h.grid, band, snr, Observation.Kind.HEARD))
@@ -436,7 +467,57 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     /** Dial frequency from rig control (null or 0 when there is none). */
     fun setDialFrequency(hz: Long?) {
+        val before = currentDialHz()
         rigDialHz = hz?.takeIf { it > 0 }
+        if (before != currentDialHz()) refreshMarkers(System.currentTimeMillis())
+    }
+
+    /** Dial frequency we're on: the radio's if rig control reports it, else the one picked in the app. */
+    private fun currentDialHz(): Long? =
+        rigDialHz ?: PreferenceManager.getDefaultSharedPreferences(getApplication())
+            .getString("last_frequency", "")?.trim()?.toLongOrNull()?.takeIf { it > 0 }
+
+    /** Band [call] was on when we last heard it (the dial we were on then), else the band we're on now. */
+    private fun bandOf(call: String): String? =
+        if (demoBand != null) demoBand?.label
+        else (Band.forDialHz(heard[call]?.dialHz) ?: Band.forDialHz(currentDialHz()))?.label
+
+    /** Waterfall tags: stations heard in the last [MARKER_MS] on the frequency we're on now. */
+    private fun refreshMarkers(now: Long) {
+        val dial = currentDialHz()
+        _markers.value = heard.filter { (_, h) ->
+            now - h.lastHeardMs < MARKER_MS &&
+                (dial == null || h.dialHz == null || kotlin.math.abs(h.dialHz!! - dial) < 1_500L)
+        }.map { (call, h) -> Marker(call, h.laneHz, colorFor(call)) }
+    }
+
+    /**
+     * Match own-callsign frames decoded back to what we sent at about the same time, and
+     * report where our signal was actually heard. A mismatch is logged for diagnostics.
+     */
+    private fun checkEchoes(now: Long) {
+        if (echoFrames.isEmpty()) return
+        val done = mutableListOf<Pair<Float, Long>>()
+        echoFrames.forEach { echo ->
+            val (heardHz, ms) = echo
+            val sent = outgoing.filter { kotlin.math.abs(it.sentMs - ms) <= 90_000L }
+                .minByOrNull { kotlin.math.abs(it.sentMs - ms) }
+            when {
+                sent != null -> {
+                    val check = EchoCheck(heardHz, sent.laneHz, ms)
+                    _ownEcho.value = check
+                    val line = String.format(
+                        java.util.Locale.US, "%s sent %.0f Hz, heard back %.0f Hz (%+.0f Hz)%s",
+                        java.time.Instant.ofEpochMilli(ms).toString(), sent.laneHz, heardHz, check.offByHz,
+                        if (check.mismatch) " MISMATCH" else "",
+                    )
+                    historyIo.execute { OwnEchoLog.append(getApplication(), line) }
+                    done += echo
+                }
+                now - ms > 120_000L -> done += echo // nothing sent near it
+            }
+        }
+        echoFrames.removeAll(done)
     }
 
     /** Band we are listening on: rig frequency if known, else the frequency picked on the Radio tab. */
@@ -772,7 +853,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
         // Map: stations with a known grid (this session's and remembered ones), links between
         // other stations, and every report that carries a location.
-        heard.forEach { (call, h) -> h.grid?.let { mapMemory.noteStation(call, it, h.lastHeardMs, h.snr) } }
+        heard.forEach { (call, h) -> h.grid?.let { mapMemory.noteStation(call, it, h.lastHeardMs, h.snr, if (h.dialHz != null || demoBand != null) bandOf(call) else null) } }
         val positions = HashMap<String, LatLon?>()
         fun posOf(call: String): LatLon? = positions.getOrPut(call) {
             (mapMemory.grid(call) ?: heard[call]?.grid)?.let { Geo.maidenheadToLatLon(it) }
@@ -781,12 +862,12 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             stations = mapMemory.stations().mapNotNull { st ->
                 if (isMe(st.call)) return@mapNotNull null
                 val pos = posOf(st.call) ?: return@mapNotNull null
-                MapStation(st.call, st.grid, pos, colorFor(st.call), st.lastHeardMs, st.snr)
+                MapStation(st.call, st.grid, pos, colorFor(st.call), st.lastHeardMs, st.snr, st.bands)
             },
             links = mapMemory.links().mapNotNull { l ->
                 val pa = posOf(l.a) ?: return@mapNotNull null
                 val pb = posOf(l.b) ?: return@mapNotNull null
-                MapLink(l.a, l.b, pa, pb, l.snr, l.reporter, l.confirmed, l.lastHeardMs)
+                MapLink(l.a, l.b, pa, pb, l.snr, l.reporter, l.confirmed, l.lastHeardMs, l.bands)
             },
             reports = messages.mapNotNull { m ->
                 val report = parsedReport(m) ?: return@mapNotNull null
@@ -807,9 +888,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         if (demoBand == null) sendToAtak(_mapData.value!!, now)
         saveMapMemorySoon(now)
 
-        // Waterfall markers: stations heard in the last 10 minutes, at their latest offset.
-        _markers.value = heard.filter { now - it.value.lastHeardMs < 10 * 60_000L }
-            .map { (call, h) -> Marker(call, h.laneHz, colorFor(call)) }
+        refreshMarkers(now)
+        checkEchoes(now)
     }
 
     /** What the Team tab needs: last heard per base callsign and recent messages. */
@@ -953,6 +1033,10 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         /** Station-list row that opens the stored-message inbox. */
         const val INBOX = "§INBOX"
         private const val TICK_MS = 5_000L
+        /** Waterfall tags disappear after this long without hearing the station. */
+        private const val MARKER_MS = 5 * 60_000L
+        /** Own echo heard further than this from where we sent it counts as a mismatch. */
+        const val ECHO_TOLERANCE_HZ = 15f
         private const val ACCENT = 0xFFF2A33A.toInt()
 
         /** Distinct, legible-on-dark colours; amber is reserved for the accent. */

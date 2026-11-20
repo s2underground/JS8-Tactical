@@ -14,7 +14,8 @@ import java.io.File
  */
 class MapMemory {
 
-    data class Station(val call: String, val grid: String, val lastHeardMs: Long, val snr: Int)
+    /** [bands]: band labels ("40m") the station was heard on. */
+    data class Station(val call: String, val grid: String, val lastHeardMs: Long, val snr: Int, val bands: Set<String> = emptySet())
 
     /**
      * Two stations heard working each other. [a] sorts before [b].
@@ -29,6 +30,8 @@ class MapMemory {
         val snrMs: Long,
         /** 1: a called b. 2: b called a. 4: one listed the other in a HEARING report. */
         val seen: Int,
+        /** Band labels this pair was heard working on. */
+        val bands: Set<String> = emptySet(),
     ) {
         /** True when there is evidence a signal got through (not just one station calling another). */
         val confirmed: Boolean get() = snr != null || seen and 3 == 3 || seen and 4 != 0
@@ -46,17 +49,20 @@ class MapMemory {
     fun links(): Collection<Link> = links.values
     fun grid(call: String): String? = stations[call]?.grid
 
-    fun noteStation(call: String, grid: String, ms: Long, snr: Int) {
+    fun noteStation(call: String, grid: String, ms: Long, snr: Int, band: String? = null) {
         val old = stations[call]
         val g = grid.uppercase()
+        val bands = (old?.bands ?: emptySet()) + listOfNotNull(band)
         // Keep the more precise of two grids in the same square.
         val keptGrid = if (old != null && old.grid.length > g.length && old.grid.startsWith(g)) old.grid else g
         if (old != null && ms < old.lastHeardMs) {
             // An older message can still sharpen the grid (EM73 -> EM73TU), never move it.
-            if (g.length > old.grid.length && g.startsWith(old.grid)) { stations[call] = old.copy(grid = g); dirty = true }
+            val sharper = if (g.length > old.grid.length && g.startsWith(old.grid)) g else old.grid
+            val next = old.copy(grid = sharper, bands = bands)
+            if (next != old) { stations[call] = next; dirty = true }
             return
         }
-        val next = Station(call, keptGrid, ms, snr)
+        val next = Station(call, keptGrid, ms, snr, bands)
         if (next != old) { stations[call] = next; dirty = true }
     }
 
@@ -64,7 +70,7 @@ class MapMemory {
      * [from] sent a directed message to [to]. [snr] is a signal report in it
      * ("SNR -12": [from] heard [to] at -12 dB). [hearing]: [from] listed [to] as heard.
      */
-    fun noteLink(from: String, to: String, ms: Long, snr: Int? = null, hearing: Boolean = false) {
+    fun noteLink(from: String, to: String, ms: Long, snr: Int? = null, hearing: Boolean = false, band: String? = null) {
         if (from == to) return
         val a = minOf(from, to)
         val b = maxOf(from, to)
@@ -76,6 +82,7 @@ class MapMemory {
             lastHeardMs = maxOf(old?.lastHeardMs ?: 0L, ms),
             snr = old?.snr, reporter = old?.reporter, snrMs = old?.snrMs ?: 0L,
             seen = seen,
+            bands = (old?.bands ?: emptySet()) + listOfNotNull(band),
         )
         if (snr != null && ms >= next.snrMs) next = next.copy(snr = snr, reporter = from, snrMs = ms)
         if (next != old) { links[key] = next; dirty = true }
@@ -95,7 +102,10 @@ class MapMemory {
 
     /** Add entries read from disk; anything already known and newer wins. */
     fun merge(other: MapMemory) {
-        other.stations.values.forEach { noteStation(it.call, it.grid, it.lastHeardMs, it.snr) }
+        other.stations.values.forEach { st ->
+            noteStation(st.call, st.grid, st.lastHeardMs, st.snr)
+            stations[st.call]?.let { mine -> if (!mine.bands.containsAll(st.bands)) stations[st.call] = mine.copy(bands = mine.bands + st.bands) }
+        }
         other.links.values.forEach { l ->
             val old = links["${l.a} ${l.b}"]
             links["${l.a} ${l.b}"] = when {
@@ -105,6 +115,7 @@ class MapMemory {
                     old.copy(
                         lastHeardMs = maxOf(old.lastHeardMs, l.lastHeardMs),
                         seen = old.seen or l.seen,
+                        bands = old.bands + l.bands,
                         snr = newerSnr.snr, reporter = newerSnr.reporter, snrMs = newerSnr.snrMs,
                     )
                 }
@@ -130,12 +141,12 @@ class MapMemory {
         val sb = StringBuilder("# JS8-Tactical map memory v1\n")
         stations.values.sortedBy { it.call }.filter { it.call !in exclude }.forEach { s ->
             sb.append("S\t").append(s.call).append('\t').append(s.grid).append('\t')
-                .append(s.lastHeardMs).append('\t').append(s.snr).append('\n')
+                .append(s.lastHeardMs).append('\t').append(s.snr).append('\t').append(s.bands.sorted().joinToString(",")).append('\n')
         }
         links.values.sortedWith(compareBy({ it.a }, { it.b })).filter { it.a !in exclude && it.b !in exclude }.forEach { l ->
             sb.append("L\t").append(l.a).append('\t').append(l.b).append('\t').append(l.lastHeardMs).append('\t')
                 .append(l.snr?.toString() ?: "-").append('\t').append(l.reporter ?: "-").append('\t')
-                .append(l.snrMs).append('\t').append(l.seen).append('\n')
+                .append(l.snrMs).append('\t').append(l.seen).append('\t').append(l.bands.sorted().joinToString(",")).append('\n')
         }
         return sb.toString()
     }
@@ -146,7 +157,10 @@ class MapMemory {
         const val MAX_LINKS = 400
         private val gridOk = Regex("^[A-R]{2}[0-9]{2}([A-X]{2})?$")
 
-        /** Read a memory file's text; bad lines are skipped. */
+        private fun bandsOf(field: String?): Set<String> =
+            field?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
+
+        /** Read a memory file's text; bad lines are skipped (files from before bands were kept load fine). */
         fun parse(text: String): MapMemory {
             val m = MapMemory()
             text.lineSequence().forEach { line ->
@@ -154,7 +168,7 @@ class MapMemory {
                 runCatching {
                     when (p.firstOrNull()) {
                         "S" -> if (p.size >= 5 && gridOk.matches(p[2])) {
-                            m.stations[p[1]] = Station(p[1], p[2], p[3].toLong(), p[4].toInt())
+                            m.stations[p[1]] = Station(p[1], p[2], p[3].toLong(), p[4].toInt(), bandsOf(p.getOrNull(5)))
                         }
                         "L" -> if (p.size >= 8 && p[1] < p[2]) {
                             m.links["${p[1]} ${p[2]}"] = Link(
@@ -163,6 +177,7 @@ class MapMemory {
                                 reporter = p[5].takeIf { it != "-" },
                                 snrMs = p[6].toLong(),
                                 seen = p[7].toInt(),
+                                bands = bandsOf(p.getOrNull(8)),
                             )
                         }
                     }

@@ -28,9 +28,8 @@ object RadioControls {
             "mixed" -> setOf("60m", "40m", "30m", "20m", "17m", "15m")
             else -> setOf("80m", "60m", "40m", "30m", "20m")
         }
-        val list = baseEntries.indices
-            .map { Band(baseEntries[it], baseValues[it].toLongOrNull() ?: 0L) }
-            .filter { rigType != "qmx_serial" || qmxBands.any { b -> it.label.startsWith(b) } }
+        val list = (baseEntries.indices.map { Band(baseEntries[it], baseValues[it].toLongOrNull() ?: 0L) } + GHOSTNET)
+            .filter { rigType != "qmx_serial" || qmxBands.any { b -> it.label.removePrefix("GhostNet ").startsWith(b) } }
             .toMutableList()
         val customMhz = prefs.getString("custom_frequency_mhz", "")?.trim().orEmpty()
         customMhz.toDoubleOrNull()?.takeIf { it > 0 }?.let { list += Band("Custom - ${customMhz}MHz", (it * 1_000_000.0).toLong()) }
@@ -39,6 +38,16 @@ object RadioControls {
         val index = list.indexOfFirst { it.hz == saved }.takeIf { it >= 0 } ?: list.indexOfFirst { it.hz == defaultHz }.coerceAtLeast(0)
         return list to index
     }
+
+    /**
+     * GhostNet JS8 dial frequencies (GhostNet v1.5): 40 m weekly nets (also the
+     * Australia–South Pacific bridge), 20 m and 80 m Saturday data bridges.
+     */
+    val GHOSTNET = listOf(
+        Band("GhostNet 80m - 3.575 MHz", 3_575_000L),
+        Band("GhostNet 40m - 7.107 MHz", 7_107_000L),
+        Band("GhostNet 20m - 14.107 MHz", 14_107_000L),
+    )
 
     /** "20m - 14.078 MHz" → "20m · 14.078". */
     fun shortLabel(entry: String): String = entry.removeSuffix(" MHz").replace(" - ", " · ")

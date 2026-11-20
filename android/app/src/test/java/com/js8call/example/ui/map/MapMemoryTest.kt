@@ -96,4 +96,19 @@ class MapMemoryTest {
         assertEquals(-7, l.snr)
         assertTrue(l.confirmed) // both directions seen
     }
+
+    @Test
+    fun bandsAreKeptAndOldFilesStillLoad() {
+        val m = MapMemory()
+        m.noteStation("KN4XYZ", "EM73", 1_000, -9, "40m")
+        m.noteStation("KN4XYZ", "EM73", 2_000, -9, "20m")
+        m.noteLink("KN4XYZ", "W4QRP", 2_000, snr = -11, band = "20m")
+        val back = MapMemory.parse(m.serialize())
+        assertEquals(setOf("40m", "20m"), back.stations().single().bands)
+        assertEquals(setOf("20m"), back.links().single().bands)
+        // A file written before bands were kept.
+        val old = MapMemory.parse("S\tN0DEF\tEM74\t1000\t-5\nL\tA1AA\tB2BB\t1000\t-\t-\t0\t1\n")
+        assertEquals(emptySet<String>(), old.stations().single().bands)
+        assertEquals(emptySet<String>(), old.links().single().bands)
+    }
 }

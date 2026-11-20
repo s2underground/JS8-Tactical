@@ -124,6 +124,7 @@ class MapFragment : Fragment() {
         toggle(R.id.map_show_reports, L_REPORTS, L_REPORT_LABELS)
         toggle(R.id.map_show_paths, L_PATHS)
         toggle(R.id.map_show_links, L_LINKS, L_LINK_LABELS)
+        setUpBandFilter(view)
 
         view.findViewById<ChipGroup>(R.id.map_window).setOnCheckedStateChangeListener { _, ids ->
             windowMs = when (ids.firstOrNull()) {
@@ -231,11 +232,11 @@ class MapFragment : Fragment() {
         val d = data ?: return
         val now = System.currentTimeMillis()
         val since = windowMs?.let { now - it } ?: 0L
-        val links = d.links.filter { it.lastHeardMs >= since }
+        val links = d.links.filter { it.lastHeardMs >= since && bandOk(it.bands) }
         val linkEnds = if (showLinks()) links.flatMap { listOf(it.a, it.b) }.toSet() else emptySet()
         // A link's far end stays on the map even if that station was last heard before the window.
-        val stations = d.stations.filter { it.lastHeardMs >= since || it.call in linkEnds }
-        val reports = d.reports.filter { it.timeMs >= since }
+        val stations = d.stations.filter { (it.lastHeardMs >= since && bandOk(it.bands)) || it.call in linkEnds }
+        val reports = d.reports.filter { it.timeMs >= since && reportBandOk(d, it.sender) }
         val me = myPosition()
 
         (st.getSource(S_STATIONS) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(stations.map { s ->
@@ -290,9 +291,9 @@ class MapFragment : Fragment() {
         val since = windowMs?.let { now - it } ?: 0L
         val points = buildList {
             myPosition()?.let(::add)
-            d?.stations?.filter { it.lastHeardMs >= since }?.forEach { add(it.position) }
-            if (showLinks()) d?.links?.filter { it.lastHeardMs >= since }?.forEach { add(it.aPos); add(it.bPos) }
-            d?.reports?.filter { it.timeMs >= since }?.forEach { add(it.position) }
+            d?.stations?.filter { it.lastHeardMs >= since && bandOk(it.bands) }?.forEach { add(it.position) }
+            if (showLinks()) d?.links?.filter { it.lastHeardMs >= since && bandOk(it.bands) }?.forEach { add(it.aPos); add(it.bPos) }
+            d?.reports?.filter { it.timeMs >= since && reportBandOk(d, it.sender) }?.forEach { add(it.position) }
         }
         val update = when {
             points.isEmpty() -> CameraUpdateFactory.newLatLngZoom(LatLng(39.5, -98.35), 3.0)
@@ -355,7 +356,9 @@ class MapFragment : Fragment() {
                         else -> getString(R.string.map_worked_snr, other, other, s.call, snrText(snr))
                     }
                 } + if (worked.size > 4) "\n" + getString(R.string.map_worked_more, worked.size - 4) else ""
-                body.text = getString(R.string.map_station_body, heard, s.snr) +
+                val bandsText = sortBands(s.bands).takeIf { it.isNotEmpty() }
+                    ?.let { "\n" + getString(R.string.map_heard_on, it.joinToString(", ")) }.orEmpty()
+                body.text = getString(R.string.map_station_body, heard, s.snr) + bandsText +
                     if (workedText.isNotEmpty()) "\n" + workedText else ""
                 meta.text = listOfNotNull(s.grid, me?.let { rangeText(it, s.position) }).joinToString(" · ")
                 open.isVisible = true
@@ -423,6 +426,51 @@ class MapFragment : Fragment() {
         return out
     }
 
+    /** Band shown on the map (null = all), saved between visits. */
+    private var bandFilter: String? = null
+
+    private fun bandOk(bands: Set<String>) = bandFilter == null || bandFilter in bands
+
+    /** A report counts as on a band if its sender was heard there. */
+    private fun reportBandOk(d: com.js8call.example.ui.traffic.TrafficViewModel.MapData, sender: String?): Boolean {
+        val band = bandFilter ?: return true
+        return d.stations.firstOrNull { it.call == sender }?.bands?.contains(band) == true
+    }
+
+    private fun sortBands(bands: Collection<String>): List<String> {
+        val order = com.js8call.example.prop.Band.entries.map { it.label }
+        return bands.sortedBy { order.indexOf(it).let { i -> if (i < 0) Int.MAX_VALUE else i } }
+    }
+
+    private fun setUpBandFilter(view: View) {
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(requireContext())
+        bandFilter = prefs.getString(PREF_BAND_FILTER, null)?.takeIf { it.isNotBlank() }
+        val chip = view.findViewById<Chip>(R.id.map_band)
+        fun label() {
+            chip.text = bandFilter?.let { getString(R.string.map_band_one, it) } ?: getString(R.string.map_band_all)
+        }
+        label()
+        val pick = View.OnClickListener {
+            val present = sortBands(
+                data?.let { d -> d.stations.flatMap { it.bands } + d.links.flatMap { it.bands } }.orEmpty().toSet() +
+                    listOfNotNull(bandFilter),
+            )
+            val menu = androidx.appcompat.widget.PopupMenu(requireContext(), chip)
+            menu.menu.add(0, 0, 0, getString(R.string.map_band_all))
+            present.forEachIndexed { i, b -> menu.menu.add(0, i + 1, i + 1, b) }
+            menu.setOnMenuItemClickListener { item ->
+                bandFilter = if (item.itemId == 0) null else present[item.itemId - 1]
+                prefs.edit().putString(PREF_BAND_FILTER, bandFilter.orEmpty()).apply()
+                label()
+                render()
+                true
+            }
+            menu.show()
+        }
+        chip.setOnClickListener(pick)
+        chip.setOnCloseIconClickListener(pick)
+    }
+
     private fun showLinks() = view?.findViewById<Chip>(R.id.map_show_links)?.isChecked ?: true
 
     private fun snrText(snr: Int) = if (snr >= 0) "+$snr dB" else "\u2212${-snr} dB"
@@ -475,6 +523,7 @@ class MapFragment : Fragment() {
         const val AMBIENT_CACHE_BYTES = 300L * 1024 * 1024
         const val S_PATHS = "tac-paths"
         const val S_LINKS = "tac-links"
+        const val PREF_BAND_FILTER = "map_band_filter"
         const val L_LINKS = "tac-links-line"
         const val L_LINK_LABELS = "tac-links-label"
         const val S_STATIONS = "tac-stations"
