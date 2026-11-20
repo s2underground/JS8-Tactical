@@ -19,8 +19,18 @@ class OwnSignalProbe(
     private val maxHz: Float = 3_500f,
     /** How much louder (dB) the best stretch must get than the typical bin to count. */
     private val minRiseDb: Float = 8f,
+    /**
+     * Only look inside a radio's usual passband: the filter edges (around 3.3 kHz and
+     * below 200 Hz) change level when keying up, which says nothing about where we sent.
+     */
+    private val searchFromHz: Float = 200f,
+    private val searchToHz: Float = 3_000f,
 ) {
-    data class Reading(val heardHz: Float, val sentHz: Float, val riseDb: Float, val riseAtSentDb: Float)
+    /** A stretch that got louder while we sent. */
+    data class Peak(val hz: Float, val riseDb: Float)
+
+    /** [peaks]: up to three, loudest first; [heardHz]/[riseDb] are the loudest. */
+    data class Reading(val heardHz: Float, val sentHz: Float, val riseDb: Float, val riseAtSentDb: Float, val peaks: List<Peak> = emptyList())
 
     private var baseline: FloatArray? = null
     private var txSum: FloatArray? = null
@@ -82,13 +92,24 @@ class OwnSignalProbe(
             window[i] = acc / w
             acc += rise[i + w] - rise[i]
         }
-        val typical = window.sortedArray()[window.size / 2]
-        var best = 0
-        for (i in window.indices) if (window[i] > window[best]) best = i
-        val bestRise = window[best] - typical
-        if (bestRise < minRiseDb) return null
+        val from = (searchFromHz / binHz).toInt().coerceIn(0, window.size - 1)
+        val to = (searchToHz / binHz).toInt().coerceIn(from + 1, window.size)
+        val typical = window.copyOfRange(from, to).sortedArray()[(to - from) / 2]
+        // Up to three separate peaks, each at least a signal-width apart.
+        val peaks = mutableListOf<Peak>()
+        val taken = BooleanArray(window.size)
+        repeat(3) {
+            var best = -1
+            for (i in from until to) if (!taken[i] && (best < 0 || window[i] > window[best])) best = i
+            if (best < 0) return@repeat
+            val rise = window[best] - typical
+            if (rise < minRiseDb) return@repeat
+            peaks += Peak(best * binHz, rise)
+            for (i in max(0, best - 2 * w) until minOf(window.size, best + 2 * w)) taken[i] = true
+        }
+        if (peaks.isEmpty()) return null
         val atSent = (sent / binHz).toInt().coerceIn(0, window.size - 1)
-        return Reading(best * binHz, sent, bestRise, window[atSent] - typical)
+        return Reading(peaks[0].hz, sent, peaks[0].riseDb, window[atSent] - typical, peaks)
     }
 
     companion object {

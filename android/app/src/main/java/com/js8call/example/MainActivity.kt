@@ -102,8 +102,8 @@ class MainActivity : AppCompatActivity() {
                         // Where does our own transmission show up in what the receiver hears?
                         val air = transmitViewModel.onAir.value
                         ownSignalProbe.feed(bins, binHz, air?.first, air?.second ?: 50f)?.let { r ->
-                            android.util.Log.i("JS8MainActivity", "Own signal in spectrum: sent=${r.sentHz} loudest=${r.heardHz} rise=${r.riseDb} dB atSent=${r.riseAtSentDb} dB")
-                            trafficViewModel.reportOwnSignal(r.heardHz, r.sentHz, r.riseDb, r.riseAtSentDb)
+                            android.util.Log.i("JS8MainActivity", "Spectrum while sending: sent=${r.sentHz} peaks=${r.peaks} atSent=${r.riseAtSentDb} dB")
+                            trafficViewModel.reportOwnSignal(r)
                         }
                     }
                 }

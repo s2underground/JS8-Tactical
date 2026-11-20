@@ -334,6 +334,7 @@ class TrafficFragment : Fragment() {
         }
         // Our own signal decoded back somewhere other than where we sent it: show where the
         // receiver heard it (for 3 minutes) and say so once per session, with the numbers.
+        traffic.txArtifacts.observe(viewLifecycleOwner) { waterfall.txArtifactsHz = it }
         val clearEcho = Runnable { waterfall.heardBackHz = null }
         traffic.ownEcho.observe(viewLifecycleOwner) { echo ->
             waterfall.removeCallbacks(clearEcho)

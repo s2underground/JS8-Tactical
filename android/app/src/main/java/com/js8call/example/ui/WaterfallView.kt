@@ -92,6 +92,18 @@ class WaterfallView @JvmOverloads constructor(
     }
     private val echoLabelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(64, 224, 255) }
 
+    /** Spots that light up whenever we transmit, at any offset: marked as not our signal. */
+    var txArtifactsHz: List<Float> = emptyList()
+        set(value) { field = value; postInvalidate() }
+    private val artifactEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(200, 180, 188, 200)
+        style = Paint.Style.STROKE
+        strokeWidth = 1.5f * resources.displayMetrics.density
+        pathEffect = android.graphics.DashPathEffect(floatArrayOf(3f * resources.displayMetrics.density, 3f * resources.displayMetrics.density), 0f)
+    }
+    private val artifactFill = Paint().apply { color = Color.argb(30, 180, 188, 200) }
+    private val artifactLabelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(225, 180, 188, 200) }
+
     /** Set while a transmission is on the air: the offset and width the engine is sending at. */
     var onAirHz: Float? = null
         set(value) { field = value; postInvalidate() }
@@ -185,6 +197,9 @@ class WaterfallView @JvmOverloads constructor(
                 drawMarker(canvas, hzToPx(txHz), hzToPx(txHz + airW), onAirFill, onAirEdge, "SENDING ${txHz.toInt()} Hz", laneA, onAirLabelBg, onAirText)
             } else {
                 drawMarker(canvas, hzToPx(txHz), hzToPx(txHz + bw), markerPaint, markerEdgePaint, txLabel, laneA, labelBg)
+            }
+            txArtifactsHz.forEach { hz ->
+                drawMarker(canvas, hzToPx(hz), hzToPx(hz + 100f), artifactFill, artifactEdge, "NOT YOU · shows when you send", laneB, artifactLabelBg)
             }
             heardBackHz?.let { hz ->
                 drawMarker(canvas, hzToPx(hz), hzToPx(hz + bw), echoFill, echoEdge, "YOUR SIGNAL HEARD AT ${hz.toInt()} Hz", laneB, echoLabelBg)

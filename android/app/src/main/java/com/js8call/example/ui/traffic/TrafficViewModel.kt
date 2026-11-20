@@ -135,7 +135,6 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     private val _ownEcho = MutableLiveData<EchoCheck?>(null)
     /** Latest own-echo reading (null until our receiver decodes one of our own sends). */
     val ownEcho: LiveData<EchoCheck?> = _ownEcho
-    private var lastSpectrumCheck: EchoCheck? = null
     /** Own-callsign frames decoded back, waiting to be matched to what we sent (offset, time). */
     private val echoFrames = mutableListOf<Pair<Float, Long>>()
 
@@ -524,27 +523,43 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * Our transmission seen in the receive spectrum (not decoded): the loudest new
-     * stretch while we sent, against where we sent. Shown and logged like a decoded echo.
+     * What got louder in the receive audio while we sent (see OwnSignalProbe). Logged for
+     * diagnostics. Not used to claim where our signal is (only a decoded echo does that):
+     * another station keying in our slot also looks "new". Used instead to find spots that
+     * light up every time we transmit, whatever offset we send on: those are not our JS8
+     * signal (an artifact of the radio or interface while keyed), and the waterfall says so.
      */
-    fun reportOwnSignal(heardHz: Float, sentHz: Float, riseDb: Float, riseAtSentDb: Float) {
+    fun reportOwnSignal(reading: com.js8call.example.ui.OwnSignalProbe.Reading) {
         val now = System.currentTimeMillis()
-        val check = EchoCheck(heardHz, sentHz, now)
-        // Another station keying in the same slot also shows up as "new", so a single reading
-        // proves nothing. Only show a mismatch when two sends in a row agree: the same shift,
-        // or the same spot on the waterfall.
-        val prev = lastSpectrumCheck
-        lastSpectrumCheck = check
-        val agrees = prev != null && now - prev.atMs < 30 * 60_000L && prev.mismatch && check.mismatch &&
-            (kotlin.math.abs(prev.offByHz - check.offByHz) < 20f || kotlin.math.abs(prev.heardHz - check.heardHz) < 20f)
-        if (!check.mismatch || agrees) _ownEcho.value = check
+        spectrumReadings += reading to now
+        spectrumReadings.removeAll { now - it.second > 2 * 3_600_000L }
+        while (spectrumReadings.size > 12) spectrumReadings.removeAt(0)
+        // A spot is an artifact when it showed up in at least 3 sends made at offsets at least
+        // 100 Hz apart, and never right at the offset being sent.
+        val artifacts = mutableListOf<Float>()
+        reading.peaks.forEach { p ->
+            val hits = spectrumReadings.filter { (r, _) ->
+                r.peaks.any { kotlin.math.abs(it.hz - p.hz) <= 30f } && kotlin.math.abs(p.hz - r.sentHz) > 80f
+            }
+            val offsets = hits.map { it.first.sentHz }
+            if (hits.size >= 3 && (offsets.maxOrNull() ?: 0f) - (offsets.minOrNull() ?: 0f) > 100f) artifacts += p.hz
+        }
+        val merged = (_txArtifacts.value.orEmpty() + artifacts)
+            .sorted().fold(mutableListOf<Float>()) { acc, hz -> if (acc.isEmpty() || hz - acc.last() > 40f) acc += hz; acc }
+        if (merged != _txArtifacts.value) _txArtifacts.value = merged
         val line = String.format(
-            java.util.Locale.US, "%s spectrum: sent %.0f Hz, loudest new signal %.0f Hz (%+.0f Hz, +%.0f dB; +%.0f dB at the sent offset)%s",
-            java.time.Instant.ofEpochMilli(now).toString(), sentHz, heardHz, check.offByHz, riseDb, riseAtSentDb,
-            if (check.mismatch) " MISMATCH" else "",
+            java.util.Locale.US, "%s spectrum while sending at %.0f Hz: louder at %s; at the sent offset %+.0f dB%s",
+            java.time.Instant.ofEpochMilli(now).toString(), reading.sentHz,
+            reading.peaks.joinToString(", ") { String.format(java.util.Locale.US, "%.0f Hz (+%.0f dB)", it.hz, it.riseDb) },
+            reading.riseAtSentDb,
+            if (artifacts.isNotEmpty()) " · appears on every send at " + artifacts.joinToString { "${it.toInt()} Hz" } else "",
         )
         historyIo.execute { OwnEchoLog.append(getApplication(), line) }
     }
+    private val spectrumReadings = mutableListOf<Pair<com.js8call.example.ui.OwnSignalProbe.Reading, Long>>()
+    private val _txArtifacts = MutableLiveData<List<Float>>(emptyList())
+    /** Spots (Hz) that light up whenever we transmit, whatever the offset: not our signal. */
+    val txArtifacts: LiveData<List<Float>> = _txArtifacts
 
     /**
      * Match own-callsign frames decoded back to what we sent at about the same time, and

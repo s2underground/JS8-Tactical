@@ -3,6 +3,7 @@ package com.js8call.example.ui
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
 
@@ -36,6 +37,21 @@ class OwnSignalProbeTest {
     fun reportsWhereItReallyShowedUp() {
         val reading = run(OwnSignalProbe(), 1791f, 1975f)
         assertEquals(1975f, reading!!.heardHz, 6f)
+    }
+
+    @Test
+    fun ignoresFilterEdgesAndListsSeveralPeaks() {
+        val probe = OwnSignalProbe()
+        repeat(40) { probe.feed(frame(), binHz, null, 50f) }
+        repeat(60) {
+            val f = frame(1975f, gain = 20f)
+            // Also brighten 3,300-3,450 Hz (a filter edge) a lot.
+            for (i in f.indices) if (i * binHz in 3300f..3450f) f[i] *= 60f
+            probe.feed(f, binHz, 819f, 50f)
+        }
+        val r = probe.feed(frame(), binHz, null, 50f)!!
+        assertEquals(1975f, r.heardHz, 6f)
+        assertTrue(r.peaks.all { it.hz < 3000f })
     }
 
     @Test
