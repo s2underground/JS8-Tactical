@@ -150,6 +150,8 @@ class MainActivity : AppCompatActivity() {
         private const val REQUEST_LOCATION = 2
         private const val PREF_KEEP_SCREEN_ON = "keep_screen_on"
         const val ACTION_PROCESS_TX_QUEUE = "com.js8call.example.ACTION_PROCESS_TX_QUEUE"
+        /** Launched from the "receiver was closed" notification: start listening again. */
+        const val EXTRA_RESTART_RECEIVER = "restart_receiver"
     }
 
     private val prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
@@ -224,13 +226,48 @@ class MainActivity : AppCompatActivity() {
 
         // Check permissions
         checkPermissions()
+        handleLaunchIntent(intent)
 
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         applyKeepScreenOn(prefs.getBoolean(PREF_KEEP_SCREEN_ON, false))
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLaunchIntent(intent)
+    }
+
+    /** Notification taps: restart the receiver, or open a message thread. */
+    private fun handleLaunchIntent(intent: Intent?) {
+        intent ?: return
+        if (intent.getBooleanExtra(EXTRA_RESTART_RECEIVER, false)) {
+            intent.removeExtra(EXTRA_RESTART_RECEIVER)
+            if (com.js8call.example.ui.RadioControls.needsMicPermission(this)) {
+                checkPermissions()
+            } else {
+                com.js8call.example.ui.RadioControls.start(this, monitorViewModel)
+                Toast.makeText(this, R.string.receiver_restarted, Toast.LENGTH_LONG).show()
+            }
+        }
+        if (intent.getBooleanExtra("open_messages", false)) {
+            intent.removeExtra("open_messages")
+            val call = intent.getStringExtra("callsign")
+            runCatching {
+                if (call.isNullOrBlank()) navController.navigate(R.id.navigation_messages)
+                else navController.navigate(R.id.navigation_conversation, bundleOf("callsign" to call))
+            }
+        }
+    }
+
     override fun onStart() {
         super.onStart()
+        // Engine state broadcasts aren't heard while the app is in the background (a USB
+        // dropout or a stop can happen then): catch up from the service's real state.
+        val running = JS8EngineService.engineRunning
+        val shown = monitorViewModel.status.value?.state
+        if (running && shown != EngineState.RUNNING) monitorViewModel.updateState(EngineState.RUNNING)
+        else if (!running && shown == EngineState.RUNNING) monitorViewModel.updateState(EngineState.STOPPED)
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
         applyKeepScreenOn(prefs.getBoolean(PREF_KEEP_SCREEN_ON, false))

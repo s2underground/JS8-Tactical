@@ -89,14 +89,18 @@ object TxOffsets {
         }
     }
 
-    /** The offset for a heartbeat being sent now; in zone mode, picks the spot for the one after. */
-    fun takeHeartbeat(ctx: Context, submode: Int): Float {
+    /** The offset for a heartbeat about to be sent at [submode]: the spot the waterfall shows. */
+    fun heartbeatFor(ctx: Context, submode: Int): Float {
         if (hbMode(ctx) != HB_ZONE) return nextHeartbeat(ctx)
         val p = prefs(ctx)
         val bw = bandwidthHz(submode)
         val saved = p.getFloat(KEY_HB_NEXT, -1f)
-        val now = if (saved >= 0f && inZone(saved, bw)) saved else pickInZone(bw)
-        p.edit().putFloat(KEY_HB_NEXT, pickInZone(bw)).apply()
-        return now
+        return if (saved >= 0f && inZone(saved, bw)) saved
+        else pickInZone(bw).also { p.edit().putFloat(KEY_HB_NEXT, it).apply() }
+    }
+
+    /** A heartbeat went out: in zone mode, pick (and show) the spot for the next one. */
+    fun heartbeatSent(ctx: Context, submode: Int) {
+        if (hbMode(ctx) == HB_ZONE) prefs(ctx).edit().putFloat(KEY_HB_NEXT, pickInZone(bandwidthHz(submode))).apply()
     }
 }

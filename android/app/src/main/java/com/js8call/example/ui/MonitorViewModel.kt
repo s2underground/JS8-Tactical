@@ -35,7 +35,15 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     private val waterfallRenderer = WaterfallRenderer()
 
     init {
-        _status.value = MonitorStatus(state = EngineState.STOPPED, txOffsetHz = com.js8call.example.service.TxOffsets.txOffset(getApplication()))
+        // The service can outlive the screens (app reopened after Android closed the activity):
+        // start from the engine's real state, not "stopped", or Traffic shows the receiver off
+        // while it is running.
+        val running = com.js8call.example.service.JS8EngineService.engineRunning
+        _status.value = MonitorStatus(
+            state = if (running) EngineState.RUNNING else EngineState.STOPPED,
+            txOffsetHz = com.js8call.example.service.TxOffsets.txOffset(getApplication()),
+        )
+        _isRunning.value = running
     }
 
     /**

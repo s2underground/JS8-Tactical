@@ -145,26 +145,43 @@ class WaterfallView @JvmOverloads constructor(
                 val strip = 4f * density
                 canvas.drawRect(hzToPx(TxOffsets.ZONE_LOW_HZ), height - strip, hzToPx(TxOffsets.ZONE_HIGH_HZ), height.toFloat(), zonePaint)
             }
+            // Labels sit in two lanes clear of the station tags (which use the top edge and the
+            // middle): lane A just under the top row of tags, lane B just under the middle row.
+            val labelH = labelText.textSize + 6f * density
+            val laneA = 22f * density
+            val laneB = (height / 2f + 19f * density).coerceAtMost(height - labelH)
+            val air = onAirHz
+            val airW = onAirBandwidthHz ?: bw
+            val airOnTx = air != null && kotlin.math.abs(air - txHz) < 1f
+            val hb = if (hbMode != TxOffsets.HB_TX) TxOffsets.nextHeartbeat(context) else null
+            val airOnHb = air != null && !airOnTx && hb != null && kotlin.math.abs(air - hb) < 1f
+            val hbLane = if (hb != null && kotlin.math.abs(hb - txHz) < 260f) laneB else laneA
+
             // Where the next heartbeat goes, unless that is the TX offset.
-            if (hbMode != TxOffsets.HB_TX) {
-                val hb = TxOffsets.nextHeartbeat(context)
-                // Same row as the TX label (clear of station tags) unless the two would overlap.
-                val labelTop = if (kotlin.math.abs(hb - txHz) < 260f) 0.5f else 0.25f
-                drawMarker(canvas, hzToPx(hb), hzToPx(hb + bw), hbFill, hbEdge, "HB ${hb.toInt()} Hz", labelTop, hbLabelBg)
+            if (hb != null) {
+                if (airOnHb) {
+                    drawMarker(canvas, hzToPx(hb), hzToPx(hb + airW), onAirFill, onAirEdge, "SENDING HB ${hb.toInt()} Hz", hbLane, onAirLabelBg, onAirText)
+                } else {
+                    drawMarker(canvas, hzToPx(hb), hzToPx(hb + bw), hbFill, hbEdge, "HB ${hb.toInt()} Hz", hbLane, hbLabelBg)
+                }
             }
             val txLabel = if (hbMode == TxOffsets.HB_TX) "TX + HB ${txHz.toInt()} Hz" else "TX ${txHz.toInt()} Hz"
-            drawMarker(canvas, hzToPx(txHz), hzToPx(txHz + bw), markerPaint, markerEdgePaint, txLabel, 0.25f, labelBg)
-            // What is going out right now, as the engine was told: the final word on where you are sending.
-            onAirHz?.let { hz ->
-                val w = onAirBandwidthHz ?: bw
-                drawMarker(canvas, hzToPx(hz), hzToPx(hz + w), onAirFill, onAirEdge, "SENDING ${hz.toInt()} Hz", 0.04f, onAirLabelBg, onAirText)
+            if (airOnTx) {
+                drawMarker(canvas, hzToPx(txHz), hzToPx(txHz + airW), onAirFill, onAirEdge, "SENDING ${txHz.toInt()} Hz", laneA, onAirLabelBg, onAirText)
+            } else {
+                drawMarker(canvas, hzToPx(txHz), hzToPx(txHz + bw), markerPaint, markerEdgePaint, txLabel, laneA, labelBg)
+            }
+            // Sending somewhere the TX and HB markers don't show (e.g. a setting changed mid-send):
+            // its own marker, so the waterfall always shows exactly what is going out.
+            if (air != null && !airOnTx && !airOnHb) {
+                drawMarker(canvas, hzToPx(air), hzToPx(air + airW), onAirFill, onAirEdge, "SENDING ${air.toInt()} Hz", if (hbLane == laneA) laneB else laneA, onAirLabelBg, onAirText)
             }
         }
     }
 
     private fun drawMarker(
         canvas: Canvas, left: Float, right: Float, fill: Paint, edge: Paint,
-        label: String, labelTop: Float, labelBackground: Paint, text: Paint = labelText,
+        label: String, labelTopPx: Float, labelBackground: Paint, text: Paint = labelText,
     ) {
         if (right < 0f || left > width) return
         canvas.drawRect(left, 0f, right, height.toFloat(), fill)
@@ -175,7 +192,7 @@ class WaterfallView @JvmOverloads constructor(
         val h = text.textSize + pad * 1.5f
         val x = (left + right) / 2f
         val l = (x - w / 2f).coerceIn(0f, (width - w).coerceAtLeast(0f))
-        val top = height * labelTop
+        val top = labelTopPx
         canvas.drawRoundRect(l, top, l + w, top + h, pad, pad, labelBackground)
         canvas.drawText(label, l + pad, top + h - pad, text)
     }

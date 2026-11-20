@@ -403,9 +403,21 @@ class JS8EngineService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        if (intent == null) {
+            // Android closed the app while the receiver was on and has now restarted this
+            // service by itself, with no screen. A microphone service can't start listening
+            // from the background, so say what happened and offer a one-tap restart.
+            if (PreferenceManager.getDefaultSharedPreferences(this).getBoolean(PREF_RECEIVER_WANTED, false)) {
+                Log.w(TAG, "Restarted by Android after the app was closed; offering a receiver restart")
+                showReceiverRestartNotification()
+            }
+            stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
+        when (intent.action) {
             ACTION_START -> {
                 Log.i(TAG, "Starting engine")
+                PreferenceManager.getDefaultSharedPreferences(this).edit().putBoolean(PREF_RECEIVER_WANTED, true).apply()
                 reconnectName = null
                 holdTxUntilMs = 0L
                 mainHandler.removeCallbacks(reconnectRestart)
@@ -421,6 +433,7 @@ class JS8EngineService : Service() {
                 startEngine()
             }
             ACTION_STOP -> {
+                PreferenceManager.getDefaultSharedPreferences(this).edit().putBoolean(PREF_RECEIVER_WANTED, false).apply()
                 reconnectName = null
                 holdTxUntilMs = 0L
                 mainHandler.removeCallbacks(reconnectRestart)
@@ -2870,7 +2883,7 @@ class JS8EngineService : Service() {
      * Random audio offset inside the heartbeat sub-band. The upper bound backs
      * off by the submode bandwidth so the whole signal stays under 1000 Hz.
      */
-    private fun heartbeatOffsetHz(submode: Int): Float = TxOffsets.takeHeartbeat(this, submode)
+    private fun heartbeatOffsetHz(submode: Int): Float = TxOffsets.heartbeatFor(this, submode)
 
     private fun sendHeartbeat() {
         if (System.currentTimeMillis() < holdTxUntilMs) {
@@ -2940,6 +2953,7 @@ class JS8EngineService : Service() {
 
             when (ok) {
                 true -> {
+                    TxOffsets.heartbeatSent(this, submode)
                     updateLastTxMessage(payload, "", submode, freq.toDouble())
                     broadcastTxState(TX_STATE_QUEUED)
                     startTxMonitor()
@@ -3046,7 +3060,11 @@ class JS8EngineService : Service() {
 
         if (ok) {
             Log.i(TAG, "TX request accepted")
-            if (!isHeartbeatTraffic(text)) disableHeartbeat()
+            // Upstream turned the heartbeat setting off on any other send, auto-replies included,
+            // without telling anyone. Instead restart the heartbeat timer: the next scheduled
+            // heartbeat comes a full interval after this send.
+            if (!isHeartbeatTraffic(text)) heartbeatHandler.post { scheduleHeartbeat(false) }
+            else TxOffsets.heartbeatSent(this, submode)
             updateLastTxMessage(payloadText, directed, submode, audioFrequencyHz)
             broadcastTxState(TX_STATE_QUEUED)
             startTxMonitor()
@@ -3175,6 +3193,36 @@ class JS8EngineService : Service() {
         }
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
         Log.d(TAG, "Broadcast queue TX: text='$text' directed=$directed priority=$priority")
+    }
+
+    private fun showReceiverRestartNotification() {
+        val nm = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID_MESSAGES, getString(R.string.notification_message_channel_name), NotificationManager.IMPORTANCE_HIGH)
+                    .apply { description = getString(R.string.notification_message_channel_desc) },
+            )
+        }
+        val open = PendingIntent.getActivity(
+            this, NOTIFICATION_ID_RECEIVER_RESTART,
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(MainActivity.EXTRA_RESTART_RECEIVER, true)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        nm.notify(
+            NOTIFICATION_ID_RECEIVER_RESTART,
+            NotificationCompat.Builder(this, CHANNEL_ID_MESSAGES)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentTitle(getString(R.string.notification_receiver_closed_title))
+                .setContentText(getString(R.string.notification_receiver_closed_text))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.notification_receiver_closed_text)))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .build(),
+        )
     }
 
     private fun showMessageNotification(from: String, text: String) {
@@ -4616,5 +4664,8 @@ class JS8EngineService : Service() {
         private const val CHANNEL_ID_MESSAGES = "js8call_messages"
         private const val NOTIFICATION_ID = 1
         private const val NOTIFICATION_ID_MESSAGE_BASE = 1000
+        private const val NOTIFICATION_ID_RECEIVER_RESTART = 990
+        /** The user had the receiver on (set by Start, cleared by Stop). */
+        const val PREF_RECEIVER_WANTED = "receiver_wanted"
     }
 }

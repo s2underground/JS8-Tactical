@@ -357,6 +357,9 @@
     <string name="map_reports">Reports</string>
     <string name="map_paths">Paths</string>
     <string name="map_links">Links</string>
+    <string name="notification_receiver_closed_title">Receiver stopped: Android closed the app</string>
+    <string name="notification_receiver_closed_text">JS8-Tactical was closed by Android while listening. Tap to start the receiver again.</string>
+    <string name="receiver_restarted">Receiver starting again</string>
     <string name="hb_offset_title">Heartbeat offset</string>
     <string name="hb_offset_zone">Heartbeat zone, 500–1,000 Hz (JS8Call standard)</string>
     <string name="hb_offset_tx">Same as my TX offset (now %1$d Hz)</string>
