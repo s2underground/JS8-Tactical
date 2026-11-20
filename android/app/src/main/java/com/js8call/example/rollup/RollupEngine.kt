@@ -77,7 +77,15 @@ class RollupEngine(
     fun tick(nowMs: Long) = closeIdle(nowMs, exceptLaneOf = null)
 
     /** Rolled-up messages, oldest first. Includes partial ones that have closed. */
-    fun messages(): List<RolledMessage> = messages.sortedBy { it.firstHeardMs }
+    fun messages(): List<RolledMessage> {
+        sortedCache?.let { if (sortedVersion == version) return it }
+        return messages.sortedBy { it.firstHeardMs }.also { sortedCache = it; sortedVersion = version }
+    }
+
+    /** Bumped on every change to [messages]; [messages()] reuses its sorted copy until then. */
+    private var version = 0L
+    private var sortedCache: List<RolledMessage>? = null
+    private var sortedVersion = -1L
 
     /** Transmissions still being received (for a live "receiving from…" indicator). */
     fun live(): List<LiveTransmission> = open.map { tx ->
@@ -99,11 +107,13 @@ class RollupEngine(
     fun clear() {
         open.clear()
         messages.clear()
+        version++
     }
 
     /** Forget finished messages last heard before [beforeMs] (history retention). */
     fun prune(beforeMs: Long) {
         messages.removeAll { it.lastHeardMs < beforeMs }
+        version++
     }
 
     // ---------------------------------------------------------------- internals
@@ -118,6 +128,7 @@ class RollupEngine(
 
     private fun close(tx: Transmission) {
         if (!open.remove(tx)) return
+        version++
         val copy = tx.toCopy()
         val target = findMergeTarget(copy)
         if (target != null) {
@@ -258,24 +269,45 @@ class RolledMessage private constructor(
     val headMissing: Boolean get() = frames.firstOrNull()?.isFirst != true
     /** The last frame was never heard, so more may be missing at the end. */
     val tailMissing: Boolean get() = frames.lastOrNull()?.isLast != true
-    val sender: String? get() = if (headMissing) null else frames.first()?.let { HeaderParser.parse(it.text)?.sender }
-    val recipient: String? get() = if (headMissing) null else frames.first()?.let { HeaderParser.parse(it.text)?.recipient }
+    val sender: String? get() = derived().sender
+    val recipient: String? get() = derived().recipient
     val missingFrames: Int get() = frames.count { it == null }
     val isComplete: Boolean get() = !headMissing && !tailMissing && missingFrames == 0
     val bestSnr: Int? get() = frames.filterNotNull().maxOfOrNull { it.snr }
 
     /** Display segments: text with explicit gaps. The sender/recipient header is stripped. */
     val segments: List<RollupEngine.Segment>
-        get() = TextAssembler.segments(frames, headMissing, tailMissing, stripHeader = true)
+        get() = derived().segments
 
     /** Plain body text with "[…]" where frames are missing. */
     val bodyText: String
-        get() = segments.joinToString("") {
+        get() = derived().bodyText
+
+    /**
+     * Header parse and text assembly, worked out once per version of [frames] (the list is
+     * replaced, never changed in place, when a copy merges in). The traffic screen reads these
+     * many times per message on every refresh; recomputing each time got slow on a busy net.
+     */
+    private class Derived(val frames: List<RollupEngine.Frame?>, headMissing: Boolean, tailMissing: Boolean) {
+        private val header = if (headMissing) null else frames.first()?.let { HeaderParser.parse(it.text) }
+        val sender: String? = header?.sender
+        val recipient: String? = header?.recipient
+        val segments: List<RollupEngine.Segment> = TextAssembler.segments(frames, headMissing, tailMissing, stripHeader = true)
+        val bodyText: String = segments.joinToString("") {
             when (it) {
                 is RollupEngine.Segment.Text -> it.text
                 is RollupEngine.Segment.Gap -> "[…]"
             }
         }.trim()
+    }
+
+    @Volatile private var cached: Derived? = null
+
+    private fun derived(): Derived {
+        val f = frames
+        cached?.let { if (it.frames === f) return it }
+        return Derived(f, headMissing, tailMissing).also { cached = it }
+    }
 
     /**
      * Position in this message where [copy]'s first received frame lands, or

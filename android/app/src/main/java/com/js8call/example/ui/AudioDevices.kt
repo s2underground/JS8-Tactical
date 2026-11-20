@@ -85,9 +85,18 @@ object AudioDevices {
 
     /** The same resolution against a list the caller already holds. */
     fun selected(context: Context, devices: List<Device>): Device {
-        val savedId = PreferenceManager.getDefaultSharedPreferences(context)
-            .getInt(PREF_SELECTED_ID, DEFAULT_DEVICE_ID)
-        return devices.firstOrNull { it.id == savedId } ?: devices.first()
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val savedId = prefs.getInt(PREF_SELECTED_ID, DEFAULT_DEVICE_ID)
+        devices.firstOrNull { it.id == savedId }?.let { d ->
+            // Remember the name too (selections made before names were stored)
+            if (prefs.getString(PREF_SELECTED_NAME, null) != d.name) prefs.edit().putString(PREF_SELECTED_NAME, d.name).apply()
+            return d
+        }
+        // A USB sound card gets a new ID every time it reconnects; find it again by name
+        // instead of silently falling back to the tablet's microphone.
+        val savedName = prefs.getString(PREF_SELECTED_NAME, null)
+        if (savedName != null) devices.firstOrNull { it.name == savedName }?.let { return it }
+        return devices.first()
     }
 
     /**
@@ -97,8 +106,8 @@ object AudioDevices {
      */
     fun select(context: Context, device: Device, engineRunning: Boolean): Boolean {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        if (prefs.getInt(PREF_SELECTED_ID, DEFAULT_DEVICE_ID) != device.id) {
-            prefs.edit().putInt(PREF_SELECTED_ID, device.id).apply()
+        if (prefs.getInt(PREF_SELECTED_ID, DEFAULT_DEVICE_ID) != device.id || prefs.getString(PREF_SELECTED_NAME, null) != device.name) {
+            prefs.edit().putInt(PREF_SELECTED_ID, device.id).putString(PREF_SELECTED_NAME, device.name).apply()
         }
 
         if (!engineRunning) return false
@@ -135,5 +144,7 @@ object AudioDevices {
     }
 
     private const val PREF_SELECTED_ID = "last_audio_device_id"
+    /** The chosen device's name, to find a USB sound card again after it reconnects with a new ID. */
+    const val PREF_SELECTED_NAME = "last_audio_device_name"
     private const val DEFAULT_DEVICE_ID = -1
 }

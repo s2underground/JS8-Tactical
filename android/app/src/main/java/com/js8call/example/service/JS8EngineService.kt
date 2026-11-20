@@ -129,17 +129,87 @@ class JS8EngineService : Service() {
     @Volatile private var trusdxRxWorkerThread: Thread? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // Stop monitoring when selected audio device is lost
+    // The radio's sound card dropped off: stop, wait for it to come back, start again.
     private val audioDeviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) {
             if (engine == null && !engineStartInProgress) return
             val lost = removed.firstOrNull { it.id == selectedAudioDeviceId } ?: return
             val name = AudioDevices.nameFor(lost) ?: "Audio device"
             Log.w(TAG, "Selected audio device removed: $name (ID: ${lost.id}); stopping engine")
+            val now = System.currentTimeMillis()
+            val txNow = isTransmitActive() || txSessionActive
+            UsbDropouts.record(this@JS8EngineService, name, now, lastTxActivityMs, txNow)
             stopEngine()
             broadcastAudioDeviceLost(name)
-            stopSelf()
+            // Field case Nov 19: the interface kept dropping and coming back; the receiver
+            // stayed off each time and a queued send went out the moment it returned.
+            // Now: wait up to RECONNECT_WINDOW_MS for it, restart, and hold sends a while.
+            reconnectName = name
+            reconnectDeadlineMs = now + RECONNECT_WINDOW_MS
+            holdTxUntilMs = Long.MAX_VALUE
+            mainHandler.removeCallbacks(reconnectGiveUp)
+            mainHandler.postDelayed(reconnectGiveUp, RECONNECT_WINDOW_MS)
+            UsbDropouts.rfHint(this@JS8EngineService, now)?.let { broadcastWarning(it) }
         }
+
+        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) {
+            val wanted = reconnectName ?: return
+            if (engine != null || engineStartInProgress) return
+            if (System.currentTimeMillis() > reconnectDeadlineMs) return
+            val back = added.firstOrNull { it.isSource && AudioDevices.nameFor(it) == wanted } ?: return
+            Log.i(TAG, "Audio device back: $wanted (new ID: ${back.id}); restarting the receiver shortly")
+            mainHandler.removeCallbacks(reconnectRestart)
+            reconnectDeviceId = back.id
+            // Let the USB device (and its serial port) finish enumerating first
+            mainHandler.postDelayed(reconnectRestart, RECONNECT_SETTLE_MS)
+        }
+    }
+
+    private var reconnectName: String? = null
+    private var reconnectDeadlineMs = 0L
+    private var reconnectDeviceId = -1
+    /** Sends wait until this time (radio link just came back and may still be settling). */
+    @Volatile private var holdTxUntilMs = 0L
+    /** Last time a send started, ended or failed; for the USB dropout log. */
+    @Volatile private var lastTxActivityMs = 0L
+
+    private val reconnectRestart: Runnable = object : Runnable {
+        override fun run() {
+        val id = reconnectDeviceId
+        if (engine != null || engineStartInProgress || id < 0) return
+        // The previous engine may still be releasing its audio; try again shortly.
+        if (engineStoppingSinceMs > 0 && System.currentTimeMillis() < reconnectDeadlineMs) {
+            mainHandler.postDelayed(this, 2_000L)
+            return
+        }
+        reconnectName = null
+        mainHandler.removeCallbacks(reconnectGiveUp)
+        selectedAudioDeviceId = id
+        PreferenceManager.getDefaultSharedPreferences(this@JS8EngineService).edit().putInt("last_audio_device_id", id).apply()
+        holdTxUntilMs = System.currentTimeMillis() + RECONNECT_TX_HOLD_MS
+        mainHandler.postDelayed({ broadcastProcessTxQueue() }, RECONNECT_TX_HOLD_MS + 500L)
+        UsbDropouts.recordRecovery(this@JS8EngineService, System.currentTimeMillis())
+        broadcastWarning(
+            "The radio's USB audio dropped out and came back. The receiver has restarted. " +
+                "Anything waiting to be sent goes out after ${RECONNECT_TX_HOLD_MS / 1000} s of stable connection.",
+            quiet = true,
+        )
+        startEngine()
+        }
+    }
+
+    private val reconnectGiveUp = Runnable {
+        if (reconnectName == null || engine != null || engineStartInProgress) return@Runnable
+        Log.w(TAG, "Audio device did not come back within ${RECONNECT_WINDOW_MS / 60_000} min; stopping")
+        reconnectName = null
+        holdTxUntilMs = 0L
+        stopSelf()
+    }
+
+    private fun broadcastWarning(message: String, quiet: Boolean = false) {
+        LocalBroadcastManager.getInstance(this).sendBroadcast(
+            Intent(ACTION_WARNING).putExtra(EXTRA_ERROR_MESSAGE, message).putExtra(EXTRA_WARNING_QUIET, quiet)
+        )
     }
     private val txHandlerThread = HandlerThread("Js8Tx")
     private lateinit var txHandler: Handler
@@ -333,6 +403,10 @@ class JS8EngineService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 Log.i(TAG, "Starting engine")
+                reconnectName = null
+                holdTxUntilMs = 0L
+                mainHandler.removeCallbacks(reconnectRestart)
+                mainHandler.removeCallbacks(reconnectGiveUp)
                 // Get preferred device ID from intent
                 if (intent.hasExtra(EXTRA_AUDIO_DEVICE_ID)) {
                     selectedAudioDeviceId = intent.getIntExtra(EXTRA_AUDIO_DEVICE_ID, -1)
@@ -344,6 +418,10 @@ class JS8EngineService : Service() {
                 startEngine()
             }
             ACTION_STOP -> {
+                reconnectName = null
+                holdTxUntilMs = 0L
+                mainHandler.removeCallbacks(reconnectRestart)
+                mainHandler.removeCallbacks(reconnectGiveUp)
                 Log.i(TAG, "Stopping engine")
                 stopEngine()
                 stopSelf()
@@ -2800,6 +2878,11 @@ class JS8EngineService : Service() {
     }
 
     private fun sendHeartbeat() {
+        if (System.currentTimeMillis() < holdTxUntilMs) {
+            Log.i(TAG, "Skipping heartbeat: radio connection just came back")
+            scheduleHeartbeat(false)
+            return
+        }
         if (isTransmitActive()) {
             Log.i(TAG, "Skipping heartbeat due to active transmission, rescheduling")
             scheduleHeartbeat(false)
@@ -2901,6 +2984,10 @@ class JS8EngineService : Service() {
         if (callsign == null) {
             warnMissingCallsign()
             broadcastTxState(TX_STATE_FAILED)
+            return
+        }
+        if (System.currentTimeMillis() < holdTxUntilMs) {
+            handBack("until the radio connection has been stable for a while")
             return
         }
         if (isRigPttRequired() && !isRigControlConnected()) {
@@ -3020,6 +3107,9 @@ class JS8EngineService : Service() {
 
     /** A [refused] send counts as failed even though it never reached the air. */
     private fun broadcastTxState(state: String, refused: Boolean = false) {
+        if (state == TX_STATE_STARTED || state == TX_STATE_FINISHED || state == TX_STATE_FAILED) {
+            lastTxActivityMs = System.currentTimeMillis()
+        }
         val intent = Intent(ACTION_TX_STATE).apply {
             putExtra(EXTRA_TX_STATE, state)
             putExtra(EXTRA_TX_REFUSED, refused)
@@ -4405,6 +4495,8 @@ class JS8EngineService : Service() {
         const val ACTION_AUDIO_DEVICE = "com.js8call.example.ACTION_AUDIO_DEVICE"
         const val ACTION_AUDIO_DEVICE_LOST = "com.js8call.example.ACTION_AUDIO_DEVICE_LOST"
         const val ACTION_ERROR = "com.js8call.example.ACTION_ERROR"
+        /** With ACTION_WARNING: a brief notice (toast) instead of a dialog. */
+        const val EXTRA_WARNING_QUIET = "warning_quiet"
         /** Something the operator must know while the engine keeps running. */
         const val ACTION_WARNING = "com.js8call.example.ACTION_WARNING"
         const val ACTION_TRANSMIT_MESSAGE = "com.js8call.example.ACTION_TRANSMIT_MESSAGE"
@@ -4503,6 +4595,12 @@ class JS8EngineService : Service() {
         private const val TX_PREKEY_MONITOR_INTERVAL_MS = 25L
         /** Longest the radio may sit keyed with audio held back before the send is abandoned. */
         private const val PTT_HOLD_LIMIT_MS = 4_000L
+        /** How long to wait for a dropped radio sound card to come back before giving up. */
+        private const val RECONNECT_WINDOW_MS = 10 * 60_000L
+        /** Pause after it reappears, so the USB device (and its serial port) finish enumerating. */
+        private const val RECONNECT_SETTLE_MS = 3_000L
+        /** Sends wait this long after an automatic restart. */
+        private const val RECONNECT_TX_HOLD_MS = 30_000L
         private const val TX_MONITOR_INTERVAL_MS = 250L
         private const val SCO_START_WAIT_INTERVAL_MS = 200L
         private const val SCO_START_MAX_ATTEMPTS = 10

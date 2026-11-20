@@ -226,7 +226,23 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Read the saved history off the main thread, then replay it through the rollup engine. */
+    /** Set when this start skipped the saved history because the app kept crashing. */
+    private val _safeStart = MutableLiveData<String?>(null)
+    val safeStart: LiveData<String?> = _safeStart
+    fun safeStartShown() { _safeStart.value = null }
+
     private fun loadHistory() {
+        // Crash loop guard: if the app crashed twice in a few minutes, something in the saved
+        // history may be what keeps bringing it down. Set it aside (kept, not deleted) and start clean.
+        if (com.js8call.example.CrashReporter.takeCrashLoop(getApplication())) {
+            val aside = history.setAside()
+            _safeStart.value = "The app crashed more than once in the last few minutes, so it started with an empty " +
+                "message list. Your earlier history was set aside" + (aside?.let { " ($it)" } ?: "") +
+                " and is included in the diagnostic report."
+            _historyLoaded.value = true
+            publish()
+            return
+        }
         val keep = keepMs()
         if (keep <= 0) { historyIo.execute { history.clear() }; _historyLoaded.value = true; return }
         val since = System.currentTimeMillis() - keep

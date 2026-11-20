@@ -34,6 +34,14 @@ class TrafficHistory(private val file: File) {
         }
     }
 
+    /** Rename the file out of the way (crash-loop recovery); returns the new name, or null. */
+    @Synchronized
+    fun setAside(): String? {
+        if (!file.exists()) return null
+        val aside = File(file.parentFile, file.name.removeSuffix(".tsv") + "-set-aside-" + System.currentTimeMillis() + ".tsv")
+        return if (file.renameTo(aside)) aside.name else null
+    }
+
     /** Entries newer than [sinceMs], oldest first. Rewrites the file without the older ones. */
     @Synchronized
     fun load(sinceMs: Long): List<Entry> {

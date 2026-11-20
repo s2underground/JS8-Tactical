@@ -336,6 +336,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     /** Settings → Diagnostics: build the report off the main thread, then hand it to a share sheet. */
     private fun setUpDiagnostics() {
+        findPreference<Preference>("diagnostics_last_error")?.setOnPreferenceClickListener {
+            val act = activity as? androidx.appcompat.app.AppCompatActivity
+            if (act == null || !com.js8call.example.CrashReporter.showLast(act)) {
+                view?.let { v -> Snackbar.make(v, "No error reports on this device.", Snackbar.LENGTH_SHORT).show() }
+            }
+            true
+        }
         findPreference<Preference>("diagnostics_share")?.setOnPreferenceClickListener {
             val ctx = requireContext().applicationContext
             view?.let { v -> Snackbar.make(v, "Collecting diagnostics…", Snackbar.LENGTH_SHORT).show() }

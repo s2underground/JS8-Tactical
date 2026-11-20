@@ -47,9 +47,34 @@ object CrashReporter {
         appContext = context.applicationContext
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching { noteCrashTime(context.applicationContext) }
             runCatching { append("CRASH on thread '${thread.name}'", error) }
             previous?.uncaughtException(thread, error)
         }
+    }
+
+    private const val KEY_CRASH_TIMES = "crash_times"
+
+    /** Crash times are kept (last few) so the next start can tell it is in a crash loop. */
+    private fun noteCrashTime(ctx: Context) {
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val times = prefs.getString(KEY_CRASH_TIMES, "").orEmpty().split(',').mapNotNull { it.toLongOrNull() }
+        val kept = (times + System.currentTimeMillis()).takeLast(5).joinToString(",")
+        prefs.edit().putString(KEY_CRASH_TIMES, kept).commit() // commit: the process is about to die
+    }
+
+    /**
+     * True once per crash loop: two or more crashes in the last [windowMs]. Consumed when
+     * read, so the next normal start goes back to normal.
+     */
+    fun takeCrashLoop(ctx: Context, windowMs: Long = 10 * 60_000L): Boolean {
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val recent = prefs.getString(KEY_CRASH_TIMES, "").orEmpty().split(',')
+            .mapNotNull { it.toLongOrNull() }.filter { now - it in 0..windowMs }
+        if (recent.size < 2) return false
+        prefs.edit().putString(KEY_CRASH_TIMES, "").apply()
+        return true
     }
 
     /** An error the app recovered from; kept so it can be reported. */
@@ -68,34 +93,76 @@ object CrashReporter {
         // Shown once: it is in the archive (Settings → Diagnostics) from here on, so tapping
         // outside the dialog can't make the same old report come back at every launch.
         f.delete()
-        val view = TextView(activity).apply {
-            setText(text)
+        showReport(activity, text)
+    }
+
+    /**
+     * The report dialog: a big Copy button first (field use: one tap, paste anywhere),
+     * then the report with the newest problem at the top.
+     */
+    private fun showReport(activity: AppCompatActivity, text: String) {
+        val entries = text.split("\n===== ").map { it.trim() }.filter { it.isNotEmpty() }
+        val head = entries.firstOrNull { it.startsWith("JS8-Tactical") }
+        val problems = entries.filterNot { it.startsWith("JS8-Tactical") }
+        val newestFirst = buildString {
+            head?.let { append(it).append("\n\n") }
+            append("${problems.size} problem${if (problems.size == 1) "" else "s"} recorded, newest first.\n")
+            problems.asReversed().forEach { append("\n===== ").append(it).append('\n') }
+        }
+        val density = activity.resources.displayMetrics.density
+        val pad = (16 * density).toInt()
+        fun copy() {
+            val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("JS8-Tactical error report", newestFirst))
+            android.widget.Toast.makeText(activity, "Error report copied. Paste it anywhere.", android.widget.Toast.LENGTH_LONG).show()
+        }
+        val copyButton = com.google.android.material.button.MaterialButton(activity).apply {
+            setText("COPY ERROR REPORT")
+            textSize = 20f
+            minHeight = (64 * density).toInt()
+            setOnClickListener { copy() }
+        }
+        val body = TextView(activity).apply {
+            setText(newestFirst)
             setTextIsSelectable(true)
             textSize = 11f
             typeface = android.graphics.Typeface.MONOSPACE
-            val pad = (16 * resources.displayMetrics.density).toInt()
-            setPadding(pad, pad / 2, pad, pad / 2)
+            setPadding(0, pad, 0, 0)
+        }
+        val column = android.widget.LinearLayout(activity).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(copyButton, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+            addView(ScrollView(activity).apply { addView(body) }, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, (activity.resources.displayMetrics.heightPixels * 0.45).toInt(),
+            ))
         }
         MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.crash_title)
             .setMessage(R.string.crash_body)
-            .setView(ScrollView(activity).apply { addView(view) })
+            .setView(column)
             .setPositiveButton(R.string.crash_share) { _, _ ->
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_SUBJECT, "JS8-Tactical error report")
-                    putExtra(Intent.EXTRA_TEXT, text)
+                    putExtra(Intent.EXTRA_TEXT, newestFirst)
                 }
                 activity.startActivity(Intent.createChooser(send, activity.getString(R.string.crash_share)))
-                f.delete()
             }
-            .setNeutralButton(R.string.crash_copy) { _, _ ->
-                val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                cm.setPrimaryClip(ClipData.newPlainText("JS8-Tactical error report", text))
-                f.delete()
-            }
-            .setNegativeButton(R.string.crash_dismiss) { _, _ -> f.delete() }
+            .setNegativeButton(R.string.crash_dismiss, null)
             .show()
+    }
+
+    /** Settings → Diagnostics: the most recent report again, with the same Copy button. */
+    fun showLast(activity: AppCompatActivity): Boolean {
+        val past = File(activity.filesDir, ARCHIVE).takeIf { it.exists() }?.readText().orEmpty()
+        val last = past.substringAfterLast("##### Report shown ", "").substringAfter('\n', "").trim()
+        if (last.isEmpty()) return false
+        showReport(activity, last)
+        return true
     }
 
     private fun collectExitReasons(context: Context) {
@@ -154,7 +221,7 @@ object CrashReporter {
     private fun append(title: String, error: Throwable) {
         val sw = StringWriter()
         error.printStackTrace(PrintWriter(sw))
-        appendRaw("$title\nWhen: ${stamp(System.currentTimeMillis())}\n$sw")
+        appendRaw("$title\nWhen: ${stamp(System.currentTimeMillis())} · build ${BuildConfig.GIT_SHA}\n$sw")
     }
 
     private fun appendRaw(body: String) {
@@ -201,6 +268,14 @@ object CrashReporter {
         if (pending.isNotBlank()) sb.append("== Pending report\n").append(pending).append('\n')
         val past = File(ctx.filesDir, ARCHIVE).takeIf { it.exists() }?.readText().orEmpty()
         sb.append("== Past crash/ANR reports\n").append(if (past.isBlank()) "(none)\n" else past.takeLast(48_000)).append('\n')
+        val drops = com.js8call.example.service.UsbDropouts.text(ctx)
+        sb.append("== Radio USB dropouts\n").append(if (drops.isBlank()) "(none recorded)\n" else drops.takeLast(12_000)).append('\n')
+        val setAside = ctx.filesDir.listFiles { f -> f.name.contains("-set-aside-") }.orEmpty()
+        if (setAside.isNotEmpty()) {
+            sb.append("== History files set aside after crash loops (names only)\n")
+            setAside.sortedBy { it.name }.forEach { sb.append("${it.name} · ${it.length()} bytes\n") }
+            sb.append('\n')
+        }
         sb.append("== Recent app log\n")
         val log = runCatching {
             // The engine logs several debug lines a second; drop those so the report reaches back

@@ -144,6 +144,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 JS8EngineService.ACTION_WARNING -> {
                     val message = intent.getStringExtra(JS8EngineService.EXTRA_ERROR_MESSAGE) ?: return
+                    if (intent.getBooleanExtra(JS8EngineService.EXTRA_WARNING_QUIET, false)) {
+                        android.widget.Toast.makeText(this@MainActivity, message, android.widget.Toast.LENGTH_LONG).show()
+                        return
+                    }
                     com.google.android.material.dialog.MaterialAlertDialogBuilder(this@MainActivity)
                         .setTitle("Check the radio connection")
                         .setMessage(message)

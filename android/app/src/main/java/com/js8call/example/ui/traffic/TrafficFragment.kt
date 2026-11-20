@@ -263,6 +263,15 @@ class TrafficFragment : Fragment() {
                 true
             } else false
         }
+        traffic.safeStart.observe(viewLifecycleOwner) { msg ->
+            if (msg == null) return@observe
+            traffic.safeStartShown()
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Started in safe mode")
+                .setMessage(msg)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+        }
         view.findViewById<View>(R.id.thread_clear).setOnClickListener { traffic.select(TrafficViewModel.ALL) }
         stationList.layoutManager = LinearLayoutManager(requireContext())
         stationList.adapter = stations

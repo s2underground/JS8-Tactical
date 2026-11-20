@@ -440,6 +440,12 @@
         app:iconSpaceReserved="false">
 
         <Preference
+            app:key="diagnostics_last_error"
+            app:title="Last error report"
+            app:summary="Show the most recent error report again, with the Copy button."
+            app:iconSpaceReserved="false" />
+
+        <Preference
             app:key="diagnostics_share"
             app:title="Share diagnostic report"
             app:summary="Past crash and freeze reports, the app's recent log and radio setup (no callsign or grid). Nothing is sent unless you share it."
