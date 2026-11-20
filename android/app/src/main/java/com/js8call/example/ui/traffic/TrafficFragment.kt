@@ -437,6 +437,7 @@ class TrafficFragment : Fragment() {
     private fun setUpCompose(view: View) {
         val input: EditText = view.findViewById(R.id.compose_input)
         val repeat: Chip = view.findViewById(R.id.chip_repeat3)
+        com.js8call.example.ui.SpeedChip.bind(view.findViewById(R.id.tpl_speed), "Speed: %s")
 
         // Report buttons open the report writer for the current selection.
         fun openWriter(tag: String) {

@@ -191,6 +191,15 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/traffic_send_x3" />
+
+            <!-- Send speed (Slow / Normal / Fast / Turbo): saved, used for every send including heartbeats. -->
+            <com.google.android.material.chip.Chip
+                android:id="@+id/tpl_speed"
+                style="@style/Widget.Material3.Chip.Assist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:chipIcon="@drawable/ic_arrow_drop_down"
+                app:chipIconTint="@color/tac_text_dim" />
         </com.google.android.material.chip.ChipGroup>
     </HorizontalScrollView>
 

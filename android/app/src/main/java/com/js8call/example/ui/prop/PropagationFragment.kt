@@ -198,7 +198,7 @@ class PropagationFragment : Fragment() {
         // Start with the last picture (if any) so reopening the tab doesn't flash empty.
         st.addSource(ImageSource(S_COVERAGE, WORLD_QUAD, cache.bitmap ?: Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)))
         st.addLayer(RasterLayer(L_COVERAGE, S_COVERAGE).withProperties(
-            PropertyFactory.rasterOpacity(0.85f),
+            PropertyFactory.rasterOpacity(COVERAGE_OPACITY),
             PropertyFactory.rasterResampling(Property.RASTER_RESAMPLING_LINEAR),
             PropertyFactory.rasterFadeDuration(0f),
         ))
@@ -207,7 +207,7 @@ class PropagationFragment : Fragment() {
         // layer, not this one, but it is still updated only from the main thread.)
         st.addSource(ImageSource(S_DETAIL, WORLD_QUAD, Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)))
         st.addLayer(RasterLayer(L_DETAIL, S_DETAIL).withProperties(
-            PropertyFactory.rasterOpacity(0.85f),
+            PropertyFactory.rasterOpacity(DETAIL_OPACITY),
             PropertyFactory.rasterResampling(Property.RASTER_RESAMPLING_LINEAR),
             PropertyFactory.rasterFadeDuration(0f),
             PropertyFactory.visibility(Property.NONE),
@@ -429,6 +429,7 @@ class PropagationFragment : Fragment() {
         if (!sane || !showPredicted || m.cameraPosition.zoom < 2.6 || east <= west || east - west > 200 || north <= south) {
             detailKey = null
             st.getLayer(L_DETAIL)?.setProperties(PropertyFactory.visibility(Property.NONE))
+            st.getLayer(L_COVERAGE)?.setProperties(PropertyFactory.rasterOpacity(COVERAGE_OPACITY))
             return@guarded
         }
         val band = this.band
@@ -450,7 +451,13 @@ class PropagationFragment : Fragment() {
                         setCoordinates(LatLngQuad(LatLng(north, west), LatLng(north, east), LatLng(south, east), LatLng(south, west)))
                         setImage(bmp)
                     }
-                    s.getLayer(L_DETAIL)?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
+                    // The sharper picture sits on top of the world picture: two see-through layers
+                    // stacked hid the base map. Dim the world one so together they look like one.
+                    s.getLayer(L_COVERAGE)?.setProperties(PropertyFactory.rasterOpacity(COVERAGE_UNDER_DETAIL_OPACITY))
+                    s.getLayer(L_DETAIL)?.setProperties(
+                        PropertyFactory.rasterOpacity(DETAIL_OPACITY),
+                        PropertyFactory.visibility(Property.VISIBLE),
+                    )
                 }
             }
         }
@@ -779,6 +786,10 @@ class PropagationFragment : Fragment() {
         private const val DETAIL_H = 150
         private const val S_DETAIL = "prop-detail"
         private const val L_DETAIL = "prop-detail"
+        private const val COVERAGE_OPACITY = 0.85f
+        // Stacked: 1 - (1 - 0.3a)(1 - 0.65a) is within a few % of 0.85a for the colours' alpha a (0.27-0.7).
+        private const val COVERAGE_UNDER_DETAIL_OPACITY = 0.3f
+        private const val DETAIL_OPACITY = 0.65f
         private const val S_COVERAGE = "prop-coverage"
         private const val S_NIGHT = "prop-night"
         private const val S_TERMINATOR = "prop-terminator"

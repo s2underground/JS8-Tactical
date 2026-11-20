@@ -3,7 +3,7 @@ package com.js8call.example.ui
 import android.widget.PopupMenu
 import androidx.annotation.StringRes
 import androidx.preference.PreferenceManager
-import com.google.android.material.button.MaterialButton
+import android.widget.TextView
 import com.js8call.example.R
 import com.js8call.example.service.JS8EngineService
 
@@ -22,12 +22,19 @@ object SpeedChip {
         Speed(JS8EngineService.SUBMODE_TURBO, R.string.tx_speed_turbo)
     )
 
-    fun bind(chip: MaterialButton) {
-        chip.setText(current(chip).label)
+    /** [format]: how the label is shown, e.g. "Speed: %s"; default just the speed's name. */
+    fun bind(chip: TextView, format: String = "%s") {
+        chip.setTag(R.id.speed_chip, format)
+        render(chip)
         chip.setOnClickListener { showPicker(chip) }
     }
 
-    private fun showPicker(chip: MaterialButton) {
+    private fun render(chip: TextView) {
+        val format = chip.getTag(R.id.speed_chip) as? String ?: "%s"
+        chip.text = String.format(format, chip.context.getString(current(chip).label))
+    }
+
+    private fun showPicker(chip: TextView) {
         val popup = PopupMenu(chip.context, chip)
         speeds.forEachIndexed { index, speed -> popup.menu.add(0, index, index, speed.label) }
         popup.menu.setGroupCheckable(0, true, true)
@@ -39,13 +46,13 @@ object SpeedChip {
                 .edit()
                 .putInt(JS8EngineService.PREF_TX_SUBMODE, speed.submode)
                 .apply()
-            chip.setText(speed.label)
+            render(chip)
             true
         }
         popup.show()
     }
 
-    private fun current(chip: MaterialButton): Speed {
+    private fun current(chip: TextView): Speed {
         val submode = PreferenceManager.getDefaultSharedPreferences(chip.context)
             .getInt(JS8EngineService.PREF_TX_SUBMODE, JS8EngineService.SUBMODE_NORMAL)
         return speeds.firstOrNull { it.submode == submode }
