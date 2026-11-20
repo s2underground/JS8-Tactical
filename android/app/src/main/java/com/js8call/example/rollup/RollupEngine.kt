@@ -305,8 +305,8 @@ class RolledMessage private constructor(
         // Copies that both end with a last frame must end at the same position.
         if (!copy.tailMissing && !tailMissing && copy.frames.size + offset != frames.size) return false
         // A copy that ends cannot run past this message's end, and vice versa.
-        if (!copy.tailMissing && copy.frames.size + offset < frames.size && frames.drop(copy.frames.size + offset).any { it != null }) return false
-        if (!tailMissing && copy.frames.size + offset > frames.size && copy.frames.drop(frames.size - offset).any { it != null }) return false
+        if (!copy.tailMissing && copy.frames.size + offset < frames.size && frames.drop((copy.frames.size + offset).coerceAtLeast(0)).any { it != null }) return false
+        if (!tailMissing && copy.frames.size + offset > frames.size && copy.frames.drop((frames.size - offset).coerceAtLeast(0)).any { it != null }) return false
         return sharedBody > 0
     }
 

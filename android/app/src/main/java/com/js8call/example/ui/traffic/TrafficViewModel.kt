@@ -144,7 +144,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     private val ticker = object : Runnable {
         override fun run() {
             val now = System.currentTimeMillis()
-            engine.tick(now)
+            safeEngine { engine.tick(now) }
             if (listening) currentBand()?.let { listeningLog.add(now, it, TICK_MS / 60_000.0) }
             if (now - lastFlushMs > 60_000L) { listeningLog.flush(); lastFlushMs = now }
             if (now - lastPruneMs > 10 * 60_000L) { lastPruneMs = now; pruneHistory(now) }
@@ -161,7 +161,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             listeningLog.flush()
             // Receiver off: nothing is still arriving, so close half-received transmissions now
             // (otherwise "RX…" stays on a station until the idle timeout).
-            if (wasListening) { engine.tick(System.currentTimeMillis() + 10 * 60_000L); requestPublish() }
+            if (wasListening) { safeEngine { engine.tick(System.currentTimeMillis() + 10 * 60_000L) }; requestPublish() }
         }
     }
 
@@ -257,7 +257,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                 replaying = false
             }
             val now = System.currentTimeMillis()
-            engine.tick(now)
+            safeEngine { engine.tick(now) }
             // Evidence in old messages was logged when they were first heard.
             engine.messages().forEach { reportedIds += it.id }
             viewedBaselineMs = now
@@ -314,7 +314,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     private fun addFrameAt(utc: Int, snr: Int, frequency: Float, text: String, type: Int, mode: Int, now: Long) {
         val frame = RollupEngine.Frame(utc, frequency, type, text, snr, mode, now)
-        engine.addFrame(frame, now)
+        safeEngine { engine.addFrame(frame, now) }
         record(TrafficHistory.Entry.Frame(frame))
         if (frame.isFirst) {
             HeaderParser.parse(text)?.takeUnless { isMe(it.sender) }?.let { header ->
@@ -473,6 +473,19 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     /** Where Send goes for the current selection: a callsign, a group, or null for an open broadcast. */
     fun sendTarget(): String? = selectedKey.takeIf { it != ALL && !it.startsWith("#") }
 
+    /**
+     * Message assembly must never take the app down: a bad edge case loses one
+     * message, not the receiver. Failures are kept for the diagnostics report.
+     */
+    private inline fun safeEngine(block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            android.util.Log.e("TrafficViewModel", "rollup engine error", e)
+            runCatching { com.js8call.example.CrashReporter.recordNonFatal("rollup engine", e) }
+        }
+    }
+
     /** Unread stored messages (the inbox), set by the screen that observes the message database. */
     private var inboxUnread = 0
     fun setInboxUnread(count: Int) {
@@ -537,7 +550,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         ).forEachIndexed { i, (t, ty) -> at(26 + i, 820f, -15, t, ty) }
         listOf("W4QRP: @TEAM " to 1, "#CHECKIN S:NEED " to 4, "L:EM83 N:WATER" to 6)
             .forEachIndexed { i, (t, ty) -> at(29 + i, 2010f, -7, t, ty) }
-        engine.tick(now)
+        safeEngine { engine.tick(now) }
         publish()
         demoBand = null
     }

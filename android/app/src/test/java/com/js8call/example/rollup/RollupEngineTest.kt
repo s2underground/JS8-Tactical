@@ -91,6 +91,38 @@ class RollupEngineTest {
     }
 
     @Test
+    fun copyMissingHeadAfterOriginalMissingTailDoesNotCrash() {
+        // Field crash Nov 19: drop() with a negative count while lining up a headless copy
+        // that ends against a message whose last frame was never heard.
+        val e = RollupEngine()
+        e.send(roadMessage, startSlot = 0, drop = setOf(4))
+        e.send(roadMessage, startSlot = 8, drop = setOf(0), hz = 1520f)
+        e.settle(14)
+        val m = e.messages().first { it.sender == "KN4XYZ" }
+        assertEquals(2, m.copies)
+        assertTrue(m.isComplete)
+    }
+
+    @Test
+    fun randomDamagedRepeatsNeverThrow() {
+        // Many copies of the same message with random missing frames, lanes and order.
+        val rnd = java.util.Random(19112026)
+        repeat(400) {
+            val e = RollupEngine()
+            var slot = 0
+            repeat(1 + rnd.nextInt(4)) {
+                val drop = (0 until roadMessage.size).filter { rnd.nextInt(3) == 0 }.toSet()
+                val start = slot + rnd.nextInt(3)
+                e.send(roadMessage.subList(0, 1 + rnd.nextInt(roadMessage.size)), start, drop, hz = 1400f + rnd.nextInt(4) * 40f)
+                slot = start + roadMessage.size + rnd.nextInt(6)
+                if (rnd.nextBoolean()) e.tick(base + (slot + rnd.nextInt(4)) * 15_000L)
+            }
+            e.settle(slot + 2)
+            e.messages()
+        }
+    }
+
+    @Test
     fun headlessCopyAloneHasUnknownSender() {
         val e = RollupEngine()
         e.send(roadMessage, startSlot = 0, drop = setOf(0))
