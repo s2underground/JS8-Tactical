@@ -107,6 +107,11 @@ class MonitorFragment : Fragment() {
             requireContext().startService(intent)
         }
 
+        transmitViewModel.onAir.observe(viewLifecycleOwner) { air ->
+            waterfallView.onAirBandwidthHz = air?.second
+            waterfallView.onAirHz = air?.first
+        }
+
         loadFrequencies()
         observeViewModel()
 

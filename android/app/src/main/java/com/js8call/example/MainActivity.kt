@@ -70,6 +70,14 @@ class MainActivity : AppCompatActivity() {
                 }
                 JS8EngineService.ACTION_TX_STATE -> {
                     val state = intent.getStringExtra(JS8EngineService.EXTRA_TX_STATE)
+                    if (state == JS8EngineService.TX_STATE_STARTED) {
+                        transmitViewModel.setOnAir(
+                            intent.getFloatExtra(JS8EngineService.EXTRA_TX_ON_AIR_HZ, -1f).takeIf { it >= 0f },
+                            intent.getFloatExtra(JS8EngineService.EXTRA_TX_ON_AIR_BW_HZ, 50f),
+                        )
+                    } else if (state != JS8EngineService.TX_STATE_QUEUED) {
+                        transmitViewModel.setOnAir(null)
+                    }
                     when (state) {
                         JS8EngineService.TX_STATE_FINISHED -> {
                             transmitViewModel.transmissionComplete()
@@ -372,7 +380,7 @@ class MainActivity : AppCompatActivity() {
             action = JS8EngineService.ACTION_TRANSMIT_MESSAGE
             putExtra(JS8EngineService.EXTRA_TX_TEXT, nextMessage.text)
             nextMessage.directed?.let { putExtra(JS8EngineService.EXTRA_TX_DIRECTED, it) }
-            putExtra(JS8EngineService.EXTRA_TX_FREQ_HZ, monitorViewModel.getTxOffset().toDouble())
+            putExtra(JS8EngineService.EXTRA_TX_FREQ_HZ, com.js8call.example.service.TxOffsets.txOffset(this@MainActivity).toDouble())
         }
         startService(txIntent)
     }

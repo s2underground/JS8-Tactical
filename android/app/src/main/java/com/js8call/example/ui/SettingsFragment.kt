@@ -343,6 +343,13 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
             true
         }
+        findPreference<Preference>("hb_offset")?.let { pref ->
+            pref.summary = HeartbeatOffsetDialog.summary(requireContext())
+            pref.setOnPreferenceClickListener {
+                HeartbeatOffsetDialog.show(requireContext()) { pref.summary = HeartbeatOffsetDialog.summary(requireContext()) }
+                true
+            }
+        }
         findPreference<Preference>("diagnostics_share")?.setOnPreferenceClickListener {
             val ctx = requireContext().applicationContext
             view?.let { v -> Snackbar.make(v, "Collecting diagnostics…", Snackbar.LENGTH_SHORT).show() }

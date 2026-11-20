@@ -23,7 +23,7 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     private val _isRunning = MutableLiveData<Boolean>(false)
     val isRunning: LiveData<Boolean> = _isRunning
 
-    private val _txOffsetHz = MutableLiveData<Float>(1500f)
+    private val _txOffsetHz = MutableLiveData<Float>(com.js8call.example.service.TxOffsets.txOffset(application))
     val txOffsetHz: LiveData<Float> = _txOffsetHz
 
     private val _radioFrequency = MutableLiveData<Long>()
@@ -35,7 +35,7 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     private val waterfallRenderer = WaterfallRenderer()
 
     init {
-        _status.value = MonitorStatus(state = EngineState.STOPPED)
+        _status.value = MonitorStatus(state = EngineState.STOPPED, txOffsetHz = com.js8call.example.service.TxOffsets.txOffset(getApplication()))
     }
 
     /**
@@ -128,6 +128,7 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     fun setTxOffset(offsetHz: Float) {
         _txOffsetHz.value = offsetHz
         _status.value = _status.value?.copy(txOffsetHz = offsetHz)
+        com.js8call.example.service.TxOffsets.setTxOffset(getApplication(), offsetHz)
     }
 
     /**

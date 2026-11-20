@@ -7,6 +7,8 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.util.AttributeSet
 import android.view.View
+import com.js8call.example.service.JS8EngineService
+import com.js8call.example.service.TxOffsets
 
 /**
  * Custom view that displays a scrolling waterfall visualization of spectrum data.
@@ -30,6 +32,27 @@ class WaterfallView @JvmOverloads constructor(
         strokeWidth = 2f * resources.displayMetrics.density
     }
     private val density = resources.displayMetrics.density
+    private val hbFill = Paint().apply { color = Color.argb(45, 255, 122, 162) }
+    private val hbEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(220, 255, 122, 162)
+        style = Paint.Style.STROKE
+        strokeWidth = 1.5f * resources.displayMetrics.density
+        pathEffect = android.graphics.DashPathEffect(floatArrayOf(6f * resources.displayMetrics.density, 4f * resources.displayMetrics.density), 0f)
+    }
+    private val hbLabelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(230, 255, 122, 162) }
+    private val zonePaint = Paint().apply { color = Color.argb(150, 255, 122, 162) }
+    private val onAirFill = Paint().apply { color = Color.argb(110, 255, 40, 40) }
+    private val onAirEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(255, 40, 40)
+        style = Paint.Style.STROKE
+        strokeWidth = 3f * resources.displayMetrics.density
+    }
+    private val onAirLabelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(220, 30, 30) }
+    private val onAirText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = 12f * resources.displayMetrics.scaledDensity
+        isFakeBoldText = true
+    }
     private val scalePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(200, 230, 234, 240)
         textSize = 11f * resources.displayMetrics.scaledDensity
@@ -50,11 +73,21 @@ class WaterfallView @JvmOverloads constructor(
     private var renderer: WaterfallRenderer? = null
 
     // TX offset tracking
-    var txOffsetHz: Float = 1500f
+    var txOffsetHz: Float = TxOffsets.DEFAULT_TX_HZ
         set(value) {
-            field = value.coerceAtLeast(500f)
+            field = value
             postInvalidate()
         }
+    /** Set while a transmission is on the air: the offset and width the engine is sending at. */
+    var onAirHz: Float? = null
+        set(value) { field = value; postInvalidate() }
+    var onAirBandwidthHz: Float? = null
+        set(value) { field = value; postInvalidate() }
+    /** Heartbeat setting or send speed changed: redraw the markers. */
+    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == TxOffsets.KEY_HB_MODE || key == TxOffsets.KEY_HB_FIXED || key == TxOffsets.KEY_HB_NEXT ||
+            key == TxOffsets.KEY_TX || key == JS8EngineService.PREF_TX_SUBMODE) postInvalidate()
+    }
     // Callback for offset changes
     var onOffsetChanged: ((Float) -> Unit)? = null
 
@@ -95,7 +128,6 @@ class WaterfallView @JvmOverloads constructor(
         dstRect.set(0, 0, width, height)
         canvas.drawBitmap(bitmap, srcRect, dstRect, paint)
 
-        // Draw TX offset marker bar (50Hz bandwidth for normal mode)
         val currentBinHz = renderer?.getCurrentBinHz() ?: 0f
         val displayStartBin = renderer?.getDisplayStartBin() ?: 0
         val displayEndBin = renderer?.getDisplayEndBin() ?: -1
@@ -103,35 +135,50 @@ class WaterfallView @JvmOverloads constructor(
             drawScale(canvas, currentBinHz, displayStartBin, displayEndBin)
         }
         if (currentBinHz > 0 && displayEndBin > displayStartBin) {
-            val usableBins = displayEndBin - displayStartBin
-            val shownHz = dragHz ?: txOffsetHz
-            val binIndex = (shownHz / currentBinHz).toInt()
-            val displayBinIndex = binIndex - displayStartBin
+            val hzToPx = { hz: Float -> hzToX(hz, currentBinHz, displayStartBin, displayEndBin) }
+            val bw = TxOffsets.bandwidthHz(TxOffsets.submode(context))
+            val txHz = dragHz ?: txOffsetHz
+            val hbMode = TxOffsets.hbMode(context)
 
-            if (displayBinIndex in 0 until usableBins) {
-                val pixelsPerBin = width.toFloat() / usableBins
-                val xPosition = displayBinIndex * pixelsPerBin
-
-                // A JS8 signal starts at the offset and goes up from there (the lowest tone is
-                // the offset), as wide as the speed in use: mark exactly the space it fills.
-                val barWidth = txBandwidthHz() / currentBinHz * pixelsPerBin
-                canvas.drawRect(xPosition, 0f, xPosition + barWidth, height.toFloat(), markerPaint)
-                canvas.drawLine(xPosition, 0f, xPosition, height.toFloat(), markerEdgePaint)
-                canvas.drawLine(xPosition + barWidth, 0f, xPosition + barWidth, height.toFloat(), markerEdgePaint)
-                drawTxLabel(canvas, xPosition + barWidth / 2f, shownHz)
+            // Heartbeat zone (500–1,000 Hz) as a thin strip along the bottom, when heartbeats use it.
+            if (hbMode == TxOffsets.HB_ZONE) {
+                val strip = 4f * density
+                canvas.drawRect(hzToPx(TxOffsets.ZONE_LOW_HZ), height - strip, hzToPx(TxOffsets.ZONE_HIGH_HZ), height.toFloat(), zonePaint)
+            }
+            // Where the next heartbeat goes, unless that is the TX offset.
+            if (hbMode != TxOffsets.HB_TX) {
+                val hb = TxOffsets.nextHeartbeat(context)
+                // Same row as the TX label (clear of station tags) unless the two would overlap.
+                val labelTop = if (kotlin.math.abs(hb - txHz) < 260f) 0.5f else 0.25f
+                drawMarker(canvas, hzToPx(hb), hzToPx(hb + bw), hbFill, hbEdge, "HB ${hb.toInt()} Hz", labelTop, hbLabelBg)
+            }
+            val txLabel = if (hbMode == TxOffsets.HB_TX) "TX + HB ${txHz.toInt()} Hz" else "TX ${txHz.toInt()} Hz"
+            drawMarker(canvas, hzToPx(txHz), hzToPx(txHz + bw), markerPaint, markerEdgePaint, txLabel, 0.25f, labelBg)
+            // What is going out right now, as the engine was told: the final word on where you are sending.
+            onAirHz?.let { hz ->
+                val w = onAirBandwidthHz ?: bw
+                drawMarker(canvas, hzToPx(hz), hzToPx(hz + w), onAirFill, onAirEdge, "SENDING ${hz.toInt()} Hz", 0.04f, onAirLabelBg, onAirText)
             }
         }
     }
 
-    /** Bandwidth of the speed set for sending (Normal 50 Hz, Fast 80, Turbo 160, Slow 25). */
-    private fun txBandwidthHz(): Float =
-        when (androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
-            .getInt(com.js8call.example.service.JS8EngineService.PREF_TX_SUBMODE, com.js8call.example.service.JS8EngineService.SUBMODE_NORMAL)) {
-            com.js8call.example.service.JS8EngineService.SUBMODE_FAST -> 80f
-            com.js8call.example.service.JS8EngineService.SUBMODE_TURBO -> 160f
-            com.js8call.example.service.JS8EngineService.SUBMODE_SLOW -> 25f
-            else -> 50f
-        }
+    private fun drawMarker(
+        canvas: Canvas, left: Float, right: Float, fill: Paint, edge: Paint,
+        label: String, labelTop: Float, labelBackground: Paint, text: Paint = labelText,
+    ) {
+        if (right < 0f || left > width) return
+        canvas.drawRect(left, 0f, right, height.toFloat(), fill)
+        canvas.drawLine(left, 0f, left, height.toFloat(), edge)
+        canvas.drawLine(right, 0f, right, height.toFloat(), edge)
+        val pad = 4f * density
+        val w = text.measureText(label) + pad * 2
+        val h = text.textSize + pad * 1.5f
+        val x = (left + right) / 2f
+        val l = (x - w / 2f).coerceIn(0f, (width - w).coerceAtLeast(0f))
+        val top = height * labelTop
+        canvas.drawRoundRect(l, top, l + w, top + h, pad, pad, labelBackground)
+        canvas.drawText(label, l + pad, top + h - pad, text)
+    }
 
     private fun hzToX(hz: Float, binHz: Float, start: Int, end: Int): Float =
         (hz / binHz - start) * width.toFloat() / (end - start)
@@ -156,18 +203,6 @@ class WaterfallView @JvmOverloads constructor(
     }
 
     /** "TX 1500 Hz" tag at the top of the marker. */
-    private fun drawTxLabel(canvas: Canvas, x: Float, hz: Float) {
-        val text = "TX ${hz.toInt()} Hz"
-        val pad = 4f * density
-        val w = labelText.measureText(text) + pad * 2
-        val h = labelText.textSize + pad * 1.5f
-        val left = (x - w / 2f).coerceIn(0f, (width - w).coerceAtLeast(0f))
-        // A quarter of the way down: clear of the Traffic strip's station tags (top row and middle row).
-        val top = height * 0.25f
-        canvas.drawRoundRect(left, top, left + w, top + h, pad, pad, labelBg)
-        canvas.drawText(text, left + pad, top + h - pad, labelText)
-    }
-
     private fun hzAt(x: Float): Float? {
         val binHz = renderer?.getCurrentBinHz() ?: 0f
         val start = renderer?.getDisplayStartBin() ?: 0
@@ -192,8 +227,14 @@ class WaterfallView @JvmOverloads constructor(
                 if (newOffsetHz != null) {
                     txOffsetHz = newOffsetHz
                     onOffsetChanged?.invoke(txOffsetHz)
-                    // A prompt, not a limit: most radios' SSB filters stop around 2,700 Hz.
-                    if (txOffsetHz > PASSBAND_TOP_HZ) {
+                    // Prompts, not limits: most radios' SSB filters pass about 300–2,700 Hz.
+                    if (txOffsetHz < PASSBAND_BOTTOM_HZ) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "TX ${txOffsetHz.toInt()} Hz is below what most radios pass (about 300 Hz). Your signal may not go out.",
+                            android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                    } else if (txOffsetHz > PASSBAND_TOP_HZ) {
                         android.widget.Toast.makeText(
                             context,
                             "TX ${txOffsetHz.toInt()} Hz is above what most radios pass (about 2,700 Hz). Your signal may not go out.",
@@ -215,15 +256,18 @@ class WaterfallView @JvmOverloads constructor(
 
     companion object {
         private const val PASSBAND_TOP_HZ = 2700f
+        private const val PASSBAND_BOTTOM_HZ = 300f
     }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(context).registerOnSharedPreferenceChangeListener(prefListener)
         renderer?.setInvalidateCallback { postInvalidateOnAnimation() }
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(context).unregisterOnSharedPreferenceChangeListener(prefListener)
         renderer?.setInvalidateCallback(null)
         renderer?.stopDrawing()
     }

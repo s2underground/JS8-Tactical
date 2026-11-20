@@ -219,7 +219,8 @@ class JS8EngineService : Service() {
     private lateinit var txMonitorHandler: Handler
     private var selectedAudioDeviceId: Int = -1  // -1 means use default
     private var selectedOutputDeviceId: Int = -1  // -1 means use default
-    private var currentTxOffsetHz: Float = 1500f
+    /** The TX offset: saved, so it survives restarts and is the one the waterfall shows. */
+    private val currentTxOffsetHz: Float get() = TxOffsets.txOffset(this)
     private var txMonitorActive = false
     private var txMonitorWasAudioActive = false
     // Drifted clock at the send's first audio; 0 until it goes on air
@@ -441,9 +442,9 @@ class JS8EngineService : Service() {
             }
             ACTION_HALT_TX -> haltTransmit()
             ACTION_SET_TX_OFFSET -> {
-                val offsetHz = intent.getFloatExtra(EXTRA_TX_OFFSET_HZ, 1500f)
+                val offsetHz = intent.getFloatExtra(EXTRA_TX_OFFSET_HZ, TxOffsets.txOffset(this))
                 Log.i(TAG, "Setting TX offset to $offsetHz Hz")
-                currentTxOffsetHz = offsetHz
+                TxOffsets.setTxOffset(this, offsetHz)
             }
             ACTION_TRANSMIT_MESSAGE -> when {
                 engine != null -> {
@@ -2866,16 +2867,7 @@ class JS8EngineService : Service() {
      * Random audio offset inside the heartbeat sub-band. The upper bound backs
      * off by the submode bandwidth so the whole signal stays under 1000 Hz.
      */
-    private fun heartbeatOffsetHz(submode: Int): Float {
-        val bandwidthHz = when (submode) {
-            SUBMODE_SLOW -> 25
-            SUBMODE_FAST -> 80
-            SUBMODE_TURBO -> 160
-            else -> 50
-        }
-        val high = HB_SUBBAND_HIGH_HZ - bandwidthHz
-        return (HB_SUBBAND_LOW_HZ + Math.random() * (high - HB_SUBBAND_LOW_HZ)).toFloat()
-    }
+    private fun heartbeatOffsetHz(submode: Int): Float = TxOffsets.takeHeartbeat(this, submode)
 
     private fun sendHeartbeat() {
         if (System.currentTimeMillis() < holdTxUntilMs) {
@@ -3007,7 +2999,7 @@ class JS8EngineService : Service() {
         // Heartbeat traffic belongs in the 500-1000 Hz sub-band, away from QSOs.
         // This covers manual HB sends and auto HB ACKs; the scheduled heartbeat
         // picks its own offset in sendHeartbeat().
-        val requestedFrequencyHz = intent.getDoubleExtra(EXTRA_TX_FREQ_HZ, DEFAULT_AUDIO_FREQUENCY_HZ)
+        val requestedFrequencyHz = intent.getDoubleExtra(EXTRA_TX_FREQ_HZ, currentTxOffsetHz.toDouble())
         val audioFrequencyHz = if (isHeartbeatTraffic(text)) {
             heartbeatOffsetHz(submode).toDouble()
         } else {
@@ -3113,6 +3105,9 @@ class JS8EngineService : Service() {
         val intent = Intent(ACTION_TX_STATE).apply {
             putExtra(EXTRA_TX_STATE, state)
             putExtra(EXTRA_TX_REFUSED, refused)
+            // Where this send is going out, exactly as the engine was given it (waterfall "SENDING").
+            putExtra(EXTRA_TX_ON_AIR_HZ, lastTxFrequencyHz.toFloat())
+            putExtra(EXTRA_TX_ON_AIR_BW_HZ, TxOffsets.bandwidthHz(lastTxSubmode))
         }
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
@@ -4550,6 +4545,8 @@ class JS8EngineService : Service() {
         const val EXTRA_TX_FORCE_DATA = "tx_force_data"
         const val EXTRA_TX_STATE = "tx_state"
         const val EXTRA_TX_REFUSED = "tx_refused"
+        const val EXTRA_TX_ON_AIR_HZ = "tx_on_air_hz"
+        const val EXTRA_TX_ON_AIR_BW_HZ = "tx_on_air_bw_hz"
         const val EXTRA_TX_SENT_TEXT = "tx_sent_text"
         const val EXTRA_TX_SENT_FREQ = "tx_sent_freq"
         const val EXTRA_RADIO_FREQUENCY_HZ = "radio_frequency_hz"

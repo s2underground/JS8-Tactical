@@ -32,6 +32,14 @@ class TransmitViewModel(application: Application) : AndroidViewModel(application
     private val _txState = MutableLiveData<TransmitState>(TransmitState.IDLE)
     val txState: LiveData<TransmitState> = _txState
 
+    /** Offset and width of the transmission on the air right now (null when not sending). */
+    private val _onAir = MutableLiveData<Pair<Float, Float>?>(null)
+    val onAir: LiveData<Pair<Float, Float>?> = _onAir
+    fun setOnAir(hz: Float?, bandwidthHz: Float = 50f) {
+        val v = hz?.let { it to bandwidthHz }
+        if (_onAir.value != v) _onAir.value = v
+    }
+
     private val _queue = MutableLiveData<List<QueueItem>>(emptyList())
     val queue: LiveData<List<QueueItem>> = _queue
 
@@ -119,6 +127,8 @@ class TransmitViewModel(application: Application) : AndroidViewModel(application
 
     private fun settleState() {
         _txState.value = if (txQueue.isEmpty()) TransmitState.IDLE else TransmitState.QUEUED
+        // Nothing on the air any more (covers a missed "finished" while in the background).
+        setOnAir(null)
         publishQueue()
     }
 

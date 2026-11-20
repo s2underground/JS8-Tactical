@@ -213,6 +213,7 @@ class TrafficFragment : Fragment() {
             m.add(0, 1, 0, "Auto-reply").apply { isCheckable = true; isChecked = prefs.getBoolean(KEY_AUTOREPLY, false) }
             m.add(0, 2, 1, "Keep screen on").apply { isCheckable = true; isChecked = prefs.getBoolean(KEY_SCREEN_ON, false) }
             m.add(0, 3, 2, "Audio input…")
+            m.add(0, 6, 2, "Heartbeat offset… (${com.js8call.example.ui.HeartbeatOffsetDialog.summary(requireContext())})")
             m.add(0, 4, 3, "Raw decodes, clock and audio details")
             m.add(0, 5, 4, "Inbox (stored messages)")
             popup.setOnMenuItemClickListener { item ->
@@ -224,6 +225,7 @@ class TrafficFragment : Fragment() {
                     }
                     4 -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_monitor)
                     5 -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_messages)
+                    6 -> com.js8call.example.ui.HeartbeatOffsetDialog.show(requireContext())
                 }
                 renderToggles()
                 true
@@ -314,6 +316,10 @@ class TrafficFragment : Fragment() {
             overlay.invalidate()
         }
         traffic.markers.observe(viewLifecycleOwner) { overlay.markers = it }
+        transmit.onAir.observe(viewLifecycleOwner) { air ->
+            waterfall.onAirBandwidthHz = air?.second
+            waterfall.onAirHz = air?.first
+        }
     }
 
     // ------------------------------------------------------------- lists
