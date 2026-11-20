@@ -17,6 +17,7 @@ object AppLinks {
         "digest" to R.id.navigation_digest,
         "settings" to R.id.navigation_settings,
         "library" to R.id.navigation_library,
+        "reports" to R.id.navigation_reports,
     )
 
     fun known(target: String) = target in TARGETS

@@ -30,7 +30,7 @@ object GuideText {
         "passband", "waterfall", "timeslots", "frames", "line-of-sight",
     )
     val CALCS = setOf("dipole", "efhw", "vertical", "nvis", "wavelength", "feedline", "swr", "airtime", "rf")
-    val APP_TARGETS = setOf("traffic", "team", "map", "prop", "radio", "digest", "settings", "library")
+    val APP_TARGETS = setOf("traffic", "team", "map", "prop", "radio", "digest", "settings", "library", "reports")
 
     data class Meta(val id: String, val title: String, val summary: String, val section: String, val order: Int)
 
