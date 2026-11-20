@@ -83,6 +83,15 @@ object AudioDevices {
 
     fun selectedName(context: Context): String = selected(context).name
 
+    /** The saved input's name when it isn't connected right now (start would fall back to another input). */
+    fun missingSaved(context: Context): String? {
+        val savedName = PreferenceManager.getDefaultSharedPreferences(context).getString(PREF_SELECTED_NAME, null) ?: return null
+        val devices = list(context)
+        val savedId = PreferenceManager.getDefaultSharedPreferences(context).getInt(PREF_SELECTED_ID, DEFAULT_DEVICE_ID)
+        if (devices.any { it.id == savedId || it.name == savedName }) return null
+        return savedName
+    }
+
     /** The same resolution against a list the caller already holds. */
     fun selected(context: Context, devices: List<Device>): Device {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)

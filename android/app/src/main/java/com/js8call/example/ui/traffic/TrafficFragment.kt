@@ -160,12 +160,21 @@ class TrafficFragment : Fragment() {
         monitor.radioFrequency.observe(viewLifecycleOwner) { renderBand() }
         freq.setOnClickListener {
             val (bands, index) = com.js8call.example.ui.RadioControls.bands(requireContext())
+            val canTune = com.js8call.example.ui.RadioControls.canTuneRadio(requireContext())
             MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.monitor_radio_frequency)
+                .setTitle(if (canTune) getString(R.string.monitor_radio_frequency) else getString(R.string.band_pick_title_manual))
                 .setSingleChoiceItems(bands.map { it.label }.toTypedArray(), index) { d, which ->
                     d.dismiss()
                     com.js8call.example.ui.RadioControls.selectBand(requireContext(), bands[which])
                     renderBand()
+                    if (!canTune) {
+                        // The app can't turn the radio's dial: say so, or stations get logged on the wrong band.
+                        com.google.android.material.snackbar.Snackbar.make(
+                            requireView(),
+                            getString(R.string.band_pick_set_radio, com.js8call.example.ui.RadioControls.shortLabel(bands[which].label)),
+                            com.google.android.material.snackbar.Snackbar.LENGTH_LONG,
+                        ).setDuration(8_000).show()
+                    }
                 }
                 .show()
         }
@@ -187,7 +196,7 @@ class TrafficFragment : Fragment() {
                 if (com.js8call.example.ui.RadioControls.needsMicPermission(requireContext())) {
                     micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
                 } else {
-                    com.js8call.example.ui.RadioControls.start(requireContext(), monitor)
+                    startReceiverChecked()
                 }
             } else {
                 com.js8call.example.ui.RadioControls.stop(requireContext(), monitor)
@@ -340,7 +349,7 @@ class TrafficFragment : Fragment() {
                 com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                     .setTitle("Your signal was heard at a different offset")
                     .setMessage(
-                        "Your receiver decoded your own transmission at ${echo.heardHz.toInt()} Hz, " +
+                        "Your receiver picked up your own transmission at ${echo.heardHz.toInt()} Hz, " +
                             "but it was sent at ${echo.sentHz.toInt()} Hz " +
                             "(${if (echo.offByHz > 0) "+" else ""}${echo.offByHz.toInt()} Hz).\n\n" +
                             "The waterfall now marks where it was heard in blue. Each reading is saved in " +
@@ -515,9 +524,30 @@ class TrafficFragment : Fragment() {
 
     private var stationLongPress: (TrafficViewModel.StationRow) -> Boolean = { false }
 
+    /**
+     * Start the receiver, but if the saved sound card (the radio interface) isn't plugged
+     * in, ask first instead of quietly listening on the tablet's own microphone.
+     */
+    private fun startReceiverChecked() {
+        val ctx = context ?: return
+        val missing = com.js8call.example.ui.AudioDevices.missingSaved(ctx)
+        if (missing == null) {
+            com.js8call.example.ui.RadioControls.start(ctx, monitor)
+            return
+        }
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(getString(R.string.audio_missing_title, missing))
+            .setMessage(getString(R.string.audio_missing_text, missing))
+            .setPositiveButton(R.string.audio_missing_retry) { _, _ -> startReceiverChecked() }
+            .setNeutralButton(R.string.audio_missing_use_mic) { _, _ -> com.js8call.example.ui.RadioControls.start(ctx, monitor) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .setOnDismissListener { view?.findViewById<View>(R.id.receiver_switch)?.post { monitor.status.value?.let { monitor.updateState(it.state) } } }
+            .show()
+    }
+
     /** Microphone permission for the receiver switch; starts the receiver once granted. */
     private val micPermission = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) com.js8call.example.ui.RadioControls.start(requireContext(), monitor)
+        if (granted) startReceiverChecked()
         else Snackbar.make(requireView(), R.string.permission_audio_denied, Snackbar.LENGTH_LONG).show()
     }
 

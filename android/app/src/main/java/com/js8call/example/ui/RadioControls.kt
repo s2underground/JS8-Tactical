@@ -49,6 +49,16 @@ object RadioControls {
         Band("GhostNet 20m - 14.107 MHz", 14_107_000L),
     )
 
+    /**
+     * Whether the app can change the radio's frequency (CAT control). With no rig or
+     * PTT-only control, picking a band only tells the app which dial you're on.
+     */
+    fun canTuneRadio(context: Context): Boolean {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        if (!prefs.getBoolean("rig_control_enabled", false)) return false
+        return prefs.getString("rig_type", "none") in setOf("network", "hamlib_usb", "trusdx_serial", "qmx_serial")
+    }
+
     /** "20m - 14.078 MHz" → "20m · 14.078". */
     fun shortLabel(entry: String): String = entry.removeSuffix(" MHz").replace(" - ", " · ")
 

@@ -135,6 +135,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     private val _ownEcho = MutableLiveData<EchoCheck?>(null)
     /** Latest own-echo reading (null until our receiver decodes one of our own sends). */
     val ownEcho: LiveData<EchoCheck?> = _ownEcho
+    private var lastSpectrumCheck: EchoCheck? = null
     /** Own-callsign frames decoded back, waiting to be matched to what we sent (offset, time). */
     private val echoFrames = mutableListOf<Pair<Float, Long>>()
 
@@ -489,6 +490,29 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             now - h.lastHeardMs < MARKER_MS &&
                 (dial == null || h.dialHz == null || kotlin.math.abs(h.dialHz!! - dial) < 1_500L)
         }.map { (call, h) -> Marker(call, h.laneHz, colorFor(call)) }
+    }
+
+    /**
+     * Our transmission seen in the receive spectrum (not decoded): the loudest new
+     * stretch while we sent, against where we sent. Shown and logged like a decoded echo.
+     */
+    fun reportOwnSignal(heardHz: Float, sentHz: Float, riseDb: Float, riseAtSentDb: Float) {
+        val now = System.currentTimeMillis()
+        val check = EchoCheck(heardHz, sentHz, now)
+        // Another station keying in the same slot also shows up as "new", so a single reading
+        // proves nothing. Only show a mismatch when two sends in a row agree: the same shift,
+        // or the same spot on the waterfall.
+        val prev = lastSpectrumCheck
+        lastSpectrumCheck = check
+        val agrees = prev != null && now - prev.atMs < 30 * 60_000L && prev.mismatch && check.mismatch &&
+            (kotlin.math.abs(prev.offByHz - check.offByHz) < 20f || kotlin.math.abs(prev.heardHz - check.heardHz) < 20f)
+        if (!check.mismatch || agrees) _ownEcho.value = check
+        val line = String.format(
+            java.util.Locale.US, "%s spectrum: sent %.0f Hz, loudest new signal %.0f Hz (%+.0f Hz, +%.0f dB; +%.0f dB at the sent offset)%s",
+            java.time.Instant.ofEpochMilli(now).toString(), sentHz, heardHz, check.offByHz, riseDb, riseAtSentDb,
+            if (check.mismatch) " MISMATCH" else "",
+        )
+        historyIo.execute { OwnEchoLog.append(getApplication(), line) }
     }
 
     /**

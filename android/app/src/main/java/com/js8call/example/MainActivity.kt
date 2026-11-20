@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private var spectrumBroadcastCount: Long = 0
     private lateinit var messagesViewModel: MessagesViewModel
     private lateinit var transmitViewModel: TransmitViewModel
+    private val ownSignalProbe = com.js8call.example.ui.OwnSignalProbe()
     private lateinit var trafficViewModel: TrafficViewModel
 
     private val decodeReceiver = object : BroadcastReceiver() {
@@ -98,6 +99,12 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
                         monitorViewModel.updateSpectrum(bins, binHz, powerDb, peakDb)
+                        // Where does our own transmission show up in what the receiver hears?
+                        val air = transmitViewModel.onAir.value
+                        ownSignalProbe.feed(bins, binHz, air?.first, air?.second ?: 50f)?.let { r ->
+                            android.util.Log.i("JS8MainActivity", "Own signal in spectrum: sent=${r.sentHz} loudest=${r.heardHz} rise=${r.riseDb} dB atSent=${r.riseAtSentDb} dB")
+                            trafficViewModel.reportOwnSignal(r.heardHz, r.sentHz, r.riseDb, r.riseAtSentDb)
+                        }
                     }
                 }
                 JS8EngineService.ACTION_AUDIO_DEVICE -> {

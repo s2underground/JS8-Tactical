@@ -357,6 +357,12 @@
     <string name="map_reports">Reports</string>
     <string name="map_paths">Paths</string>
     <string name="map_links">Links</string>
+    <string name="audio_missing_title">%1$s isn\'t connected</string>
+    <string name="audio_missing_text">The radio\'s sound card (%1$s) isn\'t plugged in or hasn\'t come up yet. Plug it in and tap Retry, or listen on the tablet\'s own microphone.</string>
+    <string name="audio_missing_retry">Retry</string>
+    <string name="audio_missing_use_mic">Use tablet mic</string>
+    <string name="band_pick_title_manual">Frequency (set the radio to match)</string>
+    <string name="band_pick_set_radio">Now set your radio to %1$s. With PTT-only control the app can\'t change the radio\'s frequency; it uses this to label what you hear.</string>
     <string name="map_band_all">All bands</string>
     <string name="map_band_one">Band: %1$s</string>
     <string name="map_heard_on">Heard on %1$s</string>
