@@ -92,11 +92,11 @@ class DigestTest {
                 Station("OLD1", "EM00", now - 50 * h, now - 30 * h, -10),   // outside the window
             ),
         ))
-        val st = d.sections[3].lines
+        val st = d.sections.first { it.title == "Stations" }.lines
         assertEquals("2 stations heard, 1 new", st[0].text)
         assertEquals("W1AAA", st[1].call)                        // most messages first
         assertTrue(st.last().text, st.last().text == "Farthest: VK2XX")
-        val reports = d.sections[2].lines
+        val reports = d.sections.first { it.title == "Reports" }.lines
         assertEquals("1 SPOT", reports[0].text)
         assertTrue(reports[1].text.startsWith("SPOT from W1AAA: 3, CONVOY"))
         assertTrue(!d.windowText.contains("when the app started"))   // app ran all window
@@ -111,5 +111,39 @@ class DigestTest {
         assertEquals("Nothing heard in this window", d.headline)
         assertTrue(d.windowText, d.windowText.contains("when the app started"))
         assertEquals(Tone.GREEN, d.tone)
+    }
+
+    private fun section(d: DigestBuilder.Digest, title: String) = d.sections.first { it.title == title }
+
+    @Test
+    fun smartSections() {
+        val long = "QST BIO H5N1 CATTLE MOVEMENT USDA SEQUENCING LINKS WA DAIRY H5N1 TO LIKELY ID CATTLE MOVEMENT ROUTE UNCONFIRMED"
+        val messages = listOf(
+            msg("K9DGY", "@GHOSTNET", long, 2.0),
+            msg("N0DDK", "@GHOSTNET", "#CHECKIN N0DDK EM83 GREEN", 1.5),
+            msg("WK8D", "@GHOSTNET", "HELLO NET", 1.4),
+            msg("N0DDK", "K9DGY", "ACK", 1.0),
+            msg("K9DGY", "N0DDK", "RR TNX", 0.9),
+            msg("K9DGY", "N0DDK", "73", 0.8),
+            msg("WK8D", "@HB", "HEARTBEAT EM78", 0.5),
+        )
+        val activity = listOf(5.0, 4.5, 4.0, 3.5).map { DigestBuilder.Activity("AD8IM", now - (it * h).toLong()) } +
+            listOf(0.3, 0.2, 0.1).map { DigestBuilder.Activity("KD8SKZ", now - (it * h).toLong()) }
+        val heardMe = listOf(
+            DigestBuilder.HeardMe("KD8SKZ", -3, now - h, "EN90"),
+            DigestBuilder.HeardMe("N0DDK", -15, now - 2 * h, "EM83"),
+            DigestBuilder.HeardMe("OLD1", -5, now - 30 * h, null),
+        )
+        val d = DigestBuilder.build(input(messages).copy(activity = activity, heardMe = heardMe))
+
+        assertTrue(section(d, "Bulletins and long messages").lines.single().text.startsWith("K9DGY → @GHOSTNET: QST BIO"))
+        val net = section(d, "Nets and groups").lines.single()
+        assertEquals("@GHOSTNET: 3 stations, 3 messages, 1 check-in", net.text)
+        assertEquals("K9DGY ↔ N0DDK", section(d, "Who's working whom").lines.single().text)
+        assertEquals(listOf("AD8IM"), section(d, "Gone quiet").lines.map { it.text })
+        val heard = section(d, "Who heard you").lines.map { it.text }
+        assertEquals("2 stations reported hearing you", heard[0])
+        assertEquals("Strongest: KD8SKZ", heard[1])
+        assertTrue(heard.any { it.startsWith("Farthest:") })
     }
 }

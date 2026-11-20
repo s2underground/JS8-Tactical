@@ -1011,6 +1011,12 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             listeningHours = listenedMin?.let { it / 60.0 }?.takeIf { it > 0 },
             solar = solar,
             dataStartMs = minOf(startedMs, historyStartMs ?: startedMs),
+            activity = engine.messages().filterNot { isOwnEcho(it) }.mapNotNull { m ->
+                m.sender?.let { DigestBuilder.Activity(it, m.lastHeardMs) }
+            },
+            heardMe = observationStore.all().filter { it.kind == Observation.Kind.HEARD_ME && it.timeMs >= sinceMs }.map {
+                DigestBuilder.HeardMe(it.call, it.snr, it.timeMs, it.grid ?: heard[it.call]?.grid)
+            },
         )
     }
 

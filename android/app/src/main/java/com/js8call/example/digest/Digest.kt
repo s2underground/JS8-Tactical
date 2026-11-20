@@ -36,6 +36,12 @@ object DigestBuilder {
 
     data class Station(val call: String, val grid: String?, val firstHeardMs: Long, val lastHeardMs: Long, val snr: Int)
 
+    /** Any transmission heard from [call] at [timeMs], heartbeats included (for "gone quiet"). */
+    data class Activity(val call: String, val timeMs: Long)
+
+    /** [call] reported hearing us at [snr] dB ([grid] if known). */
+    data class HeardMe(val call: String, val snr: Int, val timeMs: Long, val grid: String?)
+
     data class Input(
         val nowMs: Long,
         val sinceMs: Long,
@@ -50,6 +56,8 @@ object DigestBuilder {
         val solar: String?,
         /** When the app started collecting, if later than [sinceMs]. */
         val dataStartMs: Long?,
+        val activity: List<Activity> = emptyList(),
+        val heardMe: List<HeardMe> = emptyList(),
     )
 
     enum class Tone { RED, AMBER, GREEN, NEUTRAL }
@@ -168,10 +176,76 @@ object DigestBuilder {
             }
         }
 
+        // ---- Bulletins and long messages: complete, substantial traffic worth reading in full.
+        val bulletinLines = inWindow
+            .filter { it.complete && it.sender != null && it.body.trim().length >= BULLETIN_CHARS && Reports.parse(it.body) == null }
+            .sortedByDescending { it.timeMs }.take(5).map { m ->
+                val body = m.body.trim().replace(Regex("\\s+"), " ")
+                Line("${m.sender}${m.recipient?.let { " → $it" }.orEmpty()}: ${body.take(140)}${if (body.length > 140) "…" else ""}",
+                    "${body.length} chars · ${ago(m.timeMs, input.nowMs)}", Tone.NEUTRAL, m.sender)
+            }
+
+        // ---- Nets and groups: who sent to each group (check-ins included), and how much.
+        val netLines = inWindow.filter { it.sender != null && it.recipient?.startsWith("@") == true && it.recipient.uppercase() !in quietGroups }
+            .groupBy { it.recipient!!.uppercase() }
+            .map { (group, msgs) -> Triple(group, msgs, msgs.mapNotNull { it.sender?.uppercase() }.distinct()) }
+            .sortedByDescending { it.third.size }
+            .take(6)
+            .map { (group, msgs, senders) ->
+                val checkins = msgs.count { Reports.parse(it.body)?.type == Reports.CHECKIN }
+                Line("$group: ${senders.size} station${s(senders.size)}, ${msgs.size} message${s(msgs.size)}" +
+                    if (checkins > 0) ", $checkins check-in${s(checkins)}" else "",
+                    senders.take(12).joinToString(", ") + if (senders.size > 12) " +${senders.size - 12}" else "",
+                    if (group in mine) Tone.AMBER else Tone.NEUTRAL)
+            }
+
+        // ---- Who's working whom: directed exchanges between other stations.
+        val pairLines = inWindow.filter { m ->
+            val a = m.sender?.uppercase(); val b = m.recipient?.uppercase()
+            a != null && b != null && !b.startsWith("@") && a != me && b != me
+        }.groupBy { m -> listOf(m.sender!!.uppercase(), m.recipient!!.uppercase()).sorted().let { it[0] to it[1] } }
+            .filter { it.value.size >= 2 }
+            .entries.sortedByDescending { it.value.size }.take(5)
+            .map { (pair, msgs) ->
+                val last = msgs.maxByOrNull { it.timeMs }!!
+                Line("${pair.first} ↔ ${pair.second}", "${msgs.size} messages · last ${ago(last.timeMs, input.nowMs)}", call = last.sender)
+            }
+
+        // ---- Gone quiet: regulars in this window not heard for a while (3x their usual gap, at least an hour).
+        val quietLines = input.activity.filter { it.timeMs >= input.sinceMs && it.call.uppercase() != me }
+            .groupBy { it.call.uppercase() }
+            .mapNotNull { (call, acts) ->
+                if (acts.size < 3) return@mapNotNull null
+                val times = acts.map { it.timeMs }.sorted()
+                val gaps = times.zipWithNext { a, b -> b - a }.filter { it > 60_000L }.sorted()
+                val usual = gaps.getOrNull(gaps.size / 2) ?: return@mapNotNull null
+                val silent = input.nowMs - times.last()
+                if (silent < maxOf(QUIET_MIN_MS, 3 * usual)) return@mapNotNull null
+                Triple(call, silent, acts.size)
+            }
+            .sortedBy { it.second }.take(6)
+            .map { (call, silent, n) -> Line(call, "silent ${ago(input.nowMs - silent, input.nowMs).removeSuffix(" ago")} · was heard $n times", Tone.NEUTRAL, call) }
+
+        // ---- Who heard you: your signal, from their reports.
+        val heardMeInWindow = input.heardMe.filter { it.timeMs >= input.sinceMs }
+            .groupBy { it.call.uppercase() }.mapValues { (_, l) -> l.maxByOrNull { it.timeMs }!! }.values
+        val heardMeLines = mutableListOf<Line>()
+        if (heardMeInWindow.isNotEmpty()) {
+            heardMeLines += Line("${heardMeInWindow.size} station${s(heardMeInWindow.size)} reported hearing you")
+            heardMeInWindow.maxByOrNull { it.snr }?.let { heardMeLines += Line("Strongest: ${it.call}", "${it.snr} dB · ${ago(it.timeMs, input.nowMs)}", call = it.call) }
+            if (myPos != null) heardMeInWindow.mapNotNull { hm -> hm.grid?.let { Geo.maidenheadToLatLon(it) }?.let { hm to Geo.distanceKm(myPos, it) } }
+                .maxByOrNull { it.second }?.let { (hm, km) ->
+                    heardMeLines += Line("Farthest: ${hm.call}", "${km.toInt()} km · ${hm.snr} dB · ${ago(hm.timeMs, input.nowMs)}", call = hm.call)
+                }
+        }
+
         // ---- Your station.
         val sentInWindow = input.sent.filter { it.timeMs >= input.sinceMs }
         val stationStatus = mutableListOf<Line>()
         stationStatus += Line("${inWindow.size} message${s(inWindow.size)} heard, ${sentInWindow.size} sent")
+        inWindow.groupBy { it.timeMs / 3_600_000L }.maxByOrNull { it.value.size }?.takeIf { it.value.size >= 5 }?.let { (hour, msgs) ->
+            stationStatus += Line("Busiest hour ${hhmmOnly(hour * 3_600_000L)}–${hhmmOnly((hour + 1) * 3_600_000L)} UTC: ${msgs.size} messages")
+        }
         input.listeningHours?.let { stationStatus += Line("Listened about ${"%.1f".format(Locale.US, it)} h") }
         input.solar?.let { stationStatus += Line("Solar: $it") }
 
@@ -199,12 +273,26 @@ object DigestBuilder {
             sections = listOf(
                 Section("Needs and emergencies", alertLines, if (open.any { it.level == Tone.RED }) Tone.RED else if (alertLines.any { it.tone == Tone.AMBER }) Tone.AMBER else Tone.NEUTRAL, "None reported"),
                 Section("For you", forYou, if (forYou.isNotEmpty()) Tone.AMBER else Tone.NEUTRAL, "Nothing waiting for a reply"),
+                Section("Bulletins and long messages", bulletinLines, empty = "None"),
+                Section("Nets and groups", netLines, empty = "No group traffic"),
                 Section("Reports", reportLines, empty = "No reports"),
+                Section("Who's working whom", pairLines, empty = "No exchanges between other stations"),
                 Section("Stations", stationLines, empty = "No stations heard"),
+                Section("Gone quiet", quietLines, empty = "Nobody regular has gone silent"),
+                Section("Who heard you", heardMeLines, empty = "No reports of hearing you"),
                 Section("Your station", stationStatus),
             ),
         )
     }
+
+    /** A complete message at least this long counts as a bulletin. */
+    private const val BULLETIN_CHARS = 80
+    private const val QUIET_MIN_MS = 60 * 60_000L
+    /** Groups that are just beacons or calls to everyone, not nets. */
+    private val quietGroups = setOf("@HB", "@ALLCALL", "@CQ")
+
+    private fun hhmmOnly(ms: Long): String = SimpleDateFormat("HH:mm", Locale.US)
+        .apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(ms))
 
     private fun s(n: Int) = if (n == 1) "" else "s"
 
