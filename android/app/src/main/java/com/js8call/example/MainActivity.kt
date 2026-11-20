@@ -471,6 +471,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Exit: off the air (receiver, heartbeats, scheduled reports), out of recent apps. */
+    fun confirmExit() {
+        val scheduled = com.js8call.example.reports.ReportStore.of(this).list().count { it.schedule != null }
+        val queued = transmitViewModel.queue.value?.size ?: 0
+        val msg = buildString {
+            append(getString(R.string.exit_text))
+            if (queued > 0) append("\n\n").append(resources.getQuantityString(R.plurals.exit_queued, queued, queued))
+            if (scheduled > 0) append("\n\n").append(resources.getQuantityString(R.plurals.exit_scheduled, scheduled, scheduled))
+        }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.exit_title)
+            .setMessage(msg)
+            .setPositiveButton(R.string.exit_confirm) { _, _ -> exitApp() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun exitApp() {
+        transmitViewModel.cancelAll()
+        stopEngineService()
+        finishAndRemoveTask()
+    }
+
     private fun stopEngineService() {
         val intent = Intent(this, JS8EngineService::class.java).apply {
             action = JS8EngineService.ACTION_STOP

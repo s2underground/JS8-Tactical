@@ -465,6 +465,20 @@ class JS8EngineService : Service() {
                 stopEngine()
                 stopSelf()
             }
+            ACTION_EXIT -> {
+                // Notification "Exit": off the air, out of recent apps, service gone.
+                PreferenceManager.getDefaultSharedPreferences(this).edit().putBoolean(PREF_RECEIVER_WANTED, false).apply()
+                reconnectName = null
+                holdTxUntilMs = 0L
+                mainHandler.removeCallbacks(reconnectRestart)
+                mainHandler.removeCallbacks(reconnectGiveUp)
+                Log.i(TAG, "Exit: stopping engine and closing the app")
+                runCatching { com.js8call.example.ui.TransmitViewModel.of(applicationContext).cancelAll() }
+                stopEngine()
+                runCatching { (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).appTasks.forEach { it.finishAndRemoveTask() } }
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
             ACTION_SWITCH_AUDIO_DEVICE -> {
                 val deviceId = intent.getIntExtra(EXTRA_AUDIO_DEVICE_ID, -1)
                 Log.i(TAG, "Switching audio device to ID: $deviceId")
@@ -584,6 +598,11 @@ class JS8EngineService : Service() {
                 android.R.drawable.ic_media_pause,
                 getString(R.string.notification_action_stop),
                 stopPendingIntent
+            )
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                getString(R.string.notification_action_exit),
+                PendingIntent.getService(this, 1, Intent(this, JS8EngineService::class.java).setAction(ACTION_EXIT), PendingIntent.FLAG_IMMUTABLE)
             )
             .setOngoing(true)
             .build()
@@ -4565,6 +4584,8 @@ class JS8EngineService : Service() {
         // Actions
         const val ACTION_START = "com.js8call.example.ACTION_START"
         const val ACTION_STOP = "com.js8call.example.ACTION_STOP"
+        /** Stop everything and close the app (notification Exit). */
+        const val ACTION_EXIT = "com.js8call.example.ACTION_EXIT"
         const val ACTION_SWITCH_AUDIO_DEVICE = "com.js8call.example.ACTION_SWITCH_AUDIO_DEVICE"
         const val ACTION_SET_FREQUENCY = "com.js8call.example.ACTION_SET_FREQUENCY"
         const val ACTION_SET_TX_OFFSET = "com.js8call.example.ACTION_SET_TX_OFFSET"

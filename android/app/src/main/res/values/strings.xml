@@ -578,5 +578,17 @@
     <string name="reports_delete">Delete</string>
     <string name="reports_delete_confirm">Delete “%1$s”?</string>
     <string name="settings_keep_receiving">Keep receiving when the app is swiped away</string>
-    <string name="settings_keep_receiving_summary">Closing the app from recent apps (or Close all) leaves the receiver, heartbeats and scheduled reports running. Stop it with the receiver switch or Stop in the notification. Off: closing the app stops the receiver.</string>
+    <string name="settings_keep_receiving_summary">On: swiping the app out of recent apps (or Close all) leaves the receiver, heartbeats and scheduled reports running. Off: swiping it away shuts everything down. Either way, Exit (Traffic ⋮ menu, or the notification) always closes the app fully.</string>
+    <string name="notification_action_exit">Exit</string>
+    <string name="exit_title">Exit JS8-Tactical?</string>
+    <string name="exit_text">Stops the receiver, heartbeats and scheduled reports, and closes the app. Start it again from your home screen.</string>
+    <string name="exit_confirm">Exit</string>
+    <plurals name="exit_queued">
+        <item quantity="one">%d message waiting to send will be cancelled.</item>
+        <item quantity="other">%d messages waiting to send will be cancelled.</item>
+    </plurals>
+    <plurals name="exit_scheduled">
+        <item quantity="one">%d scheduled report won\'t go out while the app is closed.</item>
+        <item quantity="other">%d scheduled reports won\'t go out while the app is closed.</item>
+    </plurals>
 </resources>
