@@ -2280,6 +2280,31 @@ class JS8EngineService : Service() {
         }, SCO_START_WAIT_INTERVAL_MS)
     }
 
+    /**
+     * Field case Nov 19: the receiver was started before the radio's USB audio was plugged in,
+     * fell back to the tablet's own microphone and speaker, and the next send keyed the radio
+     * with no audio. A prompt (not a block): say so plainly when a radio is set up.
+     */
+    private fun warnIfTabletMicrophone(deviceId: Int) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val radioSetUp = PreferenceManager.getDefaultSharedPreferences(this).getBoolean("rig_control_enabled", false)
+        if (!radioSetUp) return
+        val am = getSystemService(AUDIO_SERVICE) as AudioManager
+        val input = am.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull { it.id == deviceId }
+            ?: am.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull()
+        if (input?.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_MIC) {
+            Log.w(TAG, "Receiver started on the tablet's built-in microphone while a radio is configured")
+            // A warning, not an error: the receiver is running (an error would show it as stopped).
+            LocalBroadcastManager.getInstance(this).sendBroadcast(
+                Intent(ACTION_WARNING).putExtra(
+                    EXTRA_ERROR_MESSAGE,
+                    "Listening through the tablet's own microphone, not the radio. Plug in the radio's USB audio, " +
+                        "then turn the Receiver off and on. Anything sent now would key the radio with no audio.",
+                )
+            )
+        }
+    }
+
     private fun startAudioCaptureInternal(activeEngine: JS8Engine, deviceId: Int) {
         audioHelper = buildAudioHelper(activeEngine, deviceId)
         if (audioHelper?.startCapture() == true) {
@@ -2290,6 +2315,7 @@ class JS8EngineService : Service() {
             broadcastEngineState(STATE_RUNNING)
             broadcastProcessTxQueue()
             scheduleScoSilenceCheck()
+            warnIfTabletMicrophone(deviceId)
         } else {
             Log.e(TAG, "Failed to start audio capture")
             broadcastError("Failed to start audio capture")
@@ -4379,6 +4405,8 @@ class JS8EngineService : Service() {
         const val ACTION_AUDIO_DEVICE = "com.js8call.example.ACTION_AUDIO_DEVICE"
         const val ACTION_AUDIO_DEVICE_LOST = "com.js8call.example.ACTION_AUDIO_DEVICE_LOST"
         const val ACTION_ERROR = "com.js8call.example.ACTION_ERROR"
+        /** Something the operator must know while the engine keeps running. */
+        const val ACTION_WARNING = "com.js8call.example.ACTION_WARNING"
         const val ACTION_TRANSMIT_MESSAGE = "com.js8call.example.ACTION_TRANSMIT_MESSAGE"
         const val ACTION_TX_STATE = "com.js8call.example.ACTION_TX_STATE"
         const val ACTION_TX_SENT = "com.js8call.example.ACTION_TX_SENT"

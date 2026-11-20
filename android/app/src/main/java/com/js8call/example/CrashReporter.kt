@@ -200,8 +200,14 @@ object CrashReporter {
         sb.append("== Past crash/ANR reports\n").append(if (past.isBlank()) "(none)\n" else past.takeLast(48_000)).append('\n')
         sb.append("== Recent app log\n")
         val log = runCatching {
-            val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "6000"))
-            proc.inputStream.bufferedReader().use { it.readText() }
+            // The engine logs several debug lines a second; drop those so the report reaches back
+            // hours instead of two minutes.
+            val noise = Regex("Audio: \\d+ samples|Decode ready|Decode started|Decode finished|legacy_decode|Submode [A-Z]:|" +
+                "processNextTxIfIdle|ACTION_PROCESS_TX_QUEUE|BLASTBufferQueue|VRI\\[|InsetsController|Ring buffer aligned|spectrum")
+            val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "60000"))
+            proc.inputStream.bufferedReader().useLines { lines ->
+                lines.filterNot { noise.containsMatchIn(it) }.toList().takeLast(4000).joinToString("\n")
+            }
         }.getOrElse { "(log unavailable: ${it.message})" }
         sb.append(log.takeLast(220_000))
         return sb.toString()

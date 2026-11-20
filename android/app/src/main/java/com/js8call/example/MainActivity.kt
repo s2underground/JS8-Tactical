@@ -142,6 +142,14 @@ class MainActivity : AppCompatActivity() {
                     val deviceName = intent.getStringExtra(JS8EngineService.EXTRA_AUDIO_DEVICE) ?: "Unknown"
                     monitorViewModel.updateAudioDevice(deviceName)
                 }
+                JS8EngineService.ACTION_WARNING -> {
+                    val message = intent.getStringExtra(JS8EngineService.EXTRA_ERROR_MESSAGE) ?: return
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(this@MainActivity)
+                        .setTitle("Check the radio connection")
+                        .setMessage(message)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
                 JS8EngineService.ACTION_ERROR -> {
                     val message = intent.getStringExtra(JS8EngineService.EXTRA_ERROR_MESSAGE) ?: "Unknown error"
                     monitorViewModel.onError(message)
@@ -275,6 +283,7 @@ class MainActivity : AppCompatActivity() {
             addAction(JS8EngineService.ACTION_SPECTRUM)
             addAction(JS8EngineService.ACTION_AUDIO_DEVICE)
             addAction(JS8EngineService.ACTION_ERROR)
+            addAction(JS8EngineService.ACTION_WARNING)
             addAction(JS8EngineService.ACTION_AUDIO_DEVICE_LOST)
             addAction(JS8EngineService.ACTION_RADIO_FREQUENCY)
             addAction(JS8EngineService.ACTION_TIME_DRIFT)
