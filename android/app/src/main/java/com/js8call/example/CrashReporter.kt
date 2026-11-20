@@ -158,7 +158,7 @@ object CrashReporter {
         val ctx = appContext ?: return
         val f = file(ctx)
         val header = if (f.exists() && f.length() > 0) "" else
-            "JS8-Tactical ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}\n"
+            "JS8-Tactical ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.GIT_SHA}) · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}\n"
         f.appendText("$header\n===== $body\n")
         if (f.length() > MAX_BYTES) f.writeText(f.readText().takeLast(MAX_BYTES))
     }
@@ -183,7 +183,7 @@ object CrashReporter {
         runCatching { collectExitReasons(ctx) }
         val p = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
         val sb = StringBuilder()
-        sb.append("JS8-Tactical ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}\n")
+        sb.append("JS8-Tactical ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.GIT_SHA}) · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}\n")
         sb.append("Report made ${stamp(System.currentTimeMillis())}\n\n")
         sb.append("== Setup (no callsign or grid)\n")
         // Every setting except ones that identify the operator or their team.

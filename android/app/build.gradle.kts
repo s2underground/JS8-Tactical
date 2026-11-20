@@ -20,6 +20,8 @@ android {
         versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Which commit a test build came from, shown in crash and diagnostic reports.
+        buildConfigField("String", "GIT_SHA", "\"${(System.getenv("GITHUB_SHA") ?: "local").take(8)}\"")
     }
 
     signingConfigs {
