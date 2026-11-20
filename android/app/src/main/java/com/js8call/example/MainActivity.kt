@@ -60,53 +60,11 @@ class MainActivity : AppCompatActivity() {
                     decodeViewModel.addDecode(utc, snr, dt, freq, text, type, quality, mode, driftMs)
                     monitorViewModel.updateSnr(snr)
                 }
-                JS8EngineService.ACTION_QUEUE_TX -> {
-                    val text = intent.getStringExtra(JS8EngineService.EXTRA_QUEUE_TX_TEXT) ?: return
-                    val directed = intent.getStringExtra(JS8EngineService.EXTRA_QUEUE_TX_DIRECTED)
-                    val priority = intent.getIntExtra(JS8EngineService.EXTRA_QUEUE_TX_PRIORITY, 0)
-                    transmitViewModel.queueMessage(text, directed, priority)
-                    // Trigger queue processing
-                    processNextTxIfIdle()
-                }
-                JS8EngineService.ACTION_TX_STATE -> {
-                    val state = intent.getStringExtra(JS8EngineService.EXTRA_TX_STATE)
-                    if (state == JS8EngineService.TX_STATE_STARTED) {
-                        transmitViewModel.setOnAir(
-                            intent.getFloatExtra(JS8EngineService.EXTRA_TX_ON_AIR_HZ, -1f).takeIf { it >= 0f },
-                            intent.getFloatExtra(JS8EngineService.EXTRA_TX_ON_AIR_BW_HZ, 50f),
-                        )
-                    } else if (state != JS8EngineService.TX_STATE_QUEUED) {
-                        transmitViewModel.setOnAir(null)
-                    }
-                    when (state) {
-                        JS8EngineService.TX_STATE_FINISHED -> {
-                            transmitViewModel.transmissionComplete()
-                            processNextTxIfIdle()
-                        }
-                        JS8EngineService.TX_STATE_FAILED -> {
-                            val refused = intent.getBooleanExtra(JS8EngineService.EXTRA_TX_REFUSED, false)
-                            if (transmitViewModel.transmissionFailed(refused)) processNextTxIfIdle()
-                        }
-                        JS8EngineService.TX_STATE_HANDED_BACK -> {
-                            transmitViewModel.handedBack()
-                        }
-                        JS8EngineService.TX_STATE_QUEUED -> {
-                            transmitViewModel.setQueued()
-                        }
-                        JS8EngineService.TX_STATE_STARTED -> {
-                            transmitViewModel.startTransmitting()
-                        }
-                    }
-                }
                 JS8EngineService.ACTION_TX_SENT -> {
                     val text = intent.getStringExtra(JS8EngineService.EXTRA_TX_SENT_TEXT) ?: return
                     val freq = intent.getFloatExtra(JS8EngineService.EXTRA_TX_SENT_FREQ, 0f)
                     val utc = intent.getIntExtra(JS8EngineService.EXTRA_UTC, 0)
                     decodeViewModel.addOutgoing(text, freq, utc)
-                }
-                ACTION_PROCESS_TX_QUEUE -> {
-                    android.util.Log.d("MainActivity", "Received ACTION_PROCESS_TX_QUEUE")
-                    processNextTxIfIdle()
                 }
             }
         }
@@ -124,11 +82,7 @@ class MainActivity : AppCompatActivity() {
                         else -> EngineState.ERROR
                     }
                     monitorViewModel.updateState(state)
-                    if (state == EngineState.RUNNING) {
-                        processNextTxIfIdle()
-                    } else if (state == EngineState.STOPPED || state == EngineState.ERROR) {
-                        transmitViewModel.engineStopped()
-                    }
+                    // The send queue (TransmitViewModel) follows engine state itself.
                 }
                 JS8EngineService.ACTION_SPECTRUM -> {
                     val bins = intent.getFloatArrayExtra(JS8EngineService.EXTRA_BINS)
@@ -246,7 +200,7 @@ class MainActivity : AppCompatActivity() {
         decodeViewModel = ViewModelProvider(this)[DecodeViewModel::class.java]
         monitorViewModel = ViewModelProvider(this)[MonitorViewModel::class.java]
         messagesViewModel = ViewModelProvider(this)[MessagesViewModel::class.java]
-        transmitViewModel = ViewModelProvider(this)[TransmitViewModel::class.java]
+        transmitViewModel = TransmitViewModel.of(this)
         trafficViewModel = TrafficViewModel.of(this)
         decodeViewModel.loadPersistedDecodesIfEnabled()
         // Propagation observations are tagged with the band in use.
@@ -282,10 +236,7 @@ class MainActivity : AppCompatActivity() {
         applyKeepScreenOn(prefs.getBoolean(PREF_KEEP_SCREEN_ON, false))
         val filter = IntentFilter().apply {
             addAction(JS8EngineService.ACTION_DECODE)
-            addAction(JS8EngineService.ACTION_QUEUE_TX)
-            addAction(JS8EngineService.ACTION_TX_STATE)
             addAction(JS8EngineService.ACTION_TX_SENT)
-            addAction(ACTION_PROCESS_TX_QUEUE)
         }
         LocalBroadcastManager.getInstance(this)
             .registerReceiver(decodeReceiver, filter)
@@ -303,8 +254,8 @@ class MainActivity : AppCompatActivity() {
         }
         LocalBroadcastManager.getInstance(this)
             .registerReceiver(monitorReceiver, monitorFilter)
-        // A queue kick sent while stopped was dropped
-        processNextTxIfIdle()
+        // Belt and braces: hand over anything waiting
+        transmitViewModel.processNext()
     }
 
     override fun onStop() {
@@ -314,8 +265,6 @@ class MainActivity : AppCompatActivity() {
             .unregisterReceiver(decodeReceiver)
         LocalBroadcastManager.getInstance(this)
             .unregisterReceiver(monitorReceiver)
-        // A rotation is too short to miss a whole send
-        if (!isChangingConfigurations) transmitViewModel.stopListening()
         decodeViewModel.persistDecodesOnStop()
         if (isFinishing && !isChangingConfigurations) {
             stopEngineService()
@@ -347,42 +296,6 @@ class MainActivity : AppCompatActivity() {
             navController.popBackStack(R.id.navigation_messages, false)
         }
         navController.navigate(R.id.navigation_conversation, bundleOf("callsign" to callsign))
-    }
-
-    /**
-     * Process the next message in the TX queue if not currently transmitting.
-     */
-    private fun processNextTxIfIdle() {
-        // Keep queued entries until the engine can accept them. Otherwise the
-        // service reports an error without a TX completion event.
-        if (monitorViewModel.isRunning.value != true) return
-        // Don't send if already transmitting
-        val state = transmitViewModel.txState.value
-        android.util.Log.d("MainActivity", "processNextTxIfIdle: state=$state")
-        if (state == com.js8call.example.model.TransmitState.TRANSMITTING || transmitViewModel.hasActiveTransmission()) {
-            android.util.Log.d("MainActivity", "processNextTxIfIdle: already transmitting, skipping")
-            return
-        }
-        
-        val nextMessage = transmitViewModel.getNextMessage()
-        android.util.Log.d("MainActivity", "processNextTxIfIdle: nextMessage=$nextMessage")
-        if (nextMessage == null) {
-            android.util.Log.d("MainActivity", "processNextTxIfIdle: no message in queue")
-            return
-        }
-        
-        // Keep the specific entry associated with the eventual TX result even
-        // if a higher-priority message is queued while it is transmitting.
-        transmitViewModel.beginTransmission(nextMessage)
-        // Send to service for transmission
-        android.util.Log.d("MainActivity", "processNextTxIfIdle: sending to service: text='${nextMessage.text}' directed=${nextMessage.directed}")
-        val txIntent = Intent(this, JS8EngineService::class.java).apply {
-            action = JS8EngineService.ACTION_TRANSMIT_MESSAGE
-            putExtra(JS8EngineService.EXTRA_TX_TEXT, nextMessage.text)
-            nextMessage.directed?.let { putExtra(JS8EngineService.EXTRA_TX_DIRECTED, it) }
-            putExtra(JS8EngineService.EXTRA_TX_FREQ_HZ, com.js8call.example.service.TxOffsets.txOffset(this@MainActivity).toDouble())
-        }
-        startService(txIntent)
     }
 
     private fun checkPermissions() {

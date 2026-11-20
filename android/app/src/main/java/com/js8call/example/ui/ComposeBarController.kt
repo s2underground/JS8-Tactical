@@ -48,7 +48,7 @@ class ComposeBarController(
             actionId == EditorInfo.IME_ACTION_SEND || enterKey
         }
 
-        ViewModelProvider(fragment.requireActivity())[TransmitViewModel::class.java]
+        TransmitViewModel.of(fragment.requireContext())
             .queue.observe(fragment.viewLifecycleOwner) { queue ->
                 queueChip.isVisible = queue.isNotEmpty()
                 queueChip.text = fragment.getString(R.string.queue_count, queue.size)

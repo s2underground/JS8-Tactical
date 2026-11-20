@@ -13,6 +13,7 @@ import com.js8call.example.MainActivity
 import com.js8call.example.data.MessageEntity
 import com.js8call.example.data.MessageRepository
 import com.js8call.example.model.TransmitMessage
+import com.js8call.example.service.JS8EngineService
 import com.js8call.example.model.TransmitState
 import com.js8call.example.util.CallsignValidator
 import com.js8call.example.util.Js8Commands
@@ -22,9 +23,103 @@ import kotlinx.coroutines.sync.withLock
 import java.util.Locale
 
 /**
- * ViewModel for the TX queue and transmit state.
+ * The send queue and transmit state, one for the whole app ([of]).
+ *
+ * It lives as long as the process and listens to the engine service itself, so
+ * queued messages and automatic replies keep going out while the app is in the
+ * background or the screen is locked (the foreground service keeps the process
+ * alive). It used to depend on MainActivity relaying the service's broadcasts,
+ * which stopped whenever the activity was not on screen: auto-replies queued
+ * then were dropped, and queued sends waited until the app was opened again.
  */
-class TransmitViewModel(application: Application) : AndroidViewModel(application) {
+class TransmitViewModel internal constructor(application: Application) : AndroidViewModel(application) {
+
+    private val serviceReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context, intent: Intent) {
+            when (intent.action) {
+                JS8EngineService.ACTION_QUEUE_TX -> {
+                    val text = intent.getStringExtra(JS8EngineService.EXTRA_QUEUE_TX_TEXT) ?: return
+                    val directed = intent.getStringExtra(JS8EngineService.EXTRA_QUEUE_TX_DIRECTED)
+                    val priority = intent.getIntExtra(JS8EngineService.EXTRA_QUEUE_TX_PRIORITY, 0)
+                    queueMessage(text, directed, priority)
+                    processNext()
+                }
+                JS8EngineService.ACTION_TX_STATE -> onTxState(intent)
+                MainActivity.ACTION_PROCESS_TX_QUEUE -> processNext()
+                JS8EngineService.ACTION_ENGINE_STATE -> when (intent.getStringExtra(JS8EngineService.EXTRA_STATE)) {
+                    JS8EngineService.STATE_RUNNING -> processNext()
+                    JS8EngineService.STATE_STOPPED, JS8EngineService.STATE_ERROR -> engineStopped()
+                }
+            }
+        }
+    }
+
+    init {
+        // runCatching: plain JVM unit tests have no main looper.
+        runCatching { listen(application) }
+    }
+
+    private fun listen(application: Application) {
+        LocalBroadcastManager.getInstance(application).registerReceiver(
+            serviceReceiver,
+            android.content.IntentFilter().apply {
+                addAction(JS8EngineService.ACTION_QUEUE_TX)
+                addAction(JS8EngineService.ACTION_TX_STATE)
+                addAction(JS8EngineService.ACTION_ENGINE_STATE)
+                addAction(MainActivity.ACTION_PROCESS_TX_QUEUE)
+            },
+        )
+    }
+
+    private fun onTxState(intent: Intent) {
+        val state = intent.getStringExtra(JS8EngineService.EXTRA_TX_STATE)
+        if (state == JS8EngineService.TX_STATE_STARTED) {
+            setOnAir(
+                intent.getFloatExtra(JS8EngineService.EXTRA_TX_ON_AIR_HZ, -1f).takeIf { it >= 0f },
+                intent.getFloatExtra(JS8EngineService.EXTRA_TX_ON_AIR_BW_HZ, 50f),
+            )
+        } else if (state != JS8EngineService.TX_STATE_QUEUED) {
+            setOnAir(null)
+        }
+        when (state) {
+            JS8EngineService.TX_STATE_FINISHED -> {
+                transmissionComplete()
+                processNext()
+            }
+            JS8EngineService.TX_STATE_FAILED -> {
+                val refused = intent.getBooleanExtra(JS8EngineService.EXTRA_TX_REFUSED, false)
+                if (transmissionFailed(refused)) processNext()
+            }
+            JS8EngineService.TX_STATE_HANDED_BACK -> handedBack()
+            JS8EngineService.TX_STATE_QUEUED -> setQueued()
+            JS8EngineService.TX_STATE_STARTED -> startTransmitting()
+        }
+    }
+
+    /** Hands the next queued message to the engine when it is running and nothing is in flight. */
+    fun processNext() {
+        // Keep queued entries until the engine can accept them; otherwise the
+        // service reports an error without a TX completion event.
+        if (!JS8EngineService.engineRunning) return
+        if (_txState.value == TransmitState.TRANSMITTING || activeMessage != null) return
+        val next = txQueue.firstOrNull() ?: return
+        // Keep this entry tied to the eventual TX result even if a higher-priority one is queued meanwhile.
+        beginTransmission(next)
+        Log.d(TAG, "Sending to service: text='${next.text}' directed=${next.directed}")
+        val app = getApplication<Application>()
+        val tx = Intent(app, JS8EngineService::class.java).apply {
+            action = JS8EngineService.ACTION_TRANSMIT_MESSAGE
+            putExtra(JS8EngineService.EXTRA_TX_TEXT, next.text)
+            next.directed?.let { putExtra(JS8EngineService.EXTRA_TX_DIRECTED, it) }
+            putExtra(JS8EngineService.EXTRA_TX_FREQ_HZ, com.js8call.example.service.TxOffsets.txOffset(app).toDouble())
+        }
+        runCatching { app.startService(tx) }.onFailure { e ->
+            // Background start limits: the service is normally already running in the foreground.
+            Log.e(TAG, "Couldn't hand the message to the service", e)
+            activeMessage = null
+            settleState()
+        }
+    }
 
     /** A queue entry as the queue sheet shows it. */
     data class QueueItem(val message: TransmitMessage, val sending: Boolean)
@@ -105,10 +200,7 @@ class TransmitViewModel(application: Application) : AndroidViewModel(application
         null
     }
 
-    private fun processQueue() {
-        LocalBroadcastManager.getInstance(getApplication())
-            .sendBroadcast(Intent(MainActivity.ACTION_PROCESS_TX_QUEUE))
-    }
+    private fun processQueue() = processNext()
 
     private fun updateStatus(message: TransmitMessage?, status: Int) {
         message?.messageId?.let { id ->
@@ -224,11 +316,6 @@ class TransmitViewModel(application: Application) : AndroidViewModel(application
         settleUnlessOnAir()
     }
 
-    /** TX broadcasts stop reaching us; a send in flight may go out unseen. */
-    fun stopListening() {
-        if (activeMessage != null) activeOnAir = true
-    }
-
     /** Monitoring stopped. A send that never reached the air waits for the next start. */
     fun engineStopped() {
         transmissionFailed()
@@ -243,6 +330,14 @@ class TransmitViewModel(application: Application) : AndroidViewModel(application
 
     companion object {
         private const val TAG = "TransmitViewModel"
+
+        @Volatile private var instance: TransmitViewModel? = null
+
+        /** The one send queue for the whole app. Call on the main thread. */
+        fun of(context: android.content.Context): TransmitViewModel =
+            instance ?: synchronized(this) {
+                instance ?: TransmitViewModel(context.applicationContext as Application).also { instance = it }
+            }
     }
 }
 

@@ -117,13 +117,14 @@ class TransmitViewModelTest {
     }
 
     @Test
-    fun stopFailsASendThatMayHaveGoneOutUnseen() {
+    fun stopBeforeTheAirKeepsTheSendForNextStart() {
+        // The queue now always hears the service, so a send that never keyed up stays queued.
         val viewModel = TransmitViewModel(Application())
         viewModel.queueMessage("FIRST", "K1ABC")
         viewModel.beginTransmission(viewModel.getNextMessage()!!)
-        viewModel.stopListening()
         viewModel.engineStopped()
-        assertNull(viewModel.getNextMessage())
+        assertEquals("FIRST", viewModel.getNextMessage()?.text)
+        assertFalse(viewModel.hasActiveTransmission())
     }
 
     @Test

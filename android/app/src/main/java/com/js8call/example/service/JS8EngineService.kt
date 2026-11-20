@@ -382,6 +382,8 @@ class JS8EngineService : Service() {
         super.onCreate()
         // Make sure Traffic is listening even if Android restarted this service without the app's screen.
         runCatching { com.js8call.example.ui.traffic.TrafficViewModel.of(applicationContext) }
+        // The send queue must exist (and listen) even when no screen has opened yet.
+        runCatching { com.js8call.example.ui.TransmitViewModel.of(applicationContext) }
         createNotificationChannel()
         createRigTransports()
         txHandlerThread.start()
@@ -1936,6 +1938,7 @@ class JS8EngineService : Service() {
 
     private fun broadcastEngineState(state: String) {
         holdCpu(state == STATE_RUNNING || state == STATE_STARTING)
+        engineRunning = state == STATE_RUNNING
         val intent = Intent(ACTION_ENGINE_STATE).apply {
             putExtra(EXTRA_STATE, state)
         }
@@ -4438,6 +4441,10 @@ class JS8EngineService : Service() {
     }
 
     companion object {
+        /** True while the engine is running (process-wide; read by the send queue). */
+        @Volatile var engineRunning: Boolean = false
+            private set
+
         // Shared by service instances: stopping monitoring destroys the service
         // while a UV-Pro worker may still hold the radio's sockets.
         private val uvproWorkersActive = AtomicInteger(0)

@@ -31,7 +31,7 @@ class QueueSheet : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        val transmitViewModel = ViewModelProvider(requireActivity())[TransmitViewModel::class.java]
+        val transmitViewModel = TransmitViewModel.of(requireContext())
         val monitorViewModel = ViewModelProvider(requireActivity())[MonitorViewModel::class.java]
 
         val adapter = QueueAdapter { transmitViewModel.cancel(it.message) }

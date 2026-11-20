@@ -73,7 +73,7 @@ class MonitorFragment : Fragment() {
 
         // Initialize ViewModels
         viewModel = ViewModelProvider(requireActivity())[MonitorViewModel::class.java]
-        transmitViewModel = ViewModelProvider(requireActivity())[TransmitViewModel::class.java]
+        transmitViewModel = TransmitViewModel.of(requireContext())
 
         // Find views
         waterfallView = view.findViewById(R.id.waterfall_view)

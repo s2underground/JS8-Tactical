@@ -22,7 +22,7 @@ internal fun Fragment.readyToSend(): Boolean {
 /** Queues an undirected send; false when refused. */
 internal fun Fragment.queueBroadcast(text: String): Boolean {
     if (!readyToSend()) return false
-    ViewModelProvider(requireActivity())[TransmitViewModel::class.java].queueManualMessage(text)
+    TransmitViewModel.of(requireContext()).queueManualMessage(text)
     val running = ViewModelProvider(requireActivity())[MonitorViewModel::class.java].isRunning.value == true
     val queued = if (running) R.string.decodes_queued else R.string.decodes_queued_offline
     Snackbar.make(requireView(), getString(queued, text), Snackbar.LENGTH_SHORT).show()

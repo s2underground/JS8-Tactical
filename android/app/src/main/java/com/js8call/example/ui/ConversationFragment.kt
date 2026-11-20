@@ -47,7 +47,7 @@ class ConversationFragment : Fragment() {
 
         // Initialize ViewModels
         viewModel = ViewModelProvider(requireActivity())[MessagesViewModel::class.java]
-        transmitViewModel = ViewModelProvider(requireActivity())[TransmitViewModel::class.java]
+        transmitViewModel = TransmitViewModel.of(requireContext())
 
         val toolbar = view.findViewById<MaterialToolbar>(R.id.thread_toolbar)
         toolbar.title = callsign

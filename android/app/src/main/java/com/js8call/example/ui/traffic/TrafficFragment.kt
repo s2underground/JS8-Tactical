@@ -67,7 +67,7 @@ class TrafficFragment : Fragment() {
         val provider = ViewModelProvider(requireActivity())
         traffic = TrafficViewModel.of(requireContext())
         monitor = provider[MonitorViewModel::class.java]
-        transmit = provider[TransmitViewModel::class.java]
+        transmit = TransmitViewModel.of(requireContext())
 
         setUpStatusStrip(view)
         setUpWaterfall(view)
