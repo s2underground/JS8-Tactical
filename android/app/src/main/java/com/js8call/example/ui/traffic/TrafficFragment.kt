@@ -428,15 +428,65 @@ class TrafficFragment : Fragment() {
             subtitle.text = sel?.detail.orEmpty()
             title.setTextColor(if (sel == null || sel.isGroup) ContextCompat.getColor(requireContext(), R.color.tac_text) else sel.color)
         }
+        // Follow the newest traffic until the user scrolls up; then hold their place and offer
+        // a "Latest" button to jump back and follow again.
+        val latest: com.google.android.material.button.MaterialButton = view.findViewById(R.id.thread_latest)
+        val threadLm = threadList.layoutManager as LinearLayoutManager
+        fun renderLatest() {
+            latest.isVisible = !followLatest && thread.itemCount > 0
+            latest.text = if (newWhileAway > 0) getString(R.string.traffic_latest_new, newWhileAway) else getString(R.string.traffic_latest)
+        }
+        threadList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(rv: RecyclerView, newState: Int) {
+                // Only the user's own scrolling changes follow mode (jumps made here are instant).
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING || newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    val atEnd = !rv.canScrollVertically(1)
+                    if (atEnd != followLatest) {
+                        followLatest = atEnd
+                        if (atEnd) newWhileAway = 0
+                        renderLatest()
+                    }
+                }
+            }
+        })
+        latest.setOnClickListener {
+            followLatest = true
+            newWhileAway = 0
+            renderLatest()
+            if (thread.itemCount > 0) threadList.scrollToPosition(thread.itemCount - 1)
+        }
         traffic.thread.observe(viewLifecycleOwner) { items ->
-            val atBottom = !threadList.canScrollVertically(1)
+            // Where the user is reading: the first visible card and its distance from the top
+            // (scrollToPositionWithOffset measures from the top unless the layout is reversed).
+            var anchorKey: Any? = null
+            var anchorOffset = 0
+            if (!followLatest) {
+                val pos = threadLm.findFirstVisibleItemPosition()
+                threadLm.findViewByPosition(pos)?.let { child ->
+                    anchorKey = thread.currentList.getOrNull(pos)?.let(::threadKey)
+                    anchorOffset = child.top - threadList.paddingTop
+                }
+                val before = thread.currentList.map(::threadKey).toHashSet()
+                newWhileAway += items.count { threadKey(it) !in before }
+            }
             thread.submitList(items) {
-                if (atBottom && items.isNotEmpty()) threadList.scrollToPosition(items.size - 1)
+                if (items.isEmpty()) return@submitList
+                if (followLatest) {
+                    threadList.scrollToPosition(items.size - 1)
+                } else {
+                    val idx = anchorKey?.let { key -> items.indexOfFirst { threadKey(it) == key } } ?: -1
+                    if (idx >= 0) threadLm.scrollToPositionWithOffset(idx, anchorOffset)
+                }
+                renderLatest()
             }
             empty.isVisible = items.isEmpty()
             if (items.isEmpty()) empty.text = emptyText()
         }
         traffic.selected.observe(viewLifecycleOwner) {
+            // A newly opened thread starts at its newest message, following.
+            followLatest = true
+            newWhileAway = 0
+            view.findViewById<View>(R.id.thread_latest).isVisible = false
             thread.notifyDataSetChanged()
             view.findViewById<View>(R.id.thread_clear).isVisible = it != TrafficViewModel.ALL
             if (relayFor != it) { relayVia = null; relayFor = null }
@@ -524,6 +574,15 @@ class TrafficFragment : Fragment() {
     }
 
     private var stationLongPress: (TrafficViewModel.StationRow) -> Boolean = { false }
+
+    /** Thread list follows the newest message until the user scrolls up. */
+    private var followLatest = true
+    private var newWhileAway = 0
+
+    private fun threadKey(item: TrafficViewModel.ThreadItem): Any = when (item) {
+        is TrafficViewModel.ThreadItem.Incoming -> "i" to item.message.id
+        is TrafficViewModel.ThreadItem.Outgoing -> "o" to item.sentMs
+    }
 
     /** Relay chosen for the selected station ([relayFor]); sends go "RELAY>TARGET>text". */
     private var relayVia: String? = null

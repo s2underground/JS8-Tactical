@@ -357,6 +357,8 @@
     <string name="map_reports">Reports</string>
     <string name="map_paths">Paths</string>
     <string name="map_links">Links</string>
+    <string name="traffic_latest">Latest</string>
+    <string name="traffic_latest_new">Latest · %1$d new</string>
     <string name="relay_find">Relay…</string>
     <string name="relay_via">via %1$s ✕</string>
     <string name="relay_title">Reaching %1$s</string>

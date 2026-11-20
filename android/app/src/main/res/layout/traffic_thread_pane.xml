@@ -91,6 +91,22 @@
             android:text="@string/traffic_empty"
             android:textColor="@color/tac_text_dim"
             android:textSize="15sp" />
+
+        <!-- Shown while scrolled up: new traffic no longer drags the list down; tap to follow again. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/thread_latest"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="12dp"
+            android:text="@string/traffic_latest"
+            android:textColor="@color/tac_ground"
+            android:visibility="gone"
+            app:backgroundTint="@color/tac_accent"
+            app:cornerRadius="20dp"
+            app:elevation="6dp"
+            app:icon="@drawable/ic_arrow_drop_down"
+            app:iconTint="@color/tac_ground" />
     </FrameLayout>
 
     <LinearLayout
