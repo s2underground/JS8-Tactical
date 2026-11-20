@@ -19,9 +19,15 @@ class WaterfallView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    // Light tint plus solid edges, so your own signal stays visible inside the marker.
     private val markerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(180, 255, 0, 0)
+        color = Color.argb(55, 255, 60, 60)
         style = Paint.Style.FILL
+    }
+    private val markerEdgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(230, 255, 60, 60)
+        style = Paint.Style.STROKE
+        strokeWidth = 2f * resources.displayMetrics.density
     }
     private val density = resources.displayMetrics.density
     private val scalePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -106,22 +112,26 @@ class WaterfallView @JvmOverloads constructor(
                 val pixelsPerBin = width.toFloat() / usableBins
                 val xPosition = displayBinIndex * pixelsPerBin
 
-                // Calculate bar width for 50Hz filter bandwidth (25Hz on each side)
-                val bandwidthBins = 50f / currentBinHz
-                val barWidth = bandwidthBins * pixelsPerBin
-
-                // Draw vertical bar marker centered on offset
-                canvas.drawRect(
-                    xPosition - barWidth / 2f,
-                    0f,
-                    xPosition + barWidth / 2f,
-                    height.toFloat(),
-                    markerPaint
-                )
-                drawTxLabel(canvas, xPosition, shownHz)
+                // A JS8 signal starts at the offset and goes up from there (the lowest tone is
+                // the offset), as wide as the speed in use: mark exactly the space it fills.
+                val barWidth = txBandwidthHz() / currentBinHz * pixelsPerBin
+                canvas.drawRect(xPosition, 0f, xPosition + barWidth, height.toFloat(), markerPaint)
+                canvas.drawLine(xPosition, 0f, xPosition, height.toFloat(), markerEdgePaint)
+                canvas.drawLine(xPosition + barWidth, 0f, xPosition + barWidth, height.toFloat(), markerEdgePaint)
+                drawTxLabel(canvas, xPosition + barWidth / 2f, shownHz)
             }
         }
     }
+
+    /** Bandwidth of the speed set for sending (Normal 50 Hz, Fast 80, Turbo 160, Slow 25). */
+    private fun txBandwidthHz(): Float =
+        when (androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+            .getInt(com.js8call.example.service.JS8EngineService.PREF_TX_SUBMODE, com.js8call.example.service.JS8EngineService.SUBMODE_NORMAL)) {
+            com.js8call.example.service.JS8EngineService.SUBMODE_FAST -> 80f
+            com.js8call.example.service.JS8EngineService.SUBMODE_TURBO -> 160f
+            com.js8call.example.service.JS8EngineService.SUBMODE_SLOW -> 25f
+            else -> 50f
+        }
 
     private fun hzToX(hz: Float, binHz: Float, start: Int, end: Int): Float =
         (hz / binHz - start) * width.toFloat() / (end - start)
