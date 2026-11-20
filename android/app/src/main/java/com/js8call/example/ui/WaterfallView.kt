@@ -227,20 +227,7 @@ class WaterfallView @JvmOverloads constructor(
                 if (newOffsetHz != null) {
                     txOffsetHz = newOffsetHz
                     onOffsetChanged?.invoke(txOffsetHz)
-                    // Prompts, not limits: most radios' SSB filters pass about 300–2,700 Hz.
-                    if (txOffsetHz < PASSBAND_BOTTOM_HZ) {
-                        android.widget.Toast.makeText(
-                            context,
-                            "TX ${txOffsetHz.toInt()} Hz is below what most radios pass (about 300 Hz). Your signal may not go out.",
-                            android.widget.Toast.LENGTH_LONG,
-                        ).show()
-                    } else if (txOffsetHz > PASSBAND_TOP_HZ) {
-                        android.widget.Toast.makeText(
-                            context,
-                            "TX ${txOffsetHz.toInt()} Hz is above what most radios pass (about 2,700 Hz). Your signal may not go out.",
-                            android.widget.Toast.LENGTH_LONG,
-                        ).show()
-                    }
+                    warnIfOutsidePassband(txOffsetHz)
                 }
                 postInvalidate()
                 return true
@@ -252,6 +239,19 @@ class WaterfallView @JvmOverloads constructor(
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    private var passbandToast: android.widget.Toast? = null
+
+    /** A prompt, not a limit: most radios' SSB filters pass about 300–2,700 Hz. One toast at a time. */
+    private fun warnIfOutsidePassband(hz: Float) {
+        val text = when {
+            hz < PASSBAND_BOTTOM_HZ -> "TX ${hz.toInt()} Hz is below what most radios pass (about 300 Hz). Your signal may not go out."
+            hz > PASSBAND_TOP_HZ -> "TX ${hz.toInt()} Hz is above what most radios pass (about 2,700 Hz). Your signal may not go out."
+            else -> { passbandToast?.cancel(); passbandToast = null; return }
+        }
+        passbandToast?.cancel()
+        passbandToast = android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).also { it.show() }
     }
 
     companion object {

@@ -206,29 +206,10 @@ class WaterfallRenderer {
                 )
             }
 
-            val mid = bins.size / 2
-            val leftHalf = bins.slice(0 until mid)
-            val rightHalf = bins.slice(mid until bins.size)
-            val leftAvg = leftHalf.average()
-            val rightAvg = rightHalf.average()
-
-            if (rightAvg * 10 < leftAvg) {
-                if (startBin == 0 && endBin == -1) {
-                    android.util.Log.d(
-                        "WaterfallView",
-                        "Right half is mostly noise: leftAvg=$leftAvg, rightAvg=$rightAvg. Using left half only."
-                    )
-                    endBin = mid
-                }
-            } else if (leftAvg * 10 < rightAvg) {
-                if (startBin == 0) {
-                    android.util.Log.d(
-                        "WaterfallView",
-                        "Left half is mostly noise: leftAvg=$leftAvg, rightAvg=$rightAvg. Using right half only."
-                    )
-                    startBin = mid
-                }
-            }
+            // (Upstream used to crop to one half of the spectrum here when the other half looked
+            // quiet during the first frames. On a USB sound card that starts up quiet it locked the
+            // view to 3.0-3.5 kHz with every marker and tap in the wrong place. The view is now always
+            // a fixed 0-3.5 kHz.)
             drawCount++
         }
 
@@ -241,13 +222,10 @@ class WaterfallRenderer {
         canvas.drawColor(Color.BLACK)
         canvas.drawBitmap(temp, 0f, 0f, null)
 
-        var actualEndBin = if (endBin > 0) endBin else bins.size
-        // Show the audio range a radio actually passes (0–3.5 kHz), not the whole sound card band:
-        // more detail where JS8 lives, and a tap can't land at 5 kHz by accident.
-        if (currentBinHz > 0f) {
-            val cap = kotlin.math.ceil(DISPLAY_MAX_HZ / currentBinHz).toInt()
-            if (cap > startBin + 10 && cap < actualEndBin) actualEndBin = cap
-        }
+        // Always 0–3.5 kHz (the audio a radio actually passes), never a moving window:
+        // markers, taps and the scale all depend on this being fixed.
+        startBin = 0
+        val actualEndBin = displayEndBin(bins.size, currentBinHz)
         displayStartBin = startBin
         displayEndBin = actualEndBin
         val usableBins = actualEndBin - startBin
@@ -345,5 +323,12 @@ class WaterfallRenderer {
     companion object {
         /** Highest audio frequency the waterfall shows. */
         const val DISPLAY_MAX_HZ = 3500f
+
+        /** Last bin shown (exclusive): up to [DISPLAY_MAX_HZ], or every bin if the card's range is smaller. */
+        fun displayEndBin(binCount: Int, binHz: Float): Int {
+            if (binHz <= 0f) return binCount
+            val cap = kotlin.math.ceil(DISPLAY_MAX_HZ / binHz).toInt()
+            return cap.coerceIn(1, binCount.coerceAtLeast(1))
+        }
     }
 }
