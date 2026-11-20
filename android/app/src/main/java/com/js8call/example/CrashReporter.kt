@@ -165,6 +165,15 @@ object CrashReporter {
         return true
     }
 
+    private fun importanceName(i: Int): String = when {
+        i <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND -> "on screen"
+        i <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE -> "receiver service running"
+        i <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE -> "visible"
+        i <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE -> "background service"
+        i < ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED -> "background"
+        else -> "idle in background, no receiver service"
+    }
+
     private fun collectExitReasons(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -183,11 +192,19 @@ object CrashReporter {
                 ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "Closed by Android: excessive resource use"
                 else -> null
             } ?: continue
+            // Android trimming an idle background app (receiver off) is normal housekeeping, not a problem.
+            val receiverWanted = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean(com.js8call.example.service.JS8EngineService.PREF_RECEIVER_WANTED, false)
+            val background = e.importance >= ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED
+            if ((e.reason == ApplicationExitInfo.REASON_LOW_MEMORY || e.reason == ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE) &&
+                background && !receiverWanted) continue
             val sb = StringBuilder()
             sb.append("Android exit record: ").append(kind).append('\n')
             sb.append("When: ").append(stamp(e.timestamp)).append('\n')
             e.description?.let { sb.append("Detail: ").append(it).append('\n') }
-            sb.append("Importance: ").append(e.importance).append(", PSS: ").append(e.pss / 1024).append(" MB\n")
+            sb.append("Importance: ").append(e.importance).append(" (").append(importanceName(e.importance))
+                .append("), PSS: ").append(e.pss / 1024).append(" MB\n")
+            sb.append("Receiver switched on at the time: ").append(if (receiverWanted) "yes" else "no").append('\n')
             // ANR traces are plain text; native tombstones are binary (protobuf), so their readable strings are kept.
             if (e.reason == ApplicationExitInfo.REASON_ANR) {
                 runCatching { e.traceInputStream?.bufferedReader()?.use { r -> sb.append(r.readText().take(12_000)) } }
