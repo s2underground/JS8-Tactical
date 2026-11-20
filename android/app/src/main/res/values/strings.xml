@@ -281,7 +281,7 @@
     <!-- Traffic screen -->
     <string name="nav_traffic">Traffic</string>
     <string name="traffic_all">All traffic</string>
-    <string name="traffic_empty">Nothing heard yet.\nStart receiving on the Radio tab.</string>
+    <string name="traffic_empty">Nothing heard yet.\nSwitch the Receiver on (top of this screen).</string>
     <string name="traffic_empty_listening">Listening. Messages will appear here as they are decoded.</string>
     <string name="traffic_empty_station">No messages from %1$s yet.\nHeartbeats only update the station list.</string>
     <string name="traffic_receiving_short">RX…</string>
@@ -306,7 +306,7 @@
     <string name="traffic_state_tx">TX</string>
     <string name="traffic_state_rx">RX</string>
     <string name="traffic_state_off">OFF</string>
-    <string name="traffic_open_radio">Receive status. Opens the Radio tab.</string>
+    <string name="traffic_open_radio">Receive status. While sending, tap to stop.</string>
     <string name="traffic_waterfall_desc">Waterfall with markers for active stations</string>
     <string name="traffic_hint_all">Message to everyone…</string>
     <string name="traffic_hint_to">Message to %1$s…</string>
@@ -321,9 +321,16 @@
     <string name="traffic_send_x3">Send ×3</string>
     <string name="traffic_demo_loaded">Sample traffic loaded (test build)</string>
     <string name="traffic_clear_selection">Everyone</string>
+    <string name="traffic_toggle_autoreply">AUTO-REPLY</string>
+    <string name="traffic_toggle_screen">SCREEN ON</string>
+    <string name="traffic_more">More radio controls</string>
     <string name="traffic_to_you">→ YOU</string>
     <string name="traffic_state_tx_stop">TX · tap to stop</string>
     <string name="tpl_heartbeat">♥ Heartbeat</string>
+    <string name="tpl_cq">CQ</string>
+    <string name="cmd_query_msgs">Check for stored messages (QUERY MSGS)</string>
+    <string name="compose_msg_needs_text">Type the message first, then choose \"stored message\".</string>
+    <string name="cmd_msg">Send what I typed as a stored message (MSG)</string>
     <string name="tpl_checkin">Check-in</string>
     <string name="tpl_spot">SPOT</string>
     <string name="tpl_salute">SALUTE</string>
@@ -349,6 +356,12 @@
     <string name="map_stations">Stations</string>
     <string name="map_reports">Reports</string>
     <string name="map_paths">Paths</string>
+    <string name="map_links">Links</string>
+    <string name="map_legend_links">- - - Other stations working each other (grey: one called the other, no report yet)</string>
+    <string name="map_worked_snr">↔ %1$s · %2$s heard %3$s at %4$s</string>
+    <string name="map_worked_heard">↔ %1$s · heard each other</string>
+    <string name="map_worked_called">↔ %1$s · called, no reply heard</string>
+    <string name="map_worked_more">+ %1$d more</string>
     <string name="map_1h">1 h</string>
     <string name="map_6h">6 h</string>
     <string name="map_24h">24 h</string>

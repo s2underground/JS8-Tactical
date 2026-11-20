@@ -6,10 +6,10 @@ order: 80
 ---
 # I hear nothing
 Work from the tablet towards the antenna:
-1. **Is the app listening?** Radio tab: Monitoring on. The waterfall should move.
+1. **Is the app listening?** Traffic: the **Receiver** switch at the top is on. The waterfall should move.
 2. **Is there audio?** A completely black waterfall means no audio: check the audio device (Settings, Audio device), the cable, and the radio's volume. An all-bright waterfall means too much: turn the volume down.
 3. **Is the radio set right?** USB mode, on a JS8 dial frequency, filters wide (2.4 kHz or more), noise reduction off.
-4. **Is the clock right?** Signals visible on the waterfall but nothing decodes usually means the clock is off by more than a second or two. Turn on Settings, Timing, Auto time sync, or use the Radio tab's clock options.
+4. **Is the clock right?** Signals visible on the waterfall but nothing decodes usually means the clock is off by more than a second or two. Turn on Settings, Timing, Auto time sync, or use the clock options in Traffic's ⋮ menu (Raw decodes, clock and audio details).
 5. **Is the band open?** Check the Prop tab. At night the higher bands (20 m and up) often go quiet; try 40 m or 80 m.
 6. **Is the antenna connected?** Unplug the coax: if the noise level doesn't drop, the antenna isn't doing anything. Check connectors and the centre connection.
 

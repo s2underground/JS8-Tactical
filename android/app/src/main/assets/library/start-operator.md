@@ -39,7 +39,7 @@ A fair antenna matters more than a big radio. Read the antenna guides, build or 
 [[guide:antenna-choosing|Which antenna should I use?]]
 
 # 5. Listen first
-On the **Radio** tab switch Monitoring on, pick a band, and watch the waterfall. Within a few minutes on an open band you should see stations on the Traffic tab. If you hear nothing, check the troubleshooting guide before transmitting.
+On **Traffic**, switch the **Receiver** on, pick a band at the top, and watch the waterfall. Within a few minutes on an open band you should see stations on the Traffic tab. If you hear nothing, check the troubleshooting guide before transmitting.
 
 [[guide:antenna-troubleshooting|Troubleshooting: I hear nothing / nobody hears me]]
 

@@ -14,7 +14,7 @@ Because the receiving software only looks for signals that start at slot boundar
 # Keeping the clock right
 - **With internet or GPS,** Android sets the clock itself. Check that "automatic date and time" is on in the tablet's settings.
 - **With neither,** turn on **Settings, Timing, Auto time sync**. The app then nudges its own clock to match the stations it decodes. Once it decodes anyone, it's in step with the net.
-- **By hand:** the Radio tab's ⋮ menu has **Sync clock to next decode** and **Adjust time drift**.
+- **By hand:** Traffic's ⋮ menu → **Raw decodes, clock and audio details**, then its ⋮ menu: **Sync clock to next decode** and **Adjust time drift**.
 - Another source of exact time: the time stations WWV and WWVH broadcast UTC on 2.5, 5, 10, 15 and 20 MHz (AM), with a tick each second.
 
 [[app:settings|Settings: Timing]]

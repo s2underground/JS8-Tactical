@@ -6,6 +6,11 @@
         android:title="@string/nav_traffic" />
 
     <item
+        android:id="@+id/navigation_digest"
+        android:icon="@drawable/ic_digest"
+        android:title="@string/nav_digest" />
+
+    <item
         android:id="@+id/navigation_team"
         android:icon="@drawable/ic_team"
         android:title="@string/nav_team" />
@@ -19,11 +24,6 @@
         android:id="@+id/navigation_propagation"
         android:icon="@drawable/ic_cell_tower"
         android:title="@string/nav_propagation" />
-
-    <item
-        android:id="@+id/navigation_monitor"
-        android:icon="@drawable/ic_graphic_eq"
-        android:title="@string/nav_monitor" />
 
     <item
         android:id="@+id/navigation_library"

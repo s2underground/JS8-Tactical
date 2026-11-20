@@ -73,7 +73,23 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val firstHeardMs: Long = timeMs,
     )
 
-    data class MapData(val stations: List<MapStation>, val reports: List<MapReport>)
+    /**
+     * Two other stations heard working each other (neither is us). [snr] is the
+     * latest signal report one gave the other, sent by [reporter]. [confirmed]:
+     * there is evidence a signal got through, not just one station calling.
+     */
+    data class MapLink(
+        val a: String,
+        val b: String,
+        val aPos: LatLon,
+        val bPos: LatLon,
+        val snr: Int?,
+        val reporter: String?,
+        val confirmed: Boolean,
+        val lastHeardMs: Long,
+    )
+
+    data class MapData(val stations: List<MapStation>, val reports: List<MapReport>, val links: List<MapLink> = emptyList())
 
     data class DigestAlerts(val count: Int, val tone: DigestBuilder.Tone)
 
@@ -122,6 +138,12 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     /** Message history on the device (Settings: keep for N hours, or clear). */
     private val history = TrafficHistory(File(application.filesDir, "traffic-history.tsv"))
+    /** Station grids and who-worked-whom for the Map, kept across restarts (7 days). */
+    private val mapMemory = com.js8call.example.ui.map.MapMemory()
+    private val mapMemoryFile = File(application.filesDir, "map-memory.tsv")
+    private var lastMapSaveMs = 0L
+    /** Made-up stations from the demo: shown, never saved. */
+    private val demoCalls = mutableSetOf<String>()
     private val historyIo = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "traffic-history").apply { isDaemon = true } }
     private var replaying = false
     /** Earliest message time we hold (replayed history), for the Digest's "data since". */
@@ -205,6 +227,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     init {
         handler.postDelayed(ticker, TICK_MS)
         loadHistory()
+        loadMapMemory()
         androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(application).registerReceiver(
             serviceReceiver,
             android.content.IntentFilter().apply {
@@ -313,14 +336,66 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         gridIds.clear()
         lastViewedMs.clear()
         historyStartMs = null
-        historyIo.execute { history.clear() }
+        mapMemory.clear()
+        linkIds.clear()
+        demoCalls.clear()
+        historyIo.execute { history.clear(); mapMemoryFile.delete() }
         publish()
     }
 
     fun historySizeBytes(): Long = history.sizeBytes()
 
+    private fun loadMapMemory() {
+        historyIo.execute {
+            val loaded = com.js8call.example.ui.map.MapMemory.load(mapMemoryFile) ?: return@execute
+            handler.post {
+                mapMemory.merge(loaded)
+                mapMemory.prune(System.currentTimeMillis() - com.js8call.example.ui.map.MapMemory.KEEP_MS)
+                publish()
+            }
+        }
+    }
+
+    /** Write the map memory a little after it changes (not on every decode). */
+    private fun saveMapMemorySoon(now: Long, force: Boolean = false) {
+        if (!mapMemory.dirty || (!force && now - lastMapSaveMs < 15_000L)) return
+        lastMapSaveMs = now
+        mapMemory.prune(now - com.js8call.example.ui.map.MapMemory.KEEP_MS)
+        val text = mapMemory.serialize(exclude = demoCalls.toSet())
+        historyIo.execute { com.js8call.example.ui.map.MapMemory.save(mapMemoryFile, text) }
+    }
+
+    /**
+     * Who is working whom, from other stations' directed traffic:
+     *  - "A: B ..."           A called B
+     *  - "A: B SNR -12"       A heard B at -12 dB (also heartbeat replies)
+     *  - "A: B HEARING C D"   A is hearing C and D
+     * Traffic to or from us is left out: the Map already draws our own paths.
+     */
+    private fun noteLinks(messages: List<RolledMessage>) {
+        messages.forEach { m ->
+            if (m.id in linkIds) return@forEach
+            val from = m.sender?.uppercase() ?: return@forEach
+            if (isMe(from)) { linkIds += m.id; return@forEach }
+            val to = m.recipient?.uppercase()
+            val body = m.bodyText.uppercase()
+            if (to != null && !to.startsWith("@") && looksLikeCall(to) && !isMe(to)) {
+                val snr = if (m.isComplete) snrReport.find(body)?.groupValues?.get(1)?.toIntOrNull() else null
+                mapMemory.noteLink(from, to, m.lastHeardMs, snr)
+            }
+            if (m.isComplete) {
+                hearingList.find(body)?.groupValues?.get(1)?.split(Regex("\\s+"))
+                    ?.filter { looksLikeCall(it) && !isMe(it) }
+                    ?.forEach { mapMemory.noteLink(from, it, m.lastHeardMs, hearing = true) }
+                linkIds += m.id
+            }
+        }
+    }
+    private val linkIds = mutableSetOf<Long>()
+
     override fun onCleared() {
         handler.removeCallbacks(ticker)
+        saveMapMemorySoon(System.currentTimeMillis(), force = true)
         listeningLog.flush()
     }
 
@@ -541,6 +616,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     fun loadDemo() {
         val now = System.currentTimeMillis()
         demoBand = currentBand() ?: Band.B40
+        val heardBeforeDemo = heard.keys.toSet()
         val slot0 = (now / 15_000L - 34) * 15_000L // 34 slots (8.5 min) ago
         fun at(slot: Int, hz: Float, snr: Int, text: String, type: Int) {
             val start = slot0 + slot * 15_000L
@@ -566,6 +642,10 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         ).forEachIndexed { i, (t, ty) -> at(26 + i, 820f, -15, t, ty) }
         listOf("W4QRP: @TEAM " to 1, "#CHECKIN S:NEED " to 4, "L:EM83 N:WATER" to 6)
             .forEachIndexed { i, (t, ty) -> at(29 + i, 2010f, -7, t, ty) }
+        at(9, 1180f, -8, "KN4XYZ: AC4LT SNR -11", 3)
+        at(11, 690f, -15, "AC4LT: KN4XYZ SNR -9", 3)
+        at(22, 2140f, -6, "W4QRP: N0DEF HEARING AC4LT KF4MNO", 3)
+        demoCalls += heard.keys - heardBeforeDemo
         safeEngine { engine.tick(now) }
         publish()
         demoBand = null
@@ -588,6 +668,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         // Heartbeat replies ("X: ME HEARTBEAT SNR -19") are the best "they heard me" evidence: scan everything.
         noteNetEvidence(all)
         noteGrids(all)
+        noteLinks(all)
         val live = engine.live()
         val myGroups = myGroups()
 
@@ -689,12 +770,23 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             .maxByOrNull { it.lastFrameMs }
         _live.value = liveForKey?.let { Live(it.sender, it.laneHz, it.framesSoFar, it.textSoFar.trim(), colorFor(it.sender)) }
 
-        // Map: stations with a known grid, and every report that carries a location.
+        // Map: stations with a known grid (this session's and remembered ones), links between
+        // other stations, and every report that carries a location.
+        heard.forEach { (call, h) -> h.grid?.let { mapMemory.noteStation(call, it, h.lastHeardMs, h.snr) } }
+        val positions = HashMap<String, LatLon?>()
+        fun posOf(call: String): LatLon? = positions.getOrPut(call) {
+            (mapMemory.grid(call) ?: heard[call]?.grid)?.let { Geo.maidenheadToLatLon(it) }
+        }
         _mapData.value = MapData(
-            stations = heard.mapNotNull { (call, h) ->
-                val grid = h.grid ?: return@mapNotNull null
-                val pos = Geo.maidenheadToLatLon(grid) ?: return@mapNotNull null
-                MapStation(call, grid, pos, colorFor(call), h.lastHeardMs, h.snr)
+            stations = mapMemory.stations().mapNotNull { st ->
+                if (isMe(st.call)) return@mapNotNull null
+                val pos = posOf(st.call) ?: return@mapNotNull null
+                MapStation(st.call, st.grid, pos, colorFor(st.call), st.lastHeardMs, st.snr)
+            },
+            links = mapMemory.links().mapNotNull { l ->
+                val pa = posOf(l.a) ?: return@mapNotNull null
+                val pb = posOf(l.b) ?: return@mapNotNull null
+                MapLink(l.a, l.b, pa, pb, l.snr, l.reporter, l.confirmed, l.lastHeardMs)
             },
             reports = messages.mapNotNull { m ->
                 val report = parsedReport(m) ?: return@mapNotNull null
@@ -713,6 +805,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
         // ATAK: the same reports (and optionally stations) as spot-map points. Demo data never goes out.
         if (demoBand == null) sendToAtak(_mapData.value!!, now)
+        saveMapMemorySoon(now)
 
         // Waterfall markers: stations heard in the last 10 minutes, at their latest offset.
         _markers.value = heard.filter { now - it.value.lastHeardMs < 10 * 60_000L }
@@ -770,7 +863,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val stale = AtakBridge.staleAfterMs(app)
         val points = map.reports.map { r ->
             Cot.reportPoint(r.report, r.sender, r.position, r.timeMs, r.firstHeardMs / 1000, stale, now)
-        } + if (AtakBridge.includeStations(app)) map.stations.map { s ->
+        } + if (AtakBridge.includeStations(app)) map.stations.filter { it.call in heard && it.call !in demoCalls }.map { s ->
             Cot.stationPoint(s.call, s.grid, s.position, s.lastHeardMs, s.snr, stale, now)
         } else emptyList()
         try {

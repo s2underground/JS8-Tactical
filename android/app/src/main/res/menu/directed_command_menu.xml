@@ -16,6 +16,12 @@
         android:id="@+id/cmd_hearing"
         android:title="@string/cmd_hearing" />
     <item
+        android:id="@+id/cmd_query_msgs"
+        android:title="@string/cmd_query_msgs" />
+    <item
+        android:id="@+id/cmd_msg"
+        android:title="@string/cmd_msg" />
+    <item
         android:id="@+id/cmd_agn"
         android:title="@string/cmd_agn" />
 </menu>

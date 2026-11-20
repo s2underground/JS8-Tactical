@@ -27,7 +27,7 @@ Set the radio to **USB** and tune to one of these "dial" frequencies. The signal
 
 [[app:prop|Which band is open right now? Open the Prop tab]]
 
-Then tell the app the frequency: on the **Radio** tab, set the radio frequency to the same dial frequency. This labels what you hear and lets the app learn which bands work for you.
+Then tell the app the frequency: on **Traffic**, tap the band at the top (next to the Receiver switch) and pick the same dial frequency. This labels what you hear and lets the app learn which bands work for you.
 
 # 3. Get the sound into the tablet
 The app needs the receiver's audio. In order of preference:
@@ -45,18 +45,18 @@ JS8 stations take turns in fixed time slots (every 15 seconds in Normal speed). 
 
 - With internet or GPS, Android usually keeps the clock right by itself.
 - With neither, turn on **Settings, Timing, Auto time sync**. The app then corrects its own clock from the signals it hears, so once one station is decoded, the rest follow.
-- On the **Radio** tab, the ⋮ menu has **Sync clock to next decode** and **Adjust time drift** for doing it by hand.
+- Traffic's ⋮ menu → **Raw decodes, clock and audio details** has **Sync clock to next decode** and **Adjust time drift** for doing it by hand.
 
 [[app:settings|Open Settings]]
 
 # 5. Start listening
-On the **Radio** tab, switch **Monitoring** on. The waterfall shows the audio from left (low tones) to right (high tones), with time scrolling down.
+On **Traffic**, switch the **Receiver** on (top of the screen). The waterfall shows the audio from left (low tones) to right (high tones), with time scrolling down.
 
 - JS8 signals look like thin, short stripes, usually between 500 and 2,500 on the waterfall's scale.
 - If the waterfall is all bright, the audio is too loud: turn the radio down. If it's black, turn it up, or check the cable.
 - Decodes appear on the **Traffic** tab. Messages arrive in pieces every few seconds; the app joins the pieces into whole messages and shows gaps where a piece was missed.
 
-[[app:radio|Open the Radio tab]]
+[[app:traffic|Open Traffic]]
 
 # 6. Reading what you hear
 - **Heartbeats** ("HB", "HEARTBEAT") are stations saying "I'm here"; they're hidden from the message list but put the station on the list and the map.

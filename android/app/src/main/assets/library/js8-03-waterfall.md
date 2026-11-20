@@ -25,7 +25,7 @@ By common agreement:
 > NOTE: The radio must be in **USB**. In LSB the tones arrive upside down and nothing decodes.
 
 # Reading the waterfall
-The **waterfall** on the Radio tab is a picture of that audio over time:
+The **waterfall** across the top of Traffic is a picture of that audio over time:
 - **Left to right** is the offset: low tones on the left, high tones on the right.
 - **Top to bottom** is time: new audio appears at the top and scrolls down.
 - **Brightness** is strength.
@@ -39,7 +39,7 @@ What you'll see:
 - **All black:** no audio. Check the audio device and cable.
 - **Wide smears or steady lines:** interference (power supplies, chargers, other signals). Try another offset, or turn off nearby electronics to find the cause.
 
-[[app:radio|Open the Radio tab]]
+[[app:traffic|Open Traffic]]
 
 # Picking where to send
 When you transmit, your signal goes out at **your offset**. Choose a spot that's clear:

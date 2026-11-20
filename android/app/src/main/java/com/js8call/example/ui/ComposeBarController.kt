@@ -84,6 +84,17 @@ class ComposeBarController(
                 R.id.cmd_status -> "STATUS?"
                 R.id.cmd_hearing -> "HEARING?"
                 R.id.cmd_agn -> "AGN?"
+                R.id.cmd_query_msgs -> "QUERY MSGS"
+                R.id.cmd_msg -> {
+                    // Store-and-forward: the station keeps it in its inbox until read.
+                    val typed = input.text?.toString()?.trim().orEmpty()
+                    if (typed.isEmpty()) {
+                        Snackbar.make(input, R.string.compose_msg_needs_text, Snackbar.LENGTH_LONG).show()
+                        return@setOnMenuItemClickListener true
+                    }
+                    if (onSend("MSG $typed")) input.text?.clear()
+                    return@setOnMenuItemClickListener true
+                }
                 else -> return@setOnMenuItemClickListener false
             }
             onSend(command)

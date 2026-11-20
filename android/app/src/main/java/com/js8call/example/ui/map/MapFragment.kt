@@ -56,7 +56,9 @@ import kotlin.math.sqrt
 /**
  * Map tab: heard stations at their grid squares, received reports at their
  * reported locations (Spot-Map-style points, coloured by type and status),
- * and great-circle paths from you to each station coloured by signal.
+ * great-circle paths from you to each station coloured by signal, and dashed
+ * links between other stations heard working each other ([MapMemory] keeps
+ * grids and links across restarts).
  *
  * The style (assets/map/style.json) always draws a bundled offline basemap;
  * when online, OpenFreeMap vector tiles are drawn on top and cached, so areas
@@ -114,12 +116,14 @@ class MapFragment : Fragment() {
         fun toggle(chip: Int, vararg layers: String) {
             view.findViewById<Chip>(chip).setOnCheckedChangeListener { _, on ->
                 layers.forEach { id -> style?.getLayer(id)?.setProperties(PropertyFactory.visibility(if (on) Property.VISIBLE else Property.NONE)) }
-                if (chip == R.id.map_show_paths) view.findViewById<View>(R.id.map_legend).isVisible = on
+                updateLegend()
+                if (chip == R.id.map_show_links) render()
             }
         }
         toggle(R.id.map_show_stations, L_STATIONS, L_STATION_LABELS)
         toggle(R.id.map_show_reports, L_REPORTS, L_REPORT_LABELS)
         toggle(R.id.map_show_paths, L_PATHS)
+        toggle(R.id.map_show_links, L_LINKS, L_LINK_LABELS)
 
         view.findViewById<ChipGroup>(R.id.map_window).setOnCheckedStateChangeListener { _, ids ->
             windowMs = when (ids.firstOrNull()) {
@@ -135,12 +139,37 @@ class MapFragment : Fragment() {
         view.findViewById<MaterialButton>(R.id.map_card_open).setOnClickListener { openThread() }
     }
 
+    private fun updateLegend() {
+        val v = view ?: return
+        val paths = v.findViewById<Chip>(R.id.map_show_paths).isChecked
+        val links = v.findViewById<Chip>(R.id.map_show_links).isChecked
+        v.findViewById<View>(R.id.map_legend).isVisible = paths || links
+        v.findViewById<View>(R.id.map_legend_links).isVisible = links
+    }
+
     // ------------------------------------------------------------- layers
 
     private fun addOverlay(st: Style) {
-        listOf(S_PATHS, S_STATIONS, S_REPORTS, S_ME).forEach { st.addSource(GeoJsonSource(it)) }
+        listOf(S_LINKS, S_PATHS, S_STATIONS, S_REPORTS, S_ME).forEach { st.addSource(GeoJsonSource(it)) }
         val color = Expression.toColor(Expression.get("color"))
         val halo = "#0A0D11"
+        // Other stations working each other: dashed, under our own paths.
+        st.addLayer(LineLayer(L_LINKS, S_LINKS).withProperties(
+            PropertyFactory.lineColor(color),
+            PropertyFactory.lineWidth(1.4f),
+            PropertyFactory.lineOpacity(Expression.toNumber(Expression.get("opacity"))),
+            PropertyFactory.lineDasharray(arrayOf(3f, 2f)),
+        ))
+        st.addLayer(SymbolLayer(L_LINK_LABELS, S_LINKS).withProperties(
+            PropertyFactory.symbolPlacement(Property.SYMBOL_PLACEMENT_LINE_CENTER),
+            PropertyFactory.textField(Expression.get("label")),
+            PropertyFactory.textFont(arrayOf("NotoSansBold")),
+            PropertyFactory.textSize(10.5f),
+            PropertyFactory.textColor(color),
+            PropertyFactory.textHaloColor(halo),
+            PropertyFactory.textHaloWidth(1.5f),
+            PropertyFactory.textAllowOverlap(false),
+        ))
         st.addLayer(LineLayer(L_PATHS, S_PATHS).withProperties(
             PropertyFactory.lineColor(color),
             PropertyFactory.lineWidth(1.6f),
@@ -202,7 +231,10 @@ class MapFragment : Fragment() {
         val d = data ?: return
         val now = System.currentTimeMillis()
         val since = windowMs?.let { now - it } ?: 0L
-        val stations = d.stations.filter { it.lastHeardMs >= since }
+        val links = d.links.filter { it.lastHeardMs >= since }
+        val linkEnds = if (showLinks()) links.flatMap { listOf(it.a, it.b) }.toSet() else emptySet()
+        // A link's far end stays on the map even if that station was last heard before the window.
+        val stations = d.stations.filter { it.lastHeardMs >= since || it.call in linkEnds }
         val reports = d.reports.filter { it.timeMs >= since }
         val me = myPosition()
 
@@ -227,6 +259,13 @@ class MapFragment : Fragment() {
                 }
             }
         ))
+        (st.getSource(S_LINKS) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(links.map { l ->
+            Feature.fromGeometry(LineString.fromLngLats(greatCircle(l.aPos, l.bPos))).apply {
+                addStringProperty("color", l.snr?.let { snrColor(it) } ?: "#9AA4B2")
+                addNumberProperty("opacity", if (l.confirmed) 0.8f else 0.45f)
+                addStringProperty("label", l.snr?.let { snrText(it) } ?: "")
+            }
+        }))
         (st.getSource(S_ME) as? GeoJsonSource)?.setGeoJson(
             FeatureCollection.fromFeatures(listOfNotNull(me?.let { point(it) }))
         )
@@ -252,6 +291,7 @@ class MapFragment : Fragment() {
         val points = buildList {
             myPosition()?.let(::add)
             d?.stations?.filter { it.lastHeardMs >= since }?.forEach { add(it.position) }
+            if (showLinks()) d?.links?.filter { it.lastHeardMs >= since }?.forEach { add(it.aPos); add(it.bPos) }
             d?.reports?.filter { it.timeMs >= since }?.forEach { add(it.position) }
         }
         val update = when {
@@ -303,7 +343,20 @@ class MapFragment : Fragment() {
                 title.text = s.call
                 title.setTextColor(s.color)
                 val heard = ago(s.lastHeardMs).let { if (it == "now") getString(R.string.map_just_now) else getString(R.string.map_ago, it) }
-                body.text = getString(R.string.map_station_body, heard, s.snr)
+                val worked = data?.links.orEmpty().filter { it.a == s.call || it.b == s.call }
+                    .sortedByDescending { it.lastHeardMs }
+                val workedText = worked.take(4).joinToString("\n") { l ->
+                    val other = if (l.a == s.call) l.b else l.a
+                    val snr = l.snr
+                    when {
+                        snr == null && l.confirmed -> getString(R.string.map_worked_heard, other)
+                        snr == null -> getString(R.string.map_worked_called, other)
+                        l.reporter == s.call -> getString(R.string.map_worked_snr, other, s.call, other, snrText(snr))
+                        else -> getString(R.string.map_worked_snr, other, other, s.call, snrText(snr))
+                    }
+                } + if (worked.size > 4) "\n" + getString(R.string.map_worked_more, worked.size - 4) else ""
+                body.text = getString(R.string.map_station_body, heard, s.snr) +
+                    if (workedText.isNotEmpty()) "\n" + workedText else ""
                 meta.text = listOfNotNull(s.grid, me?.let { rangeText(it, s.position) }).joinToString(" · ")
                 open.isVisible = true
             }
@@ -370,6 +423,10 @@ class MapFragment : Fragment() {
         return out
     }
 
+    private fun showLinks() = view?.findViewById<Chip>(R.id.map_show_links)?.isChecked ?: true
+
+    private fun snrText(snr: Int) = if (snr >= 0) "+$snr dB" else "\u2212${-snr} dB"
+
     private fun hex(color: Int) = String.format("#%06X", color and 0xFFFFFF)
 
     private fun snrColor(snr: Int) = when {
@@ -417,6 +474,9 @@ class MapFragment : Fragment() {
         const val HOUR = 3_600_000L
         const val AMBIENT_CACHE_BYTES = 300L * 1024 * 1024
         const val S_PATHS = "tac-paths"
+        const val S_LINKS = "tac-links"
+        const val L_LINKS = "tac-links-line"
+        const val L_LINK_LABELS = "tac-links-label"
         const val S_STATIONS = "tac-stations"
         const val S_REPORTS = "tac-reports"
         const val S_ME = "tac-me"

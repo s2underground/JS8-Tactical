@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Traffic's top bar: everything needed to run the radio, on the main screen. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="52dp"
+    android:background="@color/tac_panel"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="16dp"
+    android:paddingEnd="8dp">
+
+    <TextView
+        android:id="@+id/status_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/app_name"
+        android:textColor="@color/tac_text"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <View
+        android:layout_width="1dp"
+        android:layout_height="20dp"
+        android:layout_marginHorizontal="14dp"
+        android:background="@color/tac_border" />
+
+    <!-- Receiver on/off: the one control that matters most in the field. -->
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/receiver_switch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:contentDescription="@string/monitor_toggle"
+        android:minHeight="48dp"
+        android:saveEnabled="false"
+        android:switchPadding="8dp"
+        android:text="@string/monitor_switch_label"
+        android:textAppearance="?attr/textAppearanceLabelLarge"
+        android:textColor="@color/tac_text"
+        app:thumbTint="@color/receiver_switch_thumb"
+        app:trackDecorationTint="@color/receiver_switch_outline" />
+
+    <TextView
+        android:id="@+id/status_pill"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginStart="10dp"
+        android:background="@drawable/bg_pill_rx"
+        android:contentDescription="@string/traffic_open_radio"
+        android:gravity="center"
+        android:minWidth="56dp"
+        android:paddingHorizontal="12dp"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        tools:text="RX" />
+
+    <!-- Band / dial frequency; tap to change. -->
+    <TextView
+        android:id="@+id/status_frequency"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:layout_marginStart="10dp"
+        android:background="?attr/selectableItemBackground"
+        android:contentDescription="@string/monitor_radio_frequency"
+        android:drawableEnd="@drawable/ic_arrow_drop_down"
+        android:drawableTint="@color/tac_text_dim"
+        android:fontFamily="monospace"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="6dp"
+        android:textColor="@color/tac_text"
+        android:textSize="14sp"
+        tools:text="40m · 7.078" />
+
+    <Space
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/toggle_autoreply"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/bg_pill_off"
+        android:gravity="center"
+        android:paddingHorizontal="10dp"
+        android:text="@string/traffic_toggle_autoreply"
+        android:textColor="@color/tac_text_dim"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/toggle_screen"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/bg_pill_off"
+        android:gravity="center"
+        android:paddingHorizontal="10dp"
+        android:text="@string/traffic_toggle_screen"
+        android:textColor="@color/tac_text_dim"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/status_digest"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/bg_pill_off"
+        android:contentDescription="@string/nav_digest"
+        android:gravity="center"
+        android:minWidth="48dp"
+        android:paddingHorizontal="10dp"
+        android:text="@string/nav_digest"
+        android:textColor="@color/tac_text_dim"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/status_clock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:fontFamily="monospace"
+        android:textColor="@color/tac_text"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        tools:text="13:42:18Z" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/status_more"
+        style="@style/Widget.Material3.Button.IconButton"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:contentDescription="@string/traffic_more"
+        app:icon="@drawable/ic_more_vert"
+        app:iconTint="@color/tac_text" />
+</LinearLayout>

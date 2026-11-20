@@ -40,6 +40,8 @@ import java.util.TimeZone
 class TrafficFragment : Fragment() {
 
     private companion object {
+        const val KEY_AUTOREPLY = "autoreply_enabled"
+        const val KEY_SCREEN_ON = "keep_screen_on"
         /** JS8 queries that only mean something when addressed. */
         val ALLCALL_QUERY = Regex("""^(?:SNR|GRID|INFO|STATUS|HEARING)\?$|^QUERY MSGS\??$""")
     }
@@ -139,8 +141,94 @@ class TrafficFragment : Fragment() {
         val freq: TextView = view.findViewById(R.id.status_frequency)
         val pill: TextView = view.findViewById(R.id.status_pill)
 
-        monitor.radioFrequency.observe(viewLifecycleOwner) { hz ->
-            freq.text = if (hz != null && hz > 0) String.format(Locale.US, "%.3f MHz", hz / 1_000_000.0) else getString(R.string.traffic_no_rig)
+        // Band: the saved preset, or the radio's own dial when it reports one that differs.
+        fun renderBand() {
+            val (bands, index) = com.js8call.example.ui.RadioControls.bands(requireContext())
+            val preset = bands.getOrNull(index)
+            val dial = monitor.radioFrequency.value
+            freq.text = when {
+                dial != null && dial > 0 && (preset == null || kotlin.math.abs(dial - preset.hz) > 1_000) ->
+                    String.format(Locale.US, "%.3f", dial / 1_000_000.0)
+                preset != null -> com.js8call.example.ui.RadioControls.shortLabel(preset.label)
+                else -> getString(R.string.traffic_no_rig)
+            }
+        }
+        renderBand()
+        monitor.radioFrequency.observe(viewLifecycleOwner) { renderBand() }
+        freq.setOnClickListener {
+            val (bands, index) = com.js8call.example.ui.RadioControls.bands(requireContext())
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.monitor_radio_frequency)
+                .setSingleChoiceItems(bands.map { it.label }.toTypedArray(), index) { d, which ->
+                    d.dismiss()
+                    com.js8call.example.ui.RadioControls.selectBand(requireContext(), bands[which])
+                    renderBand()
+                }
+                .show()
+        }
+
+        // Receiver on/off, right on the main screen.
+        val receiver: com.google.android.material.materialswitch.MaterialSwitch = view.findViewById(R.id.receiver_switch)
+        var settingSwitch = false
+        fun renderSwitch() {
+            val st = monitor.status.value?.state
+            settingSwitch = true
+            receiver.isChecked = st == com.js8call.example.model.EngineState.RUNNING || st == com.js8call.example.model.EngineState.STARTING
+            settingSwitch = false
+        }
+        renderSwitch()
+        monitor.status.observe(viewLifecycleOwner) { renderSwitch() }
+        receiver.setOnCheckedChangeListener { _, on ->
+            if (settingSwitch) return@setOnCheckedChangeListener
+            if (on) {
+                if (com.js8call.example.ui.RadioControls.needsMicPermission(requireContext())) {
+                    micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                } else {
+                    com.js8call.example.ui.RadioControls.start(requireContext(), monitor)
+                }
+            } else {
+                com.js8call.example.ui.RadioControls.stop(requireContext(), monitor)
+            }
+            receiver.post { renderSwitch() }
+        }
+
+        // Auto-reply and keep-screen-on: pills on tablets, ⋮ menu everywhere.
+        val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        val autoPill: TextView = view.findViewById(R.id.toggle_autoreply)
+        val screenPill: TextView = view.findViewById(R.id.toggle_screen)
+        fun renderToggle(v: TextView, on: Boolean) {
+            v.setBackgroundResource(if (on) R.drawable.bg_pill_rx else R.drawable.bg_pill_off)
+            v.setTextColor(ContextCompat.getColor(requireContext(), if (on) R.color.tac_good_text else R.color.tac_text_dim))
+        }
+        fun renderToggles() {
+            renderToggle(autoPill, prefs.getBoolean(KEY_AUTOREPLY, false))
+            renderToggle(screenPill, prefs.getBoolean(KEY_SCREEN_ON, false))
+        }
+        renderToggles()
+        autoPill.setOnClickListener { setAutoReply(!prefs.getBoolean(KEY_AUTOREPLY, false)); renderToggles() }
+        screenPill.setOnClickListener { setScreenOn(!prefs.getBoolean(KEY_SCREEN_ON, false)); renderToggles() }
+        view.findViewById<View>(R.id.status_more).setOnClickListener { anchor ->
+            val popup = android.widget.PopupMenu(requireContext(), anchor)
+            val m = popup.menu
+            m.add(0, 1, 0, "Auto-reply").apply { isCheckable = true; isChecked = prefs.getBoolean(KEY_AUTOREPLY, false) }
+            m.add(0, 2, 1, "Keep screen on").apply { isCheckable = true; isChecked = prefs.getBoolean(KEY_SCREEN_ON, false) }
+            m.add(0, 3, 2, "Audio input…")
+            m.add(0, 4, 3, "Raw decodes, clock and audio details")
+            m.add(0, 5, 4, "Inbox (stored messages)")
+            popup.setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    1 -> setAutoReply(!prefs.getBoolean(KEY_AUTOREPLY, false))
+                    2 -> setScreenOn(!prefs.getBoolean(KEY_SCREEN_ON, false))
+                    3 -> com.js8call.example.ui.AudioDevices.showPicker(requireContext(), monitor.isRunning.value == true) { d ->
+                        Snackbar.make(requireView(), "Audio input: ${d.name}", Snackbar.LENGTH_SHORT).show()
+                    }
+                    4 -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_monitor)
+                    5 -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_messages)
+                }
+                renderToggles()
+                true
+            }
+            popup.show()
         }
 
         fun renderPill() {
@@ -157,7 +245,7 @@ class TrafficFragment : Fragment() {
         }
         monitor.isRunning.observe(viewLifecycleOwner) { renderPill() }
         transmit.txState.observe(viewLifecycleOwner) { renderPill() }
-        // Start/stop and audio setup live on the Radio tab for now.
+        // The pill shows state; the Receiver switch next to it starts and stops listening.
         pill.setOnClickListener {
             // While sending, the TX pill is the stop button: drop the queue and unkey now.
             if (transmit.txState.value == TransmitState.TRANSMITTING) {
@@ -169,9 +257,8 @@ class TrafficFragment : Fragment() {
                 Snackbar.make(requireView(), "Transmit stopped", Snackbar.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            requireActivity().findViewById<NavigationBarView>(R.id.bottom_navigation)?.selectedItemId = R.id.navigation_monitor
             if (monitor.isRunning.value != true) {
-                android.widget.Toast.makeText(requireContext(), "Turn on the Receiver switch at the top right", android.widget.Toast.LENGTH_LONG).show()
+                Snackbar.make(requireView(), "Turn the Receiver switch on to start listening", Snackbar.LENGTH_SHORT).show()
             }
         }
 
@@ -352,6 +439,7 @@ class TrafficFragment : Fragment() {
         }
         // Heartbeat: one tap, always to @HB (the service adds your grid and picks the heartbeat offset).
         view.findViewById<Chip>(R.id.tpl_heartbeat).setOnClickListener { queueBroadcast("HB") }
+        view.findViewById<Chip>(R.id.tpl_cq).setOnClickListener { queueBroadcast("CQ CQ CQ") }
         view.findViewById<Chip>(R.id.tpl_checkin).setOnClickListener { openWriter("CHECKIN") }
         view.findViewById<Chip>(R.id.tpl_spot).setOnClickListener { openWriter("SPOT") }
         view.findViewById<Chip>(R.id.tpl_salute).setOnClickListener { openWriter("SALUTE") }
@@ -387,6 +475,28 @@ class TrafficFragment : Fragment() {
 
     private var stationLongPress: (TrafficViewModel.StationRow) -> Boolean = { false }
 
+    /** Microphone permission for the receiver switch; starts the receiver once granted. */
+    private val micPermission = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) com.js8call.example.ui.RadioControls.start(requireContext(), monitor)
+        else Snackbar.make(requireView(), R.string.permission_audio_denied, Snackbar.LENGTH_LONG).show()
+    }
+
+    private fun setAutoReply(on: Boolean) {
+        PreferenceManager.getDefaultSharedPreferences(requireContext()).edit().putBoolean(KEY_AUTOREPLY, on).apply()
+        Snackbar.make(
+            requireView(),
+            if (on) "Auto-reply on: your station answers SNR?, GRID?, heartbeats and stored-message queries while the app is open."
+            else "Auto-reply off",
+            Snackbar.LENGTH_LONG,
+        ).show()
+    }
+
+    private fun setScreenOn(on: Boolean) {
+        // MainActivity applies keep_screen_on to the window when it changes.
+        PreferenceManager.getDefaultSharedPreferences(requireContext()).edit().putBoolean(KEY_SCREEN_ON, on).apply()
+        Snackbar.make(requireView(), if (on) "Screen stays on" else "Screen turns off normally", Snackbar.LENGTH_SHORT).show()
+    }
+
     /** "+ Watch a group or #tag": add an @group (traffic to it) or #tag (any message carrying it). */
     private fun askWatch() {
         val input = EditText(requireContext()).apply {
@@ -421,6 +531,10 @@ class TrafficFragment : Fragment() {
     private fun send(text: String, copies: Int): Boolean {
         if (!readyToSend()) return false
         val target = traffic.sendTarget()
+        if (target == null && text.trim().uppercase().startsWith("MSG ")) {
+            Snackbar.make(requireView(), "A stored message (MSG) goes to one station: pick it in the list first.", Snackbar.LENGTH_LONG).show()
+            return false
+        }
         // A query typed to everyone ("STATUS?", "GRID?") needs an address or no one's software
         // treats it as a question: send it to @ALLCALL, as JS8Call does.
         val effective = target ?: ALLCALL_QUERY.takeIf { it.matches(text.trim().uppercase()) }?.let { "@ALLCALL" }
