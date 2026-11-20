@@ -65,6 +65,9 @@ object CrashReporter {
         if (!f.exists() || f.length() == 0L) return
         val text = f.readText()
         archive(activity, text)
+        // Shown once: it is in the archive (Settings → Diagnostics) from here on, so tapping
+        // outside the dialog can't make the same old report come back at every launch.
+        f.delete()
         val view = TextView(activity).apply {
             setText(text)
             setTextIsSelectable(true)
