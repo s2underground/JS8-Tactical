@@ -45,6 +45,11 @@
         android:label="@string/nav_digest" />
 
     <fragment
+        android:id="@+id/navigation_net"
+        android:name="com.js8call.example.ui.net.NetFragment"
+        android:label="@string/nav_net" />
+
+    <fragment
         android:id="@+id/navigation_monitor"
         android:name="com.js8call.example.ui.MonitorFragment"
         android:label="@string/nav_monitor" />

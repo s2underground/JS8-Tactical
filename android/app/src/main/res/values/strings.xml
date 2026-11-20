@@ -516,4 +516,31 @@
     <string name="settings_library">Library: guides and calculators</string>
     <string name="settings_library_summary">How to listen, set up a station, build antennas; works offline</string>
     <string name="settings_role">I am a…</string>
+    <!-- Net roster / net control -->
+    <string name="nav_net">Net</string>
+    <string name="net_open_button">Net…</string>
+    <string name="net_title">Net %1$s</string>
+    <string name="net_start_now">Start now</string>
+    <string name="net_share">Share log</string>
+    <string name="net_summary">%1$d checked in since %2$sZ</string>
+    <string name="net_summary_missing"> · %1$d not yet</string>
+    <string name="net_explain">Built from what has been heard on this group. No net control is needed; the buttons below are optional and every send is shown to you first.</string>
+    <string name="net_call_net">Call the net</string>
+    <string name="net_call_text">NET OPEN PSE CHECK IN WITH STATUS AND GRID</string>
+    <string name="net_roll_call">Roll call missing</string>
+    <string name="net_expected">Expected…</string>
+    <string name="net_checked_in">Checked in (%1$d)</string>
+    <string name="net_none_yet">Nobody has sent to this group in this window yet.</string>
+    <string name="net_not_yet">Not checked in (%1$d)</string>
+    <string name="net_on_air">On the air, last heard %1$sZ</string>
+    <string name="net_not_heard">Not heard</string>
+    <string name="net_ack">ACK</string>
+    <string name="net_open">Open</string>
+    <string name="net_ping">Ping (SNR?)</string>
+    <string name="net_send_to">Send to %1$s</string>
+    <string name="net_queue">Queue</string>
+    <string name="net_queued">Queued to %1$s</string>
+    <string name="net_expected_title">Expected stations</string>
+    <string name="net_expected_text">Callsigns you expect on this net, separated by spaces. Anyone on this list who hasn\'t sent to the group shows as not checked in.</string>
+    <string name="net_use_team">Use Team roster</string>
 </resources>

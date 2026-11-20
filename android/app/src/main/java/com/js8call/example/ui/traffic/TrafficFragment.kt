@@ -407,7 +407,13 @@ class TrafficFragment : Fragment() {
         }
         view.findViewById<View>(R.id.thread_clear).setOnClickListener { traffic.select(TrafficViewModel.ALL) }
         view.findViewById<com.google.android.material.button.MaterialButton>(R.id.thread_relay).setOnClickListener {
-            if (relayVia != null) { relayVia = null; renderRelay() } else showRelayFinder()
+            val sel = traffic.selected.value
+            when {
+                sel != null && sel.startsWith("@") -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_net,
+                    android.os.Bundle().apply { putString(com.js8call.example.ui.net.NetFragment.ARG_GROUP, sel) })
+                relayVia != null -> { relayVia = null; renderRelay() }
+                else -> showRelayFinder()
+            }
         }
         stationList.layoutManager = LinearLayoutManager(requireContext())
         stationList.adapter = stations
@@ -597,9 +603,13 @@ class TrafficFragment : Fragment() {
         val v = view ?: return
         val station = selectedStation()
         val button = v.findViewById<com.google.android.material.button.MaterialButton>(R.id.thread_relay)
-        button.isVisible = station != null
-        button.text = relayVia?.let { getString(R.string.relay_via, it) } ?: getString(R.string.relay_find)
         val sel = traffic.selected.value ?: TrafficViewModel.ALL
+        val isGroup = sel.startsWith("@")
+        button.isVisible = station != null || isGroup
+        button.text = when {
+            isGroup -> getString(R.string.net_open_button)
+            else -> relayVia?.let { getString(R.string.relay_via, it) } ?: getString(R.string.relay_find)
+        }
         v.findViewById<EditText>(R.id.compose_input).hint = when {
             sel == TrafficViewModel.ALL -> getString(R.string.traffic_hint_all)
             relayVia != null && station != null -> getString(R.string.relay_hint, station, relayVia)

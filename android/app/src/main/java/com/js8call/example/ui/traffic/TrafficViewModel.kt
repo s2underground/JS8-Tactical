@@ -983,6 +983,20 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     fun teamMessages(): List<TeamBoard.Msg> =
         engine.messages().filterNot { isBeacon(it) || isOwnEcho(it) }.map { TeamBoard.Msg(it.sender, it.bodyText, it.lastHeardMs) }
 
+    /** What the Net screen needs for [group] since [sinceMs]. */
+    fun netInput(group: String, sinceMs: Long, expected: List<String>, now: Long = System.currentTimeMillis()): com.js8call.example.net.NetRoster.Input {
+        return com.js8call.example.net.NetRoster.Input(
+            group = group,
+            sinceMs = sinceMs,
+            nowMs = now,
+            myCall = myBaseCall(),
+            messages = engine.messages().filterNot { isOwnEcho(it) }.map { com.js8call.example.net.NetRoster.Msg(it.sender, it.recipient, it.bodyText, it.firstHeardMs, it.isComplete) },
+            sent = outgoing.map { com.js8call.example.net.NetRoster.Sent(it.to, it.text, it.sentMs) },
+            stations = heard.mapKeys { it.key.uppercase() }.mapValues { (_, h) -> com.js8call.example.net.NetRoster.Seen(h.grid, h.snr, h.lastHeardMs) },
+            expected = expected,
+        )
+    }
+
     /** Everything the Digest tab needs for the window starting at [sinceMs]. */
     fun digestInput(sinceMs: Long, now: Long = System.currentTimeMillis()): DigestBuilder.Input {
         val prefs = PreferenceManager.getDefaultSharedPreferences(getApplication())
