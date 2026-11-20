@@ -577,4 +577,6 @@
     <string name="reports_copy_of">Copy of %1$s</string>
     <string name="reports_delete">Delete</string>
     <string name="reports_delete_confirm">Delete “%1$s”?</string>
+    <string name="settings_keep_receiving">Keep receiving when the app is swiped away</string>
+    <string name="settings_keep_receiving_summary">Closing the app from recent apps (or Close all) leaves the receiver, heartbeats and scheduled reports running. Stop it with the receiver switch or Stop in the notification. Off: closing the app stops the receiver.</string>
 </resources>

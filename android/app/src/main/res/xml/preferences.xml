@@ -367,6 +367,13 @@
         app:iconSpaceReserved="false">
 
         <SwitchPreferenceCompat
+            app:key="keep_receiving_when_closed"
+            app:title="@string/settings_keep_receiving"
+            app:summary="@string/settings_keep_receiving_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
             app:key="autoreply_enabled"
             app:title="@string/settings_autoreply"
             app:summary="@string/settings_autoreply_summary"

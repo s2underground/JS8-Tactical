@@ -537,9 +537,17 @@ class JS8EngineService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.i(TAG, "Task removed; stopping engine")
-        stopEngine()
-        stopSelf()
+        // Swiping the app away (or Close all) is a habit, not a decision to go off the air:
+        // by default the receiver keeps running; Stop is in the notification.
+        val keep = PreferenceManager.getDefaultSharedPreferences(this).getBoolean(PREF_KEEP_RECEIVING, true)
+        if (keep && engineRunning) {
+            Log.i(TAG, "Task removed; receiver keeps running (Stop is in the notification)")
+        } else {
+            Log.i(TAG, "Task removed; stopping engine")
+            if (engineRunning) PreferenceManager.getDefaultSharedPreferences(this).edit().putBoolean(PREF_RECEIVER_WANTED, false).apply()
+            stopEngine()
+            stopSelf()
+        }
         super.onTaskRemoved(rootIntent)
     }
 
@@ -4692,5 +4700,7 @@ class JS8EngineService : Service() {
         private const val NOTIFICATION_ID_RECEIVER_RESTART = 990
         /** The user had the receiver on (set by Start, cleared by Stop). */
         const val PREF_RECEIVER_WANTED = "receiver_wanted"
+        /** Keep the receiver running when the app is swiped away from recent apps (default on). */
+        const val PREF_KEEP_RECEIVING = "keep_receiving_when_closed"
     }
 }

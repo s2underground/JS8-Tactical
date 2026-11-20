@@ -91,9 +91,29 @@ class MessageLogWriter(private val context: Context) {
         return created
     }
 
+    /**
+     * Downloads/JS8CallLogs/js8call-log.txt. A file of that name left by an earlier install
+     * belongs to that install and can't be opened or reused (Android then refuses to make
+     * another), so fall back to a dated name, remembered for next time, and finally to the
+     * app's own folder (Android/data/<app>/files/JS8CallLogs) so logging never stops.
+     */
     private fun ensureMediaStoreTarget(): LogTarget? {
-        val uri = findMediaStoreEntry(LOG_NAME) ?: createMediaStoreEntry(LOG_NAME)
-        return uri?.let { LogTarget.MediaStoreTarget(it) }
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        val name = prefs.getString(PREF_LOG_NAME, null) ?: LOG_NAME
+        var uri = findMediaStoreEntry(name) ?: createMediaStoreEntry(name)
+        if (uri == null) {
+            val dated = "js8call-log-" + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + ".txt"
+            uri = createMediaStoreEntry(dated)
+            if (uri != null) {
+                prefs.edit().putString(PREF_LOG_NAME, dated).apply()
+                Log.i(TAG, "Log file name in use by an earlier install; logging to Downloads/$LOG_DIR/$dated")
+            }
+        }
+        if (uri != null) return LogTarget.MediaStoreTarget(uri)
+        val dir = context.getExternalFilesDir(null)?.let { File(it, LOG_DIR) } ?: File(context.filesDir, LOG_DIR)
+        if (!dir.exists() && !dir.mkdirs()) return null
+        Log.w(TAG, "Downloads not writable; logging to ${dir.absolutePath}")
+        return LogTarget.FileTarget(File(dir, LOG_NAME))
     }
 
     private fun ensureLegacyFileTarget(): LogTarget? {
@@ -234,6 +254,7 @@ class MessageLogWriter(private val context: Context) {
         private const val TAG = "MessageLogWriter"
         private const val LOG_DIR = "JS8CallLogs"
         private const val LOG_NAME = "js8call-log.txt"
+        private const val PREF_LOG_NAME = "message_log_file_name"
         private const val LOG_BACKUP_NAME = "js8call-log.1.txt"
         private const val LOG_MAX_BYTES = 10L * 1024L * 1024L
         private const val TIMESTAMP_FORMAT = "yyyy-MM-dd HH:mm:ss Z"
