@@ -635,6 +635,8 @@
     <string name="export_rollup_sub">Longer reports heard in full, each once (relayed copies merged). Heartbeats, SNR requests, acks and garbled messages left out.</string>
     <string name="export_raw">Complete raw log</string>
     <string name="export_raw_sub">Every transmission heard or sent, exactly as decoded, with time, SNR and missing frames marked.</string>
+    <string name="export_sanitized">Sanitized: remove all callsigns</string>
+    <string name="export_sanitized_sub">Each callsign becomes a label like STATION-3 (the same station keeps its label, so relays and sources still make sense). Grids and positions in the messages are kept.</string>
     <string name="export_period">PERIOD</string>
     <string name="export_window">This digest: last %1$s</string>
     <string name="export_window_sub">The period picked at the top of the Digest.</string>

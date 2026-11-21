@@ -50,3 +50,28 @@ class ExportBuilderTest {
         assertEquals(longText, ExportBuilder.wrap(longText, 30).joinToString(" "))
     }
 }
+
+class ExportSanitizeTest {
+    private val t0 = 1_763_700_000_000L
+    private val h = Header("KF4ABC", t0, t0 + 3_600_000L, "last 6 h")
+
+    @Test fun everyCallsignBecomesAStableLabel() {
+        val entries = listOf(
+            Entry(t0 + 1000, false, "N0AAA", "@GHOSTNET", "N0AAA: GRID DOWN IN EN52. RELAY VIA W1XYZ/P AND KF4ABC. H5N1 IN 3 COUNTIES ON 40M", -12),
+            Entry(t0 + 2000, false, "W1XYZ/P", "KF4ABC", "SNR? DE W1XYZ", -5),
+            Entry(t0 + 3000, true, null, "N0AAA", "QSL N0AAA DE KF4ABC/M"),
+            Entry(t0 + 4000, false, "VK2ZZ", "n0aaa", "HELLO", -1),
+        )
+        val (sh, se) = ExportBuilder.sanitize(h, entries)
+        val text = ExportBuilder.rawLog(sh, se) + ExportBuilder.rollup(sh, se)
+        listOf("N0AAA", "W1XYZ", "KF4ABC", "VK2ZZ").forEach { assertFalse(it, text.uppercase().contains(it)) }
+        assertEquals(se[0].sender, se[3].recipient)
+        assertEquals("STATION-1", se[0].sender)
+        assertTrue(se[0].body.contains("EN52") && se[0].body.contains("H5N1") && se[0].body.contains("40M"))
+        assertTrue(se[0].body.contains(ExportBuilder.MY_LABEL))
+        assertEquals(se[1].sender, se[0].body.substringAfter("RELAY VIA ").substringBefore(" "))
+        assertEquals("@GHOSTNET", se[0].recipient)
+        assertTrue(text.contains("Sanitized:"))
+        assertEquals("js8tactical-raw-log-sanitized-20251121-0440Z.txt", ExportBuilder.fileName(false, t0, "KF4ABC", true))
+    }
+}

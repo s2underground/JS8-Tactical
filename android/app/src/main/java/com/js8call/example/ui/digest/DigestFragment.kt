@@ -567,6 +567,17 @@ class DigestFragment : Fragment() {
         radio(getString(R.string.export_raw), getString(R.string.export_raw_sub)).also { what.addView(it) }
         what.check(rollup.id)
         box.addView(what)
+        val sanitize = com.google.android.material.checkbox.MaterialCheckBox(ctx).apply {
+            text = android.text.SpannableStringBuilder(getString(R.string.export_sanitized)).apply {
+                append("\n")
+                val at = length
+                append(getString(R.string.export_sanitized_sub))
+                setSpan(android.text.style.RelativeSizeSpan(0.82f), at, length, 0)
+                setSpan(android.text.style.ForegroundColorSpan(color(R.color.tac_text_dim)), at, length, 0)
+            }
+            setPadding(dp(4), dp(6), 0, dp(6))
+        }
+        box.addView(sanitize)
 
         val now = System.currentTimeMillis()
         val start = traffic.dataStartMs()
@@ -586,11 +597,12 @@ class DigestFragment : Fragment() {
             val myCall = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
                 .getString("callsign", "").orEmpty().trim().uppercase()
             val label = if (period.checkedRadioButtonId == all.id) "everything kept on this device" else "last $windowLabel"
-            val h = com.js8call.example.digest.ExportBuilder.Header(myCall, since, now, label)
-            val entries = traffic.exportEntries()
+            var h = com.js8call.example.digest.ExportBuilder.Header(myCall, since, now, label)
+            var entries = traffic.exportEntries()
+            if (sanitize.isChecked) com.js8call.example.digest.ExportBuilder.sanitize(h, entries).let { (sh, se) -> h = sh; entries = se }
             val text = if (isRollup) com.js8call.example.digest.ExportBuilder.rollup(h, entries)
                 else com.js8call.example.digest.ExportBuilder.rawLog(h, entries)
-            return com.js8call.example.digest.ExportBuilder.fileName(isRollup, now, myCall.substringBefore('/')) to text
+            return com.js8call.example.digest.ExportBuilder.fileName(isRollup, now, myCall.substringBefore('/'), sanitize.isChecked) to text
         }
 
         com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
