@@ -14,13 +14,14 @@ import java.io.File
  * Nothing leaves the device.
  *
  * Line format (tab-separated, text escaped):
- *   F  receivedAtMs  utc  frequencyHz  type  snr  mode  text
+ *   F  receivedAtMs  utc  frequencyHz  type  snr  mode  text  [dialHz]
  *   O  sentMs  frequencyHz  text
  */
 class TrafficHistory(private val file: File) {
 
     sealed class Entry(val timeMs: Long) {
-        class Frame(val frame: RollupEngine.Frame) : Entry(frame.receivedAtMs)
+        /** [dialHz]: radio dial when heard, so a reload knows the band (null in files from before it was kept). */
+        class Frame(val frame: RollupEngine.Frame, val dialHz: Long? = null) : Entry(frame.receivedAtMs)
         class Sent(timeMs: Long, val frequencyHz: Float, val text: String) : Entry(timeMs)
     }
 
@@ -89,7 +90,7 @@ class TrafficHistory(private val file: File) {
 
         fun encode(e: Entry): String = when (e) {
             is Entry.Frame -> with(e.frame) {
-                listOf("F", receivedAtMs, utc, frequencyHz, type, snr, mode, escape(text)).joinToString("\t")
+                listOfNotNull("F", receivedAtMs, utc, frequencyHz, type, snr, mode, escape(text), e.dialHz).joinToString("\t")
             }
             is Entry.Sent -> listOf("O", e.timeMs, e.frequencyHz, escape(e.text)).joinToString("\t")
         }
@@ -101,7 +102,8 @@ class TrafficHistory(private val file: File) {
                     RollupEngine.Frame(
                         utc = p[2].toInt(), frequencyHz = p[3].toFloat(), type = p[4].toInt(),
                         text = unescape(p[7]), snr = p[5].toInt(), mode = p[6].toInt(), receivedAtMs = p[1].toLong(),
-                    )
+                    ),
+                    dialHz = p.getOrNull(8)?.toLongOrNull()?.takeIf { it > 0 },
                 ) else null
                 "O" -> if (p.size >= 4) Entry.Sent(p[1].toLong(), p[2].toFloat(), unescape(p[3])) else null
                 else -> null

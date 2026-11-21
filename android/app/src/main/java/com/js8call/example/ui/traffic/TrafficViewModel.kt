@@ -330,7 +330,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                 if (!live) {
                     entries.forEach { e ->
                         when (e) {
-                            is TrafficHistory.Entry.Frame -> with(e.frame) { addFrameAt(utc, snr, frequencyHz, text, type, mode, receivedAtMs) }
+                            is TrafficHistory.Entry.Frame -> with(e.frame) { addFrameAt(utc, snr, frequencyHz, text, type, mode, receivedAtMs, e.dialHz) }
                             is TrafficHistory.Entry.Sent -> addOutgoingAt(e.text, e.frequencyHz, e.timeMs)
                         }
                     }
@@ -394,6 +394,13 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     private fun loadMapMemory() {
         historyIo.execute {
             val loaded = com.js8call.example.ui.map.MapMemory.load(mapMemoryFile) ?: return@execute
+            // Once: bands saved before history kept the dial can be wrong (a restart on 20m marked
+            // every station from the history file as heard on 20m). Start them clean.
+            val prefs = PreferenceManager.getDefaultSharedPreferences(getApplication())
+            if (!prefs.getBoolean(PREF_MAP_BANDS_RESET, false)) {
+                loaded.clearBands()
+                prefs.edit().putBoolean(PREF_MAP_BANDS_RESET, true).apply()
+            }
             handler.post {
                 mapMemory.merge(loaded)
                 mapMemory.prune(System.currentTimeMillis() - com.js8call.example.ui.map.MapMemory.KEEP_MS)
@@ -449,10 +456,16 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     fun addFrame(utc: Int, snr: Int, frequency: Float, text: String, type: Int, mode: Int) =
         addFrameAt(utc, snr, frequency, text, type, mode, System.currentTimeMillis())
 
-    private fun addFrameAt(utc: Int, snr: Int, frequency: Float, text: String, type: Int, mode: Int, now: Long) {
+    /**
+     * [historyDialHz]: for a frame replayed from history, the dial it was heard on (null if the
+     * file didn't keep it). Never the dial we're on now: that put this morning's 40m stations on
+     * 20m after a restart on 20m.
+     */
+    private fun addFrameAt(utc: Int, snr: Int, frequency: Float, text: String, type: Int, mode: Int, now: Long, historyDialHz: Long? = null) {
         val frame = RollupEngine.Frame(utc, frequency, type, text, snr, mode, now)
+        val dialNow = if (replaying || demoBand != null) historyDialHz else currentDialHz()
         safeEngine { engine.addFrame(frame, now) }
-        record(TrafficHistory.Entry.Frame(frame))
+        record(TrafficHistory.Entry.Frame(frame, dialNow))
         if (frame.isFirst) {
             val header = HeaderParser.parse(text)
             if (header != null && isMe(header.sender) && !replaying && demoBand == null) echoFrames += frequency to now
@@ -461,7 +474,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                 h.lastHeardMs = now
                 h.laneHz = frequency
                 h.snr = snr
-                h.dialHz = if (demoBand != null) null else currentDialHz()
+                // A replayed frame from an older file has no dial: its band stays unknown rather than guessed.
+                h.dialHz = dialNow
                 gridIn(text)?.let { h.grid = it }
                 if (!replaying) currentBand()?.let { band ->
                     observe(Observation(now, header.sender, h.grid, band, snr, Observation.Kind.HEARD))
@@ -527,9 +541,10 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Band [call] was on when we last heard it (the dial we were on then), else the band we're on now. */
+    /** The band [call] was last heard on; null when not known (never guessed from where we are now). */
     private fun bandOf(call: String): String? =
         if (demoBand != null) demoBand?.label
-        else (Band.forDialHz(heard[call]?.dialHz) ?: Band.forDialHz(currentDialHz()))?.label
+        else Band.forDialHz(heard[call]?.dialHz)?.label
 
     /** Waterfall tags: stations heard in the last [MARKER_MS] on the frequency we're on now. */
     private fun refreshMarkers(now: Long) {
@@ -1167,6 +1182,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         private const val MARKER_MS = 5 * 60_000L
         /** Own echo heard further than this from where we sent it counts as a mismatch. */
         const val ECHO_TOLERANCE_HZ = 15f
+        private const val PREF_MAP_BANDS_RESET = "map_bands_reset_v2"
 
         /**
          * Which send an own frame heard at [heardHz] ([atMs]) came from: any transmission on the air

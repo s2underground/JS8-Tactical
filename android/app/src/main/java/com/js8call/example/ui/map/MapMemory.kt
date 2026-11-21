@@ -88,6 +88,12 @@ class MapMemory {
         if (next != old) { links[key] = next; dirty = true }
     }
 
+    /** Forget which bands everything was heard on (they fill in again as stations are heard). */
+    fun clearBands() {
+        stations.replaceAll { _, s -> if (s.bands.isEmpty()) s else s.copy(bands = emptySet()).also { dirty = true } }
+        links.replaceAll { _, l -> if (l.bands.isEmpty()) l else l.copy(bands = emptySet()).also { dirty = true } }
+    }
+
     fun prune(cutoffMs: Long) {
         if (stations.values.removeIf { it.lastHeardMs < cutoffMs }) dirty = true
         if (links.values.removeIf { it.lastHeardMs < cutoffMs }) dirty = true

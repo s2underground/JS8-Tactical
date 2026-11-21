@@ -60,3 +60,15 @@ class TrafficHistoryTest {
         assertTrue(m.bodyText, m.bodyText.contains("WATER AT GRID EM83"))
     }
 }
+
+class TrafficHistoryDialTest {
+    @org.junit.Test fun dialIsKeptAndOldLinesLoadWithoutIt() {
+        val f = com.js8call.example.rollup.RollupEngine.Frame(150000, 1450f, 1, "KN4XYZ: @HB HEARTBEAT EM73", -10, 0, 1_000L)
+        val withDial = TrafficHistory.decode(TrafficHistory.encode(TrafficHistory.Entry.Frame(f, 14_078_000L))) as TrafficHistory.Entry.Frame
+        org.junit.Assert.assertEquals(14_078_000L, withDial.dialHz)
+        org.junit.Assert.assertEquals("KN4XYZ: @HB HEARTBEAT EM73", withDial.frame.text)
+        val old = TrafficHistory.decode(TrafficHistory.encode(TrafficHistory.Entry.Frame(f))) as TrafficHistory.Entry.Frame
+        org.junit.Assert.assertNull(old.dialHz)
+        org.junit.Assert.assertEquals(8, TrafficHistory.encode(TrafficHistory.Entry.Frame(f)).split('\t').size)
+    }
+}
