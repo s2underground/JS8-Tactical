@@ -104,7 +104,29 @@ object AiWork {
     val busy: LiveData<Boolean> = _busy
 
     /** AI on, model downloaded, engine present. */
-    fun usable(ctx: Context): Boolean = AiModels.enabled(ctx) && LlamaBridge.available && model(ctx) != null
+    fun usable(ctx: Context): Boolean = notUsable(ctx) == null
+
+    enum class Missing { OFF, ENGINE, MODEL }
+
+    /** What stops the AI from running, or null when it can. */
+    fun notUsable(ctx: Context): Missing? = when {
+        !AiModels.enabled(ctx) -> Missing.OFF
+        !LlamaBridge.available -> Missing.ENGINE
+        model(ctx) == null -> Missing.MODEL
+        else -> null
+    }
+
+    /** Plain-text AI status for the diagnostics report. */
+    fun diagnostics(ctx: Context): String = buildString {
+        append("enabled = ${AiModels.enabled(ctx)}\n")
+        append("engine = ${if (LlamaBridge.available) "loaded" else "not loaded (${LlamaBridge.loadError ?: "unknown"})"}\n")
+        append("process ABI = ${if (android.os.Process.is64Bit()) "64-bit" else "32-bit"} · device ${android.os.Build.SUPPORTED_ABIS.joinToString()}\n")
+        AiModels.ALL.forEach { m ->
+            val f = AiModels.file(ctx, m)
+            append("${m.id}: ${if (f.isFile) "${f.length()} bytes" else "no file"} · ready = ${AiModels.ready(ctx, m)}\n")
+        }
+        append("model used = ${model(ctx)?.id ?: "none"}\n")
+    }
 
     fun model(ctx: Context): AiModels.Model? {
         val id = PreferenceManager.getDefaultSharedPreferences(ctx).getString(AiModels.PREF_MODEL, null)

@@ -242,7 +242,11 @@ class DigestFragment : Fragment() {
                         overviewBusy -> getString(R.string.ai_overview_working)
                         overviewText.isNotBlank() && !overviewFailed -> leadText()
                         overviewText.isNotBlank() -> overviewText
-                        !usable -> getString(R.string.ai_overview_no_model)
+                        !usable -> getString(when (ai.notUsable(ctx)) {
+                            com.js8call.example.ai.AiWork.Missing.OFF -> R.string.ai_overview_off
+                            com.js8call.example.ai.AiWork.Missing.ENGINE -> R.string.ai_overview_no_engine
+                            else -> R.string.ai_overview_no_model
+                        })
                         else -> getString(R.string.ai_overview_hint)
                     }
                     movementMethod = android.text.method.LinkMovementMethod.getInstance()

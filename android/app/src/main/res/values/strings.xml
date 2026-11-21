@@ -732,6 +732,8 @@
     <string name="ai_overview_update">Update</string>
     <string name="ai_overview_written">Written at %1$s · check anything important against the messages below</string>
     <string name="ai_overview_no_model">Download a model to use the AI overview.</string>
+    <string name="ai_overview_off">The AI is turned off in Settings.</string>
+    <string name="ai_overview_no_engine">The AI engine did not start on this device. Please send a diagnostics report.</string>
     <string name="ai_overview_failed">No summary this time: %1$s</string>
     <string name="ai_stories">STORIES (%1$d)</string>
     <string name="ai_line_failed_check">original wording: the AI line failed its own check</string>

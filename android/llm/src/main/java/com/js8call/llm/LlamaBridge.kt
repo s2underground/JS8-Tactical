@@ -8,8 +8,12 @@ object LlamaBridge {
 
     /** False on devices without the native library (32-bit ARM, emulators without arm64). */
     val available: Boolean by lazy {
-        runCatching { System.loadLibrary("js8llm") }.isSuccess
+        runCatching { System.loadLibrary("js8llm") }.onFailure { loadError = "${it.javaClass.simpleName}: ${it.message}" }.isSuccess
     }
+
+    /** Why the native library did not load, for diagnostics; null if it loaded (or was never tried). */
+    @Volatile var loadError: String? = null
+        private set
 
     fun interface TokenListener {
         /** A new piece of generated text; return false to stop. */
