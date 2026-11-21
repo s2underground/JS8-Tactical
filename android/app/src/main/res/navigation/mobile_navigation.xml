@@ -55,6 +55,11 @@
         android:label="@string/nav_reports" />
 
     <fragment
+        android:id="@+id/navigation_ai"
+        android:name="com.js8call.example.ai.AiFragment"
+        android:label="@string/ai_title" />
+
+    <fragment
         android:id="@+id/navigation_net"
         android:name="com.js8call.example.ui.net.NetFragment"
         android:label="@string/nav_net" />

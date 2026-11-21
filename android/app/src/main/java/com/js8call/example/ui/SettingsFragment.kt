@@ -250,6 +250,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
         setUpAtak()
         setUpHistory()
         setUpDiagnostics()
+        findPreference<Preference>("open_ai")?.setOnPreferenceClickListener {
+            androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_ai)
+            true
+        }
         findPreference<Preference>("open_library")?.setOnPreferenceClickListener {
             com.js8call.example.ui.library.AppLinks.open(this, "library")
             true

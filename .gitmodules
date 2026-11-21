@@ -1,3 +1,7 @@
 [submodule "core"]
 	path = core
 	url = https://github.com/JS8Call-improved/JS8Core.git
+[submodule "vendor/llama.cpp"]
+	path = vendor/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp
+	shallow = true
