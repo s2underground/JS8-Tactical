@@ -1,47 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- JS8-Tactical launcher icon: antenna mast with signal arcs (adaptive icon foreground, safe zone) -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group
-        android:translateX="54"
-        android:translateY="54">
-        <!-- Simple radio waves icon -->
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.78" android:scaleY="0.78" android:translateY="8">
         <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M-15,0 L-10,0 A10,10 0 0,1 -10,0 Z"/>
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M10,0 L15,0 A10,10 0 0,0 10,0 Z"/>
-        <!-- Center circle -->
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0"/>
-        <!-- Curved lines representing radio waves -->
-        <path
-            android:strokeColor="#FFFFFF"
-            android:strokeWidth="2"
+            android:pathData="M54,34 L44,80 M54,34 L64,80 M47,66 H61 M45.5,73 L62.5,73 M49,56 H59 M47,66 L59,56 M61,66 L49,56"
+            android:strokeColor="#C9D1D9"
+            android:strokeWidth="2.6"
             android:strokeLineCap="round"
-            android:fillColor="#00000000"
-            android:pathData="M-8,-8 Q-12,-4 -12,0 Q-12,4 -8,8"/>
+            android:strokeLineJoin="round" />
         <path
-            android:strokeColor="#FFFFFF"
-            android:strokeWidth="2"
-            android:strokeLineCap="round"
-            android:fillColor="#00000000"
-            android:pathData="M8,-8 Q12,-4 12,0 Q12,4 8,8"/>
+            android:pathData="M50,31 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"
+            android:fillColor="#F2A33A" />
         <path
-            android:strokeColor="#FFFFFF"
-            android:strokeWidth="2"
+            android:pathData="M43,22 A15,15 0 0,0 43,40 M65,22 A15,15 0 0,1 65,40"
+            android:strokeColor="#F2A33A"
+            android:strokeWidth="3.4"
             android:strokeLineCap="round"
-            android:fillColor="#00000000"
-            android:pathData="M-14,-14 Q-20,-7 -20,0 Q-20,7 -14,14"/>
+            android:strokeLineJoin="round" />
         <path
-            android:strokeColor="#FFFFFF"
-            android:strokeWidth="2"
+            android:pathData="M36,15 A25,25 0 0,0 36,47 M72,15 A25,25 0 0,1 72,47"
+            android:strokeColor="#F2A33A"
+            android:strokeWidth="3.4"
+            android:strokeAlpha="0.6"
             android:strokeLineCap="round"
-            android:fillColor="#00000000"
-            android:pathData="M14,-14 Q20,-7 20,0 Q20,7 14,14"/>
+            android:strokeLineJoin="round" />
     </group>
 </vector>

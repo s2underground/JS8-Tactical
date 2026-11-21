@@ -516,7 +516,7 @@ class JS8EngineService : Service() {
         val open = PendingIntent.getActivity(this, 77, Intent(this, MainActivity::class.java)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         nm.notify(NOTIFICATION_ID_NET, NotificationCompat.Builder(this, CHANNEL_ID_MESSAGES)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_stat_js8t)
             .setContentTitle(title).setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(open).setAutoCancel(true).build())
@@ -3413,7 +3413,7 @@ class JS8EngineService : Service() {
         nm.notify(
             NOTIFICATION_ID_RECEIVER_RESTART,
             NotificationCompat.Builder(this, CHANNEL_ID_MESSAGES)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.drawable.ic_stat_js8t)
                 .setContentTitle(getString(R.string.notification_receiver_closed_title))
                 .setContentText(getString(R.string.notification_receiver_closed_text))
                 .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.notification_receiver_closed_text)))
@@ -3451,7 +3451,7 @@ class JS8EngineService : Service() {
         )
         
         val notification = NotificationCompat.Builder(this, CHANNEL_ID_MESSAGES)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_stat_js8t)
             .setContentTitle(getString(R.string.notification_new_message_title, from))
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

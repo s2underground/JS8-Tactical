@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification (status bar) icon: white silhouette of the launcher mark -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="70"
+    android:viewportHeight="70">
+    <group android:translateX="-19" android:translateY="-13">
+        <path
+            android:pathData="M54,34 L44,80 M54,34 L64,80 M47,66 H61 M45.5,73 L62.5,73 M49,56 H59 M47,66 L59,56 M61,66 L49,56"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="4.2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M49,31 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"
+            android:fillColor="#FFFFFF" />
+        <path
+            android:pathData="M43,22 A15,15 0 0,0 43,40 M65,22 A15,15 0 0,1 65,40"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="4.6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M36,15 A25,25 0 0,0 36,47 M72,15 A25,25 0 0,1 72,47"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="4.6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>
