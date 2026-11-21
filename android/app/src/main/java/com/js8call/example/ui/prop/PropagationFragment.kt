@@ -119,6 +119,7 @@ class PropagationFragment : Fragment() {
             ?: prefs.getString(PREF_BAND, null)?.let { runCatching { Band.valueOf(it) }.getOrNull() }
             ?: Band.B40
 
+        com.js8call.example.ui.map.MapHostFragment.addToggle(this, view.findViewById(R.id.prop_controls), com.js8call.example.ui.map.MapHostFragment.PROP)
         val mv: MapView = view.findViewById(R.id.prop_map)
         mapView = mv
         mv.onCreate(savedInstanceState)

@@ -26,9 +26,9 @@
         android:title="@string/nav_map" />
 
     <item
-        android:id="@+id/navigation_propagation"
-        android:icon="@drawable/ic_cell_tower"
-        android:title="@string/nav_propagation" />
+        android:id="@+id/navigation_nets"
+        android:icon="@drawable/ic_schedule"
+        android:title="@string/nav_nets" />
 
     <item
         android:id="@+id/navigation_settings"

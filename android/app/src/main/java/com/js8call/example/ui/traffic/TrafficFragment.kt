@@ -217,6 +217,25 @@ class TrafficFragment : Fragment() {
             renderToggle(screenPill, prefs.getBoolean(KEY_SCREEN_ON, false))
         }
         renderToggles()
+        // Net Switcher: shows the net it has the radio on; tap for the Nets page.
+        val netsPill: TextView = view.findViewById(R.id.toggle_nets)
+        val netStore = com.js8call.example.nets.NetStore.of(requireContext())
+        fun renderNets() {
+            netsPill.visibility = autoPill.visibility
+            val on = netStore.enabled
+            val now = System.currentTimeMillis()
+            val t = if (on) com.js8call.example.nets.NetSchedule.target(netStore.nets(), netStore.home(), now) else null
+            netsPill.text = when {
+                !on -> getString(R.string.traffic_toggle_nets)
+                now < netStore.overrideUntilMs -> getString(R.string.traffic_nets_paused)
+                t?.net != null -> getString(R.string.traffic_nets_on, t.net.name)
+                else -> getString(R.string.traffic_nets_between)
+            }
+            renderToggle(netsPill, on)
+        }
+        renderNets()
+        netStore.changes.observe(viewLifecycleOwner) { renderNets() }
+        netsPill.setOnClickListener { com.js8call.example.ui.library.AppLinks.open(this, "nets") }
         autoPill.setOnClickListener { setAutoReply(!prefs.getBoolean(KEY_AUTOREPLY, false)); renderToggles() }
         screenPill.setOnClickListener { setScreenOn(!prefs.getBoolean(KEY_SCREEN_ON, false)); renderToggles() }
         view.findViewById<View>(R.id.status_more).setOnClickListener { anchor ->
@@ -229,6 +248,7 @@ class TrafficFragment : Fragment() {
             m.add(0, 4, 3, "Raw decodes, clock and audio details")
             m.add(0, 5, 4, "Inbox (stored messages)")
             m.add(0, 7, 5, "Reports (saved and scheduled)")
+            m.add(0, 10, 5, "Nets (Net Switcher schedule)")
             m.add(0, 9, 6, "Library (guides)")
             m.add(0, 8, 7, "Exit JS8-Tactical")
             popup.setOnMenuItemClickListener { item ->
@@ -244,6 +264,7 @@ class TrafficFragment : Fragment() {
                     7 -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_reports)
                     8 -> (activity as? com.js8call.example.MainActivity)?.confirmExit()
                     9 -> com.js8call.example.ui.library.AppLinks.open(this, "library")
+                    10 -> com.js8call.example.ui.library.AppLinks.open(this, "nets")
                 }
                 renderToggles()
                 true

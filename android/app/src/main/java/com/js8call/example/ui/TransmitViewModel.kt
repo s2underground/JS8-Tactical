@@ -102,7 +102,9 @@ class TransmitViewModel internal constructor(application: Application) : Android
         // service reports an error without a TX completion event.
         if (!JS8EngineService.engineRunning) return
         if (_txState.value == TransmitState.TRANSMITTING || activeMessage != null) return
-        val next = txQueue.firstOrNull() ?: return
+        // With the Net Switcher on, a message waits for the net it was queued on.
+        val dial = currentDialHz()
+        val next = txQueue.firstOrNull { it.dialHz == null || dial == null || com.js8call.example.nets.NetSwitcher.sameDial(it.dialHz, dial) } ?: return
         // Keep this entry tied to the eventual TX result even if a higher-priority one is queued meanwhile.
         beginTransmission(next)
         Log.d(TAG, "Sending to service: text='${next.text}' directed=${next.directed}")
@@ -121,6 +123,11 @@ class TransmitViewModel internal constructor(application: Application) : Android
             settleState()
         }
     }
+
+    private fun currentDialHz(): Long? = runCatching {
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(getApplication())
+            .getString("last_frequency", "")?.trim()?.toLongOrNull()?.takeIf { it > 0 }
+    }.getOrNull()
 
     /** A queue entry as the queue sheet shows it. */
     data class QueueItem(val message: TransmitMessage, val sending: Boolean)
@@ -160,6 +167,7 @@ class TransmitViewModel internal constructor(application: Application) : Android
                 priority = priority,
                 messageId = messageId,
                 submode = submode,
+                dialHz = if (runCatching { com.js8call.example.nets.NetStore.of(getApplication()).enabled }.getOrDefault(false)) currentDialHz() else null,
             )
         )
     }

@@ -78,6 +78,19 @@
         android:layout_weight="1" />
 
     <TextView
+        android:id="@+id/toggle_nets"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/bg_pill_off"
+        android:gravity="center"
+        android:paddingHorizontal="10dp"
+        android:text="@string/traffic_toggle_nets"
+        android:textColor="@color/tac_text_dim"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <TextView
         android:id="@+id/toggle_autoreply"
         android:layout_width="wrap_content"
         android:layout_height="32dp"

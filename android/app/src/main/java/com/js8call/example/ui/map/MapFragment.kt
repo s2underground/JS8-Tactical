@@ -90,6 +90,7 @@ class MapFragment : Fragment() {
         // Keep areas viewed online available offline.
         OfflineManager.getInstance(requireContext()).setMaximumAmbientCacheSize(AMBIENT_CACHE_BYTES, null)
 
+        MapHostFragment.addToggle(this, view.findViewById(R.id.map_controls), MapHostFragment.STATIONS)
         val mv: MapView = view.findViewById(R.id.map_view)
         mapView = mv
         mv.onCreate(savedInstanceState)

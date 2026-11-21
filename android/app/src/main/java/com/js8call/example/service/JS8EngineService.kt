@@ -372,6 +372,7 @@ class JS8EngineService : Service() {
         }
         if (key == "last_frequency") {
             updateDialFromPrefs()
+            noteDialChange(currentDialHz)
         }
         if (key == PREF_LOG_MESSAGES) {
             updateMessageLogging()
@@ -383,6 +384,7 @@ class JS8EngineService : Service() {
         override fun run() {
             try { sendDueReports() } catch (e: Exception) { Log.e(TAG, "Scheduled report failed", e) }
             try { if (engineRunning) scanForAi() } catch (e: Exception) { Log.e(TAG, "AI scan failed", e) }
+            try { runNetSwitcher() } catch (e: Exception) { Log.e(TAG, "Net Switcher failed", e) }
             mainHandler.postDelayed(this, REPORT_TICK_MS)
         }
     }
@@ -397,6 +399,109 @@ class JS8EngineService : Service() {
         if (!com.js8call.example.ai.AiModels.enabled(this)) return
         val input = com.js8call.example.ui.traffic.TrafficViewModel.of(applicationContext).digestInput(now - 24 * 3_600_000L, now)
         com.js8call.example.ai.AiWork.summariseBulletins(this, input.messages)
+    }
+
+    // ------------------------------------------------------------------ Net Switcher
+
+    /** Heartbeats and auto-replies wait until then after the switcher changed band (setting). */
+    private var netHoldUntilMs = 0L
+
+    /** Every tick: change net when one is due, unless transmitting (never cut off) or a message is coming in. */
+    private fun runNetSwitcher() {
+        val store = com.js8call.example.nets.NetStore.of(this)
+        if (!store.enabled) { store.waiting = null; return }
+        val now = System.currentTimeMillis()
+        val receiving = runCatching { com.js8call.example.ui.traffic.TrafficViewModel.of(applicationContext).messageInProgress(now) }.getOrDefault(false)
+        when (val d = com.js8call.example.nets.NetSwitcher.decide(store.nets(), store.home(), true, store.appliedKey,
+            store.overrideUntilMs, now, isTransmitActive(), receiving)) {
+            is com.js8call.example.nets.NetSwitcher.Decision.Idle -> store.waiting = null
+            is com.js8call.example.nets.NetSwitcher.Decision.Wait -> {
+                if (store.waiting != d.reason) Log.i(TAG, "Net Switcher: change due, waiting for ${d.reason}")
+                store.waiting = d.reason
+            }
+            is com.js8call.example.nets.NetSwitcher.Decision.Switch -> applyNetTarget(store, d.target, now)
+        }
+    }
+
+    private fun applyNetTarget(store: com.js8call.example.nets.NetStore, t: com.js8call.example.nets.NetSchedule.Target, now: Long) {
+        store.waiting = null
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val name = t.net?.name ?: "between nets"
+        val done = ArrayList<String>()
+        val prevDial = currentDialHz.takeIf { it > 0 } ?: prefs.getString("last_frequency", "")?.toLongOrNull()
+        t.dialHz?.let { hz ->
+            if (!com.js8call.example.nets.NetSwitcher.sameDial(hz, prevDial)) {
+                store.lastSetDialHz = hz
+                currentDialHz = hz
+                prefs.edit().putString("last_frequency", hz.toString()).apply()
+                val mhz = com.js8call.example.nets.NetSchedule.mhz(hz)
+                val canCat = isRigControlConnected() && rigControlMode !in setOf("none", "rts_ptt", "btech_uvpro")
+                if (canCat) {
+                    setFrequency(hz)
+                    broadcastRadioFrequency(hz)
+                    done += "$mhz MHz"
+                } else {
+                    netNotify("Change the radio to $mhz MHz", "Net Switcher: $name (no rig control, so this one is up to you)")
+                    done += "$mhz MHz (asked you to change it: no rig control)"
+                }
+                val bandBefore = com.js8call.example.prop.Band.forDialHz(prevDial)
+                val hold = store.holdAfterBandChangeMin
+                if (hold > 0 && bandBefore != com.js8call.example.prop.Band.forDialHz(hz)) {
+                    netHoldUntilMs = now + hold * 60_000L
+                    done += "automatic sends held $hold min (band change)"
+                }
+            }
+        }
+        t.speed?.let { sm ->
+            if (prefs.getInt(PREF_TX_SUBMODE, SUBMODE_NORMAL) != sm) {
+                prefs.edit().putInt(PREF_TX_SUBMODE, sm).apply()
+                done += "speed ${speedName(sm)}"
+            }
+        }
+        t.heartbeatMin?.let { min ->
+            if (prefs.getString(PREF_HEARTBEAT_INTERVAL, "0") != min.toString()) {
+                prefs.edit().putString(PREF_HEARTBEAT_INTERVAL, min.toString()).apply()
+                done += if (min <= 0) "heartbeat off" else "heartbeat every $min min"
+            }
+        }
+        store.appliedKey = t.key
+        val line = (if (t.net != null) "On ${t.net.name}" else "Between nets") + if (done.isEmpty()) " (nothing to change)" else ": " + done.joinToString(", ")
+        store.log(now, line)
+        Log.i(TAG, "Net Switcher: $line")
+        // Messages queued for this net can go out now.
+        mainHandler.post { runCatching { com.js8call.example.ui.TransmitViewModel.of(applicationContext).processNext() } }
+    }
+
+    /** The dial changed: if not by the switcher, the operator did it, so step back until the next change. */
+    private fun noteDialChange(hz: Long) {
+        val store = com.js8call.example.nets.NetStore.of(this)
+        if (!store.enabled || hz <= 0) return
+        // Messages queued for the net we're now on can go.
+        mainHandler.post { runCatching { com.js8call.example.ui.TransmitViewModel.of(applicationContext).processNext() } }
+        if (com.js8call.example.nets.NetSwitcher.sameDial(hz, store.lastSetDialHz)) return
+        val now = System.currentTimeMillis()
+        val target = com.js8call.example.nets.NetSchedule.target(store.nets(), store.home(), now)
+        if (target.dialHz == null || com.js8call.example.nets.NetSwitcher.sameDial(hz, target.dialHz)) return
+        val until = com.js8call.example.nets.NetSwitcher.overrideUntil(store.nets(), store.home(), now)
+        if (store.overrideUntilMs >= until) return
+        store.overrideUntilMs = until
+        store.lastSetDialHz = hz
+        val at = java.text.SimpleDateFormat("HHmm'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date(until))
+        store.log(now, "Paused: frequency changed by hand to ${com.js8call.example.nets.NetSchedule.mhz(hz)} MHz; back on schedule at $at")
+        Log.i(TAG, "Net Switcher paused by a hand-made frequency change until $at")
+    }
+
+    private fun speedName(sm: Int) = when (sm) { SUBMODE_SLOW -> "Slow"; SUBMODE_FAST -> "Fast"; SUBMODE_TURBO -> "Turbo"; else -> "Normal" }
+
+    private fun netNotify(title: String, text: String) {
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        val open = PendingIntent.getActivity(this, 77, Intent(this, MainActivity::class.java)
+            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        nm.notify(NOTIFICATION_ID_NET, NotificationCompat.Builder(this, CHANNEL_ID_MESSAGES)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title).setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(open).setAutoCancel(true).build())
     }
 
     private fun sendDueReports() {
@@ -681,7 +786,7 @@ class JS8EngineService : Service() {
             QmxCatSession(direct, object : QmxCatSession.Listener {
                 override fun onFrequency(frequencyHz: Long) {
                     currentDialHz = frequencyHz
-                    mainHandler.post { broadcastRadioFrequency(frequencyHz) }
+                    mainHandler.post { broadcastRadioFrequency(frequencyHz); noteDialChange(frequencyHz) }
                 }
 
                 override fun onMessage(message: String) {
@@ -2951,6 +3056,11 @@ class JS8EngineService : Service() {
     private fun heartbeatOffsetHz(submode: Int): Float = TxOffsets.heartbeatFor(this, submode)
 
     private fun sendHeartbeat() {
+        if (System.currentTimeMillis() < netHoldUntilMs) {
+            Log.i(TAG, "Skipping heartbeat: held after the Net Switcher changed band")
+            scheduleHeartbeat(false)
+            return
+        }
         if (System.currentTimeMillis() < holdTxUntilMs) {
             Log.i(TAG, "Skipping heartbeat: radio connection just came back")
             scheduleHeartbeat(false)
@@ -3926,6 +4036,8 @@ class JS8EngineService : Service() {
     }
 
     private fun isAutoreplyEnabled(): Boolean {
+        // Held for a few minutes after the Net Switcher changed band (setting), so an untuned antenna isn't keyed.
+        if (System.currentTimeMillis() < netHoldUntilMs) return false
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         return prefs.getBoolean(PREF_AUTOREPLY_ENABLED, false)
     }
@@ -4734,6 +4846,7 @@ class JS8EngineService : Service() {
         private const val CHANNEL_ID_MESSAGES = "js8call_messages"
         private const val NOTIFICATION_ID = 1
         private const val NOTIFICATION_ID_MESSAGE_BASE = 1000
+        private const val NOTIFICATION_ID_NET = 990
         private const val NOTIFICATION_ID_RECEIVER_RESTART = 990
         /** The user had the receiver on (set by Start, cleared by Stop). */
         const val PREF_RECEIVER_WANTED = "receiver_wanted"

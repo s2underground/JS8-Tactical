@@ -11,8 +11,13 @@
 
     <fragment
         android:id="@+id/navigation_map"
-        android:name="com.js8call.example.ui.map.MapFragment"
+        android:name="com.js8call.example.ui.map.MapHostFragment"
         android:label="@string/nav_map" />
+
+    <fragment
+        android:id="@+id/navigation_nets"
+        android:name="com.js8call.example.ui.nets.NetsFragment"
+        android:label="@string/nav_nets" />
 
     <fragment
         android:id="@+id/navigation_propagation"

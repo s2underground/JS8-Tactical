@@ -1035,6 +1035,10 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Everything the Digest tab needs for the window starting at [sinceMs]. */
+    /** A multi-frame message is still arriving (a frame in the last 30 s and not finished). */
+    fun messageInProgress(now: Long): Boolean =
+        runCatching { engine.live().any { now - it.lastFrameMs < 30_000L } }.getOrDefault(false)
+
     /** Everything kept on this device, for the Digest's exports: all traffic heard (heartbeats too) and sent. */
     fun exportEntries(): List<com.js8call.example.digest.ExportBuilder.Entry> =
         engine.messages().filterNot { isOwnEcho(it) }.map { m ->

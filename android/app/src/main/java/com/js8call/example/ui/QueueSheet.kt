@@ -84,6 +84,9 @@ class QueueSheet : BottomSheetDialogFragment() {
                 text.text = message.text
                 detail.text = when {
                     item.sending -> context.getString(R.string.queue_sending)
+                    message.dialHz != null && !com.js8call.example.nets.NetSwitcher.sameDial(message.dialHz,
+                        androidx.preference.PreferenceManager.getDefaultSharedPreferences(context).getString("last_frequency", "")?.toLongOrNull()) ->
+                        context.getString(R.string.queue_waits_for_dial, com.js8call.example.nets.NetSchedule.mhz(message.dialHz))
                     message.priority > 0 -> context.getString(R.string.queue_auto_reply)
                     message.directed != null -> context.getString(R.string.queue_to, message.directed)
                     else -> context.getString(R.string.queue_broadcast)

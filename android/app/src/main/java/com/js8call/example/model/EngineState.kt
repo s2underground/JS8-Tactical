@@ -75,6 +75,11 @@ data class TransmitMessage(
     val messageId: Long? = null,
     /** JS8 speed for this one send; null = the speed set on Traffic. */
     val submode: Int? = null,
+    /**
+     * Dial frequency this message belongs on (set while the Net Switcher is on): it waits in the
+     * queue until the radio is back there, so it never goes out on another net. null = any.
+     */
+    val dialHz: Long? = null,
 )
 
 /**
