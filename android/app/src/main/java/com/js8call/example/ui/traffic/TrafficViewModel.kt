@@ -137,6 +137,12 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     val ownEcho: LiveData<EchoCheck?> = _ownEcho
     /** Own-callsign frames decoded back, waiting to be matched to what we sent (offset, time). */
     private val echoFrames = mutableListOf<Pair<Float, Long>>()
+    /**
+     * Each transmission's offset and when it was on the air (end = MAX while still going). A long
+     * message is only recorded as sent when its last frame finishes, so its first frames can be
+     * heard back before then; without these spans they were matched to the previous send instead.
+     */
+    private val txSpans = mutableListOf<Pair<Float, LongRange>>()
 
     /** Band/frequency changes clear the waterfall tags right away. */
     private val dialPrefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -237,6 +243,17 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                         val text = intent.getStringExtra(JS8EngineService.EXTRA_TX_SENT_TEXT) ?: return
                         addOutgoing(text, intent.getFloatExtra(JS8EngineService.EXTRA_TX_SENT_FREQ, 0f))
                     }
+                    JS8EngineService.ACTION_TX_STATE -> {
+                        val now = System.currentTimeMillis()
+                        when (intent.getStringExtra(JS8EngineService.EXTRA_TX_STATE)) {
+                            JS8EngineService.TX_STATE_STARTED -> {
+                                closeTxSpan(now)
+                                txSpans += intent.getFloatExtra(JS8EngineService.EXTRA_TX_ON_AIR_HZ, 0f) to (now..Long.MAX_VALUE)
+                                while (txSpans.size > 12) txSpans.removeAt(0)
+                            }
+                            JS8EngineService.TX_STATE_FINISHED, JS8EngineService.TX_STATE_FAILED -> closeTxSpan(now)
+                        }
+                    }
                     JS8EngineService.ACTION_RADIO_FREQUENCY -> {
                         val hz = intent.getLongExtra(JS8EngineService.EXTRA_RADIO_FREQUENCY_HZ, 0L)
                         if (hz > 0) setDialFrequency(hz)
@@ -261,6 +278,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             android.content.IntentFilter().apply {
                 addAction(JS8EngineService.ACTION_DECODE)
                 addAction(JS8EngineService.ACTION_TX_SENT)
+                addAction(JS8EngineService.ACTION_TX_STATE)
                 addAction(JS8EngineService.ACTION_RADIO_FREQUENCY)
                 addAction(JS8EngineService.ACTION_ENGINE_STATE)
             },
@@ -565,20 +583,24 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
      * Match own-callsign frames decoded back to what we sent at about the same time, and
      * report where our signal was actually heard. A mismatch is logged for diagnostics.
      */
+    private fun closeTxSpan(now: Long) {
+        val last = txSpans.lastOrNull() ?: return
+        if (last.second.last == Long.MAX_VALUE) txSpans[txSpans.lastIndex] = last.first to (last.second.first..now)
+    }
+
     private fun checkEchoes(now: Long) {
         if (echoFrames.isEmpty()) return
         val done = mutableListOf<Pair<Float, Long>>()
         echoFrames.forEach { echo ->
             val (heardHz, ms) = echo
-            val sent = outgoing.filter { kotlin.math.abs(it.sentMs - ms) <= 90_000L }
-                .minByOrNull { kotlin.math.abs(it.sentMs - ms) }
+            val sentHz = matchSentHz(heardHz, ms, txSpans, outgoing.map { it.laneHz to it.sentMs })
             when {
-                sent != null -> {
-                    val check = EchoCheck(heardHz, sent.laneHz, ms)
+                sentHz != null -> {
+                    val check = EchoCheck(heardHz, sentHz, ms)
                     _ownEcho.value = check
                     val line = String.format(
                         java.util.Locale.US, "%s sent %.0f Hz, heard back %.0f Hz (%+.0f Hz)%s",
-                        java.time.Instant.ofEpochMilli(ms).toString(), sent.laneHz, heardHz, check.offByHz,
+                        java.time.Instant.ofEpochMilli(ms).toString(), sentHz, heardHz, check.offByHz,
                         if (check.mismatch) " MISMATCH" else "",
                     )
                     historyIo.execute { OwnEchoLog.append(getApplication(), line) }
@@ -1145,6 +1167,18 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         private const val MARKER_MS = 5 * 60_000L
         /** Own echo heard further than this from where we sent it counts as a mismatch. */
         const val ECHO_TOLERANCE_HZ = 15f
+
+        /**
+         * Which send an own frame heard at [heardHz] ([atMs]) came from: any transmission on the air
+         * around then ([spans]: offset and on-air time), or recorded as sent within 90 s ([sent]:
+         * offset and time finished). Of those, the one closest in offset, so a frame is only
+         * reported as heard off-offset when no recent send was near where it was heard.
+         */
+        fun matchSentHz(heardHz: Float, atMs: Long, spans: List<Pair<Float, LongRange>>, sent: List<Pair<Float, Long>>): Float? {
+            val candidates = spans.filter { (_, r) -> atMs >= r.first - 5_000L && (r.last == Long.MAX_VALUE || atMs <= r.last + 90_000L) }.map { it.first } +
+                sent.filter { (_, t) -> kotlin.math.abs(t - atMs) <= 90_000L }.map { it.first }
+            return candidates.minByOrNull { kotlin.math.abs(it - heardHz) }
+        }
         private const val ACCENT = 0xFFF2A33A.toInt()
 
         /** Distinct, legible-on-dark colours; amber is reserved for the accent. */
