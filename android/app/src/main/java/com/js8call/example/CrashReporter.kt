@@ -309,7 +309,12 @@ object CrashReporter {
                 "TX audio: .*active=0|Audio submit|DecodeStarted|DecodeFinished: count=0|Spectrum broadcasts|" +
                 "AutofillManager|SmartClip|ImeFocusController|ImeTracker|InputTransport|" +
                 // Hamlib's step-by-step trace (several lines per CAT command); its warnings and errors stay.
-                " [VD]/HamlibDebug")
+                " [VD]/HamlibDebug|" +
+                // The service repeats every JS8Core TX audio line (kept once, from JS8Core).
+                "D/JS8EngineService.*\\[INFO] TX audio:|unpack_data returned: ''|" +
+                // Android's own drawing and touch chatter.
+                "I/SurfaceView|D/SurfaceView|I/SV\\[|I/GestureDetector|I/AdrenoGLES|I/InsetsSourceConsumer|" +
+                "Access denied finding property|W/qdgralloc|D/HWUI|I/WindowManager|D/ViewRootImpl|I/ViewRootImpl")
             val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "60000"))
             proc.inputStream.bufferedReader().useLines { lines ->
                 lines.filterNot { noise.containsMatchIn(it) }.toList().takeLast(4000).joinToString("\n")
