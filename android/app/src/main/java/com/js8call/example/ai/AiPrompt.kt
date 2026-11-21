@@ -38,7 +38,7 @@ object AiPrompt {
 
     /** Stable key for a bulletin's text (repeats and relays of the same text share one summary). */
     fun key(body: String): String {
-        val norm = "v2:" + body.uppercase().replace(Regex("[^A-Z0-9]"), "")
+        val norm = "v3:" + body.uppercase().replace(Regex("[^A-Z0-9]"), "")
         val md = java.security.MessageDigest.getInstance("SHA-1").digest(norm.toByteArray())
         return md.take(10).joinToString("") { "%02x".format(it) }
     }
@@ -65,21 +65,36 @@ object AiPrompt {
         "You write the lead of a short radio news roll-up for an operator in the field. Plain English, normal sentence case " +
         "(never all capitals), in your own words, no lists, no headings, no formatting. Use only the facts given; never invent anything."
 
-    fun leadUser(needs: List<String>, forYou: List<String>, stories: List<Pair<String, Int>>, activity: String): String = buildString {
-        appendLine("NEEDS AND EMERGENCIES:")
-        if (needs.isEmpty()) appendLine("none") else needs.forEach { appendLine("- ${it.take(200)}") }
-        appendLine("WAITING FOR THE OPERATOR:")
-        if (forYou.isEmpty()) appendLine("none") else forYou.forEach { appendLine("- ${it.take(200)}") }
+    /**
+     * The roll-up's first line, written by the app (always right): what needs action, how much news, how busy.
+     * e.g. "Nothing needs action. 2 news stories, 1 confirmed by more than one station. 35 stations heard, 21 new."
+     */
+    fun situation(needs: Int, waiting: Int, storySources: List<Int>, activity: String?): String = buildString {
+        append(when {
+            needs == 0 && waiting == 0 -> "Nothing needs action."
+            else -> listOfNotNull(
+                if (needs > 0) "$needs need${if (needs == 1) "" else "s"} or emergenc${if (needs == 1) "y" else "ies"} open" else null,
+                if (waiting > 0) "$waiting message${if (waiting == 1) "" else "s"} waiting for you" else null,
+            ).joinToString(", ").replaceFirstChar { it.uppercase() } + ": see below."
+        })
+        val confirmed = storySources.count { it > 1 }
+        append(' ').append(when (storySources.size) {
+            0 -> "No news bulletins heard."
+            1 -> "1 news story, " + if (confirmed == 1) "confirmed by ${storySources[0]} stations." else "a single report."
+            else -> "${storySources.size} news stories" + if (confirmed > 0) ", $confirmed confirmed by more than one station." else ", each a single report."
+        })
+        activity?.takeIf { it.isNotBlank() }?.let { append(' ').append(it.trim().trimEnd('.')).append('.') }
+    }
+
+    /** For two or more stories: the model joins them into the main news in 1-2 sentences, citing [n]. */
+    fun newsUser(stories: List<Pair<String, Int>>): String = buildString {
         appendLine("NEWS STORIES (numbered, with how many stations reported each independently):")
-        if (stories.isEmpty()) appendLine("none")
         stories.take(6).forEachIndexed { i, (text, n) ->
             appendLine("[${i + 1}] ${text.take(300)} (${if (n == 1) "single report" else "$n independent reports"})")
         }
-        appendLine("ACTIVITY: ${activity.take(200)}")
         appendLine()
-        append("Write 2 or 3 sentences: first say what needs action, or that nothing does; then sum up the main news, ")
-        append("saying when a story was confirmed by more than one station and when it is a single report. ")
-        append("Put the story's number in square brackets after each story you mention, like [1].")
+        append("In 1 or 2 sentences of your own, sum up the main news across these stories, most important first. ")
+        append("Say when a story was confirmed by more than one station. Put the story's number in square brackets after it, like [2].")
     }
 
     /**
@@ -112,7 +127,7 @@ object AiPrompt {
 
     /** The lead must not copy the prepared facts' framing; restating a story line is fine. */
     fun isLeadEcho(output: String, input: String): Boolean {
-        val headers = listOf("NEEDS AND EMERGENCIES:", "WAITING FOR THE OPERATOR", "NEWS STORIES", "ACTIVITY:")
+        val headers = listOf("NEEDS AND EMERGENCIES:", "WAITING FOR THE OPERATOR", "NEWS STORIES", "ACTIVITY:", "SINGLE REPORT)", "INDEPENDENT REPORTS)")
         if (headers.any { output.uppercase().contains(it) }) return true
         val factsOnly = input.lines().filterNot { it.startsWith("- ") || Regex("^\\[\\d+]").containsMatchIn(it) }.joinToString("\n")
         return isEcho(output, factsOnly)
@@ -135,6 +150,8 @@ object AiPrompt {
     fun clean(text: String, oneLine: Boolean = false): String {
         var t = text.replace(Regex("[*_`#]+"), "").replace(Regex("(?m)^[ \\t]*[-•][ \\t]*"), "").trim()
         if (oneLine) t = t.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+        // An unfinished citation at the end ("… emergencies. [") is cut off.
+        t = t.replace(Regex("\\s*\\[[^\\]]*$"), "")
         return t.replace(Regex("[ \\t]+"), " ").replace(Regex("\\n{3,}"), "\n\n").trim()
     }
 

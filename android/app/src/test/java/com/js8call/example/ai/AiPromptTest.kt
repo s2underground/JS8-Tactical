@@ -73,9 +73,23 @@ class AiPromptChecksTest {
 
     @Test
     fun leadMayRestateStoriesButNotCopyTheNotes() {
-        val input = AiPrompt.leadUser(emptyList(), emptyList(), listOf("A cable fault off Karachi was confirmed by the regulator and traffic was rerouted." to 1), "No open needs. 12 stations heard.")
-        org.junit.Assert.assertFalse(AiPrompt.isLeadEcho("Nothing needs action. A cable fault off Karachi was confirmed by the regulator and traffic was rerouted, a single report.", input))
-        org.junit.Assert.assertTrue(AiPrompt.isLeadEcho("NEEDS AND EMERGENCIES: none. WAITING FOR THE OPERATOR: none.", input))
+        val input = AiPrompt.newsUser(listOf("A cable fault off Karachi was confirmed by the regulator and traffic was rerouted." to 1, "A VARA modem update restores compatibility." to 2))
+        org.junit.Assert.assertFalse(AiPrompt.isLeadEcho("A cable fault off Karachi was confirmed by the regulator and traffic was rerouted, a single report [1]; two stations confirm a VARA update [2].", input))
+        org.junit.Assert.assertTrue(AiPrompt.isLeadEcho("NEWS STORIES: [1] A cable fault (single report)", input))
+    }
+
+    @Test
+    fun situationLineIsBuiltByTheApp() {
+        org.junit.Assert.assertEquals("Nothing needs action. 1 news story, a single report. 35 stations heard, 21 new.",
+            AiPrompt.situation(0, 0, listOf(1), "35 stations heard, 21 new"))
+        org.junit.Assert.assertEquals("1 need or emergency open, 2 messages waiting for you: see below. 3 news stories, 1 confirmed by more than one station.",
+            AiPrompt.situation(1, 2, listOf(1, 3, 1), null))
+        org.junit.Assert.assertEquals("Nothing needs action. No news bulletins heard.", AiPrompt.situation(0, 0, emptyList(), ""))
+    }
+
+    @Test
+    fun danglingCitationCut() {
+        org.junit.Assert.assertEquals("No open needs or emergencies.", AiPrompt.clean("No open needs or emergencies. ["))
     }
 
     @Test

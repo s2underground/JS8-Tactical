@@ -51,7 +51,10 @@ object AiWork {
     }
 
     /** The one-line summary, or null (none yet, or the model only copied the bulletin). */
-    fun summary(ctx: Context, body: String): String? = cache(ctx)[keyOf(body)]?.takeIf { it != FAILED }
+    fun summary(ctx: Context, body: String): String? =
+        cache(ctx)[keyOf(body)]?.takeIf { it != FAILED }
+            ?.let { AiPrompt.firstSentences(it) }
+            ?.takeIf { AiPrompt.unverifiedNumbers(it, body).isEmpty() }
 
     /** Same text from different senders (relays) shares one summary. */
     private fun keyOf(body: String) = AiPrompt.key(AiPrompt.bulletinBody(body))
@@ -100,7 +103,7 @@ object AiWork {
                 val s = acquire(app) ?: run { main.post { onDone(null, "The model could not be loaded.") }; return@execute }
                 setBusy(true)
                 val sb = StringBuilder()
-                val raw = s.generate(AiPrompt.LEAD_SYSTEM, userText, 160, 0f) { piece ->
+                val raw = s.generate(AiPrompt.LEAD_SYSTEM, userText, 120, 0f) { piece ->
                     sb.append(piece)
                     val so = AiPrompt.clean(sb.toString())
                     main.post { onText(so) }
