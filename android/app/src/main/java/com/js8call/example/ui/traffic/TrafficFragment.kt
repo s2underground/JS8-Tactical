@@ -467,6 +467,8 @@ class TrafficFragment : Fragment() {
         val latest: com.google.android.material.button.MaterialButton = view.findViewById(R.id.thread_latest)
         val threadLm = threadList.layoutManager as LinearLayoutManager
         fun renderLatest() {
+            // The list's diff can finish after this screen is gone (11-21 crash: getString on a detached fragment).
+            if (!isAdded || view == null) return
             latest.isVisible = !followLatest && thread.itemCount > 0
             latest.text = if (newWhileAway > 0) getString(R.string.traffic_latest_new, newWhileAway) else getString(R.string.traffic_latest)
         }
@@ -504,7 +506,7 @@ class TrafficFragment : Fragment() {
                 newWhileAway += items.count { threadKey(it) !in before }
             }
             thread.submitList(items) {
-                if (items.isEmpty()) return@submitList
+                if (items.isEmpty() || view == null) return@submitList
                 if (followLatest) {
                     threadList.scrollToPosition(items.size - 1)
                 } else {
