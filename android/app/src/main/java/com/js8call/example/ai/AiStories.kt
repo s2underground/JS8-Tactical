@@ -42,9 +42,27 @@ object AiStories {
             .filter { it.length >= 4 && it !in stop && !(it.any(Char::isDigit) && it.any(Char::isLetter)) }
             .toSet()
 
+    /** Sent to a group (@GHOSTNET, @ALLCALL) or to no one in particular, not to a single callsign. */
+    fun isBroadcast(m: DigestBuilder.Msg): Boolean = m.recipient.isNullOrBlank() || m.recipient.startsWith("@")
+
+    /**
+     * A shortened story line that ends cleanly: at the last full sentence that fits, or failing
+     * that at a word boundary, never mid-word.
+     */
+    fun preview(text: String, max: Int = 260): String {
+        if (text.length <= max) return text
+        val cut = text.take(max)
+        val sentenceEnd = Regex("""[.!?](?=\s)""").findAll(cut).lastOrNull()?.range?.last
+        if (sentenceEnd != null && sentenceEnd >= max / 3) return cut.take(sentenceEnd + 1) + " …"
+        val space = cut.lastIndexOf(' ')
+        return (if (space >= max / 3) cut.take(space) else cut).trimEnd(',', ';', ':', ' ') + "…"
+    }
+
     fun build(messages: List<DigestBuilder.Msg>): List<Story> {
         data class Group(val key: String, val msgs: List<DigestBuilder.Msg>, val words: Set<String>)
-        val bulletins = messages.filter { DigestBuilder.isBulletin(it) }.sortedBy { it.timeMs }
+        // Broadcasts only: a reply addressed to one station is conversation, not news. It still
+        // shows under Bulletins and long messages.
+        val bulletins = messages.filter { DigestBuilder.isBulletin(it) && isBroadcast(it) }.sortedBy { it.timeMs }
         // 1. Same text (after framing is removed) = one source, the first sender; the rest relayed it.
         val groups = bulletins.groupBy { AiPrompt.key(AiPrompt.bulletinBody(it.body)) }
             .map { (k, ms) -> Group(k, ms, keywords(AiPrompt.bulletinBody(ms.last().body))) }

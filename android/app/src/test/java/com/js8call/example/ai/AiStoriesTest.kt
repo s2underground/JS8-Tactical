@@ -36,6 +36,24 @@ class AiStoriesTest {
     }
 
     @Test
+    fun repliesToOneStationAreNotStories() {
+        val reply = DigestBuilder.Msg(id++, "W9ZOM", "K9DGY",
+            "AWESOME UPDATE. DO U THINK THIS LONG TERM ORCHESTRATED ATTACK IS SUPPOSED TO RESULT IN BIG GRID DOWN EVENT?", 2000, true, 0, null)
+        val stories = AiStories.build(listOf(msg("K9DGY", cableA, 1000), reply))
+        assertEquals(listOf("K9DGY"), stories.map { it.independent.single() })
+        assertTrue(DigestBuilder.isBulletin(reply))   // still listed under Bulletins and long messages
+    }
+
+    @Test
+    fun previewEndsAtASentenceOrWord() {
+        val text = "AI infrastructure risk [FM18] GAO found all 4 major AI platforms produced feasible attack plans in under 12 HRS after safeguard bypasses. Two generated US substation targeting plans: one drone-based, one firearms-based."
+        assertEquals(text.substringBefore(" Two") + " …", AiStories.preview(text, 160))
+        val noStop = "ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE TEN ELEVEN TWELVE"
+        assertEquals("ONE TWO THREE FOUR FIVE…", AiStories.preview(noStop, 27))
+        assertEquals("short", AiStories.preview("short", 27))
+    }
+
+    @Test
     fun sentenceCaseKeepsCallsignsAndAcronyms() {
         assertEquals("VARA HF modem update released. Contact K4ABC or the EOC.",
             AiStories.sentenceCase("VARA HF MODEM UPDATE RELEASED. CONTACT K4ABC OR THE EOC."))

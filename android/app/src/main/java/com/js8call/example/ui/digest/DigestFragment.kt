@@ -302,7 +302,7 @@ class DigestFragment : Fragment() {
                     setBackgroundResource(tv.resourceId)
                     setOnClickListener { showSources(st) }
                     addView(TextView(ctx).apply {
-                        text = line?.let { marked(it, flagged) } ?: (com.js8call.example.ai.AiStories.sentenceCase(st.body).let { if (it.length > 220) it.take(220) + "…" else it })
+                        text = line?.let { marked(it, flagged) } ?: com.js8call.example.ai.AiStories.preview(com.js8call.example.ai.AiStories.sentenceCase(st.body))
                         setTextColor(color(R.color.tac_text))
                         textSize = 15f
                     })
