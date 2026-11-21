@@ -408,7 +408,7 @@ class JS8EngineService : Service() {
         val tx = com.js8call.example.ui.TransmitViewModel.of(this)
         due.send.forEach { d ->
             Log.i(TAG, "Scheduled report '${d.displayTitle()}' queued")
-            if (d.to.isBlank()) tx.queueManualMessage(d.onAir) else tx.queueThreadMessage(d.to.uppercase(), d.onAir)
+            if (d.to.isBlank()) tx.queueManualMessage(d.onAir, d.speed) else tx.queueThreadMessage(d.to.uppercase(), d.onAir, d.speed)
         }
         due.missed.forEach { Log.w(TAG, "Scheduled report '${it.displayTitle()}' missed (receiver was off)") }
     }

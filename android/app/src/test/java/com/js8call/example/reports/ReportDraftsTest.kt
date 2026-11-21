@@ -78,3 +78,16 @@ class ReportDraftsTest {
         assertTrue(due.send.isEmpty())
     }
 }
+
+class ReportDraftsSpeedTest {
+    @org.junit.Test fun speedRoundTripsAndOldFilesStillLoad() {
+        val d = ReportDrafts.Draft(id = "a", body = "TEST", speed = 4)
+        org.junit.Assert.assertEquals(4, ReportDrafts.decode(ReportDrafts.encode(listOf(d))).single().speed)
+        val none = ReportDrafts.Draft(id = "b", body = "TEST")
+        org.junit.Assert.assertNull(ReportDrafts.decode(ReportDrafts.encode(listOf(none))).single().speed)
+        // A file saved before speeds existed (13 fields) loads with no speed.
+        val old = ReportDrafts.encode(listOf(none)).substringBeforeLast('\t')
+        org.junit.Assert.assertEquals("b", ReportDrafts.decode(old).single().id)
+        org.junit.Assert.assertNull(ReportDrafts.decode(old).single().speed)
+    }
+}

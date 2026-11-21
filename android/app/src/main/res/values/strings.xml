@@ -556,6 +556,10 @@
     <string name="reports_send_now">Send now</string>
     <string name="reports_send_to">To %1$s</string>
     <string name="reports_send_waits">The receiver is off: this waits in the send queue until you start it.</string>
+    <string name="reports_speed_label">SPEED</string>
+    <string name="reports_speed_traffic">Traffic setting (%1$s)</string>
+    <string name="reports_speed_note">%1$d s frames. Copied down to about %2$d dB; faster speeds need a stronger signal, and the other station must be decoding this speed.</string>
+    <string name="reports_queued_at">Report queued to %1$s at %2$s</string>
     <string name="reports_queued">Report queued to %1$s</string>
     <string name="reports_nothing_to_send">Nothing to send yet</string>
     <string name="reports_waiting_receiver"> · due, waiting for the receiver</string>

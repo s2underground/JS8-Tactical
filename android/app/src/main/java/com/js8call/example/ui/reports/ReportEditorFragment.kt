@@ -47,6 +47,7 @@ class ReportEditorFragment : Fragment() {
     private lateinit var content: LinearLayout
     private lateinit var preview: TextView
     private lateinit var airtime: TextView
+    private lateinit var speedBox: LinearLayout
     private lateinit var scheduleBox: LinearLayout
     private lateinit var lastSent: TextView
     private lateinit var toInput: EditText
@@ -122,6 +123,12 @@ class ReportEditorFragment : Fragment() {
         air.addView(airtime)
         col.addView(air)
 
+        // Speed for this report (and its automatic sends)
+        col.addView(label(getString(R.string.reports_speed_label)))
+        speedBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(speedBox)
+        renderSpeed()
+
         // Auto-send
         col.addView(label(getString(R.string.reports_auto)))
         scheduleBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
@@ -135,7 +142,7 @@ class ReportEditorFragment : Fragment() {
             text = getString(R.string.reports_send_now)
             setOnClickListener {
                 save()
-                ReportUi.confirmSend(this@ReportEditorFragment, draft) { store.get(draft.id)?.let { draft = it; renderStatus() } }
+                ReportUi.confirmSend(this@ReportEditorFragment, draft) { store.get(draft.id)?.let { draft = it; renderStatus(); renderSpeed(); renderPreview() } }
             }
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         actions.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
@@ -284,6 +291,23 @@ class ReportEditorFragment : Fragment() {
         ReportUi.airtimeAsync(requireContext(), asked) { air ->
             if (view != null && draft.onAir == asked.onAir && draft.to == asked.to) airtime.text = air?.label() ?: ""
         }
+    }
+
+    private fun renderSpeed() {
+        val ctx = requireContext()
+        speedBox.removeAllViews()
+        speedBox.addView(HorizontalScrollView(ctx).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(ReportUi.speedChips(ctx, draft.speed, allowTraffic = true) { v ->
+                if (v != draft.speed) { draft = draft.copy(speed = v); renderSpeed(); changed() }
+            }.apply { isSingleLine = true })
+        })
+        speedBox.addView(TextView(ctx).apply {
+            text = ReportUi.speedNote(ctx, ReportUi.speedOf(ctx, draft))
+            textSize = 12f
+            setTextColor(color(R.color.tac_text_quiet))
+            setPadding(0, dp(2), 0, 0)
+        })
     }
 
     // ---------------------------------------------------------------- schedule

@@ -29,6 +29,8 @@ object ReportDrafts {
         val lastSentMs: Long? = null,
         /** What happened last: "queued", "auto", "missed". */
         val lastResult: String? = null,
+        /** JS8 speed (submode) to send at; null = whatever speed is set on Traffic at the time. */
+        val speed: Int? = null,
     ) {
         val type: Reports.Type? get() = if (kind == FREE_TEXT) null else Reports.byTag(kind)
 
@@ -89,6 +91,7 @@ object ReportDrafts {
             d.createdMs.toString(), d.updatedMs.toString(),
             d.schedule?.atMs?.toString().orEmpty(), d.schedule?.repeatMin?.toString().orEmpty(),
             d.lastSentMs?.toString().orEmpty(), d.lastResult.orEmpty(),
+            d.speed?.toString().orEmpty(),
         ).joinToString("\t") { esc(it) }
     }
 
@@ -104,6 +107,7 @@ object ReportDrafts {
             createdMs = f[7].toLongOrNull() ?: 0, updatedMs = f[8].toLongOrNull() ?: 0,
             schedule = f[9].toLongOrNull()?.let { Schedule(it, f[10].toIntOrNull() ?: 0) },
             lastSentMs = f[11].toLongOrNull(), lastResult = f[12].ifBlank { null },
+            speed = f.getOrNull(13)?.toIntOrNull(),
         )
     }.toList()
 

@@ -41,7 +41,7 @@ object ReportUi {
         val text = d.onAir
         if (text.isBlank()) return null
         val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
-        val submode = TxOffsets.submode(ctx)
+        val submode = speedOf(ctx, d)
         val sent = if (d.to.isBlank()) text else "${d.to.uppercase()} $text"
         val call = prefs.getString("callsign", "").orEmpty().uppercase()
         val grid = prefs.getString("grid", "").orEmpty().uppercase()
@@ -63,6 +63,48 @@ object ReportUi {
             else -> "Normal"
         }
         return Airtime(frames, frames * frameS, speed)
+    }
+
+    // ---------------------------------------------------------------- speed
+
+    /** JS8 speeds, slowest first: submode, name, frame length (s), rough weakest signal copied (dB). */
+    data class Speed(val submode: Int, val label: Int, val frameS: Int, val weakestDb: Int)
+
+    val SPEEDS = listOf(
+        Speed(JS8EngineService.SUBMODE_SLOW, R.string.tx_speed_slow, 30, -28),
+        Speed(JS8EngineService.SUBMODE_NORMAL, R.string.tx_speed_normal, 15, -24),
+        Speed(JS8EngineService.SUBMODE_FAST, R.string.tx_speed_fast, 10, -20),
+        Speed(JS8EngineService.SUBMODE_TURBO, R.string.tx_speed_turbo, 6, -18),
+    )
+
+    /** The speed [d] goes out at: its own, else the one set on Traffic. */
+    fun speedOf(ctx: Context, d: ReportDrafts.Draft): Int = d.speed ?: TxOffsets.submode(ctx)
+
+    fun speedName(ctx: Context, submode: Int): String =
+        ctx.getString(SPEEDS.firstOrNull { it.submode == submode }?.label ?: R.string.tx_speed_normal)
+
+    /**
+     * Speed picker chips. [selected] null = "use the Traffic speed" (offered when [allowTraffic]).
+     * Faster means less time keyed up but needs a stronger signal at the other end; nothing is blocked.
+     */
+    fun speedChips(ctx: Context, selected: Int?, allowTraffic: Boolean, onPick: (Int?) -> Unit): com.google.android.material.chip.ChipGroup {
+        val group = com.google.android.material.chip.ChipGroup(ctx).apply { isSingleSelection = true; isSelectionRequired = true }
+        fun chip(label: String, value: Int?) = com.google.android.material.chip.Chip(ctx).apply {
+            text = label
+            isCheckable = true
+            isChecked = value == selected
+            id = android.view.View.generateViewId()
+            setOnClickListener { onPick(value) }
+        }
+        if (allowTraffic) group.addView(chip(ctx.getString(R.string.reports_speed_traffic, speedName(ctx, TxOffsets.submode(ctx))), null))
+        SPEEDS.forEach { sp -> group.addView(chip(ctx.getString(sp.label), sp.submode)) }
+        return group
+    }
+
+    /** One line on what the chosen speed means on air. */
+    fun speedNote(ctx: Context, submode: Int): String {
+        val sp = SPEEDS.firstOrNull { it.submode == submode } ?: SPEEDS[1]
+        return ctx.getString(R.string.reports_speed_note, sp.frameS, sp.weakestDb)
     }
 
     /** Airtime if already counted, else null (and nothing is computed). */
@@ -110,7 +152,7 @@ object ReportUi {
         }
     }
 
-    /** Confirm (who, how long), then queue. Two taps from the list; nothing keys up by accident. */
+    /** Confirm (who, how long, at what speed), then queue. Two taps from the list; nothing keys up by accident. */
     fun confirmSend(f: Fragment, draft: ReportDrafts.Draft, onQueued: () -> Unit = {}) {
         val ctx = f.requireContext()
         if (draft.isEmpty) {
@@ -119,24 +161,46 @@ object ReportUi {
         }
         if (!f.readyToSend()) return
         val to = draft.to.ifBlank { ctx.getString(R.string.reports_everyone) }.uppercase()
-        fun msg(air: String?) = buildString {
-            append(ctx.getString(R.string.reports_send_to, to))
-            air?.let { append("\n").append(it) }
-            if (!JS8EngineService.engineRunning) append("\n\n").append(ctx.getString(R.string.reports_send_waits))
+        var pick = speedOf(ctx, draft)
+        val dp = ctx.resources.displayMetrics.density
+        val info = android.widget.TextView(ctx).apply { textSize = 15f }
+        val note = android.widget.TextView(ctx).apply { textSize = 12.5f; alpha = 0.75f; setPadding(0, (4 * dp).toInt(), 0, 0) }
+        fun render() {
+            val d = draft.copy(speed = pick)
+            info.text = buildString {
+                append(ctx.getString(R.string.reports_send_to, to)).append("\n")
+                append(if (isCounted(ctx, d)) cachedAirtime(ctx, d)?.label().orEmpty() else ctx.getString(R.string.reports_counting))
+                if (!JS8EngineService.engineRunning) append("\n\n").append(ctx.getString(R.string.reports_send_waits))
+            }
+            note.text = speedNote(ctx, pick)
+            if (!isCounted(ctx, d)) airtimeAsync(ctx, d) { if (pick == d.speed) render() }
         }
-        val counted = isCounted(ctx, draft)
-        val dialog = MaterialAlertDialogBuilder(ctx)
+        val box = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            val pad = (24 * dp).toInt()
+            setPadding(pad, (8 * dp).toInt(), pad, 0)
+            addView(info)
+            addView(android.widget.TextView(ctx).apply {
+                text = ctx.getString(R.string.reports_speed_label); textSize = 12f; letterSpacing = 0.06f
+                setTypeface(typeface, android.graphics.Typeface.BOLD); setPadding(0, (14 * dp).toInt(), 0, (2 * dp).toInt())
+            })
+            addView(speedChips(ctx, pick, allowTraffic = false) { v -> pick = v ?: pick; render() })
+            addView(note)
+        }
+        render()
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(draft.displayTitle())
-            .setMessage(msg(if (counted) cachedAirtime(ctx, draft)?.label() else ctx.getString(R.string.reports_counting)))
+            .setView(android.widget.ScrollView(ctx).apply { addView(box) })
             .setPositiveButton(R.string.reports_send) { _, _ ->
                 val tx = TransmitViewModel.of(ctx)
-                if (draft.to.isBlank()) tx.queueManualMessage(draft.onAir) else tx.queueThreadMessage(draft.to.uppercase(), draft.onAir)
-                ReportStore.of(ctx).put(draft.copy(lastSentMs = System.currentTimeMillis(), lastResult = "queued"))
-                f.view?.let { Snackbar.make(it, ctx.getString(R.string.reports_queued, to), Snackbar.LENGTH_SHORT).show() }
+                if (draft.to.isBlank()) tx.queueManualMessage(draft.onAir, pick) else tx.queueThreadMessage(draft.to.uppercase(), draft.onAir, pick)
+                // The speed picked here is remembered for this report (and its automatic sends).
+                ReportStore.of(ctx).put((ReportStore.of(ctx).get(draft.id) ?: draft)
+                    .copy(speed = pick, lastSentMs = System.currentTimeMillis(), lastResult = "queued"))
+                f.view?.let { Snackbar.make(it, ctx.getString(R.string.reports_queued_at, to, speedName(ctx, pick)), Snackbar.LENGTH_SHORT).show() }
                 onQueued()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
-        if (!counted) airtimeAsync(ctx, draft) { air -> if (dialog.isShowing) dialog.setMessage(msg(air?.label())) }
     }
 }

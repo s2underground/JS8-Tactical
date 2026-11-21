@@ -72,7 +72,9 @@ data class TransmitMessage(
     val directed: String? = null,
     val priority: Int = 0,
     val timestamp: Long = System.currentTimeMillis(),
-    val messageId: Long? = null
+    val messageId: Long? = null,
+    /** JS8 speed for this one send; null = the speed set on Traffic. */
+    val submode: Int? = null,
 )
 
 /**

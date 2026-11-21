@@ -111,6 +111,7 @@ class TransmitViewModel internal constructor(application: Application) : Android
             action = JS8EngineService.ACTION_TRANSMIT_MESSAGE
             putExtra(JS8EngineService.EXTRA_TX_TEXT, next.text)
             next.directed?.let { putExtra(JS8EngineService.EXTRA_TX_DIRECTED, it) }
+            next.submode?.let { putExtra(JS8EngineService.EXTRA_TX_SUBMODE, it) }
             putExtra(JS8EngineService.EXTRA_TX_FREQ_HZ, com.js8call.example.service.TxOffsets.txOffset(app).toDouble())
         }
         runCatching { app.startService(tx) }.onFailure { e ->
@@ -149,7 +150,7 @@ class TransmitViewModel internal constructor(application: Application) : Android
     /**
      * Queue a message for transmission.
      */
-    fun queueMessage(text: String, directed: String? = null, priority: Int = 0, messageId: Long? = null) {
+    fun queueMessage(text: String, directed: String? = null, priority: Int = 0, messageId: Long? = null, submode: Int? = null) {
         if (text.isBlank()) return
 
         enqueue(
@@ -157,7 +158,8 @@ class TransmitViewModel internal constructor(application: Application) : Android
                 text = text.trim(),
                 directed = directed?.takeIf { it.isNotBlank() },
                 priority = priority,
-                messageId = messageId
+                messageId = messageId,
+                submode = submode,
             )
         )
     }
@@ -170,9 +172,9 @@ class TransmitViewModel internal constructor(application: Application) : Android
     }
 
     /** Queue a typed broadcast, recording direct MSG commands. */
-    fun queueManualMessage(text: String) {
+    fun queueManualMessage(text: String, submode: Int? = null) {
         val upper = text.trim().uppercase(Locale.ROOT)
-        saveAndQueue(upper, null, outgoingSavedMessage(upper, null))
+        saveAndQueue(upper, null, outgoingSavedMessage(upper, null), submode)
     }
 
     /** Queue a JS8 relay: sent to [relay], who passes it on to [target]. Saved in [target]'s thread. */
@@ -182,17 +184,17 @@ class TransmitViewModel internal constructor(application: Application) : Android
     }
 
     /** Queue a send typed in [callsign]'s thread, saving it there first. */
-    fun queueThreadMessage(callsign: String, text: String) {
+    fun queueThreadMessage(callsign: String, text: String, submode: Int? = null) {
         val addressed = threadText(callsign, text)
-        saveAndQueue(addressed, callsign, callsign to threadBubbleText(callsign, addressed))
+        saveAndQueue(addressed, callsign, callsign to threadBubbleText(callsign, addressed), submode)
     }
 
     // One at a time, so a send waiting on its insert is not overtaken
-    private fun saveAndQueue(text: String, directed: String?, saved: Pair<String, String>?) {
+    private fun saveAndQueue(text: String, directed: String?, saved: Pair<String, String>?, submode: Int? = null) {
         viewModelScope.launch {
             sendOrder.withLock {
                 val id = saved?.let { (to, body) -> insertOutgoing(to, body) }
-                queueMessage(text, directed, messageId = id)
+                queueMessage(text, directed, messageId = id, submode = submode)
             }
             processQueue()
         }
