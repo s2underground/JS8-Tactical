@@ -73,9 +73,11 @@ object AiWork {
                     val s = acquire(app) ?: return@execute
                     setBusy(true)
                     val raw = s.generate(AiPrompt.BULLETIN_SYSTEM, AiPrompt.bulletinUser(body), 60, 0f)
-                    val line = AiPrompt.clean(raw, oneLine = true)
-                    // A copy of the bulletin is not a summary: remember the failure so it isn't retried every minute.
-                    store(app, key, if (line.isBlank() || AiPrompt.isEcho(line, body)) FAILED else line)
+                    val line = AiPrompt.firstSentences(AiPrompt.clean(raw, oneLine = true))
+                    val bad = AiPrompt.unverifiedNumbers(line, body)
+                    if (bad.isNotEmpty()) Log.w(TAG, "bulletin summary dropped: numbers not in the bulletin: $bad")
+                    // A copy, or a summary with numbers the bulletin doesn't contain, is not shown; remembered so it isn't retried every minute.
+                    store(app, key, if (line.isBlank() || AiPrompt.isEcho(line, body) || bad.isNotEmpty()) FAILED else line)
                     Log.i(TAG, "bulletin summarised in ${s.stats().let { it.promptMs + it.genMs }} ms")
                 } catch (t: Throwable) {
                     Log.e(TAG, "bulletin summary failed", t)
@@ -103,16 +105,19 @@ object AiWork {
                     val so = AiPrompt.clean(sb.toString())
                     main.post { onText(so) }
                     // Stop early once it is clearly copying its input out.
-                    !(so.split(' ').size >= 30 && AiPrompt.isEcho(so, userText))
+                    !(so.split(' ').size >= 30 && AiPrompt.isLeadEcho(so, userText))
                 }
                 val err = s.error().takeIf { it.isNotBlank() && raw.isBlank() }
                 val st = s.stats()
                 Log.i(TAG, "lead: ${st.promptTokens} tokens in ${st.promptMs} ms, ${st.genTokens} out in ${st.genMs} ms")
                 val text = AiPrompt.clean(raw).ifBlank { null }
-                if (text != null && AiPrompt.isEcho(text, userText)) {
-                    main.post { onDone(null, "the model repeated its input instead of writing a summary" +
-                        if (model(app)?.id == "qwen2.5-0.5b") " (the Small model often does; try Standard)" else "") }
-                } else main.post { onDone(text, err) }
+                val wrongNumbers = text?.let { AiPrompt.unverifiedNumbers(it, userText) }.orEmpty()
+                when {
+                    text != null && AiPrompt.isLeadEcho(text, userText) -> main.post { onDone(null, "the model copied out its notes instead of writing a summary" +
+                        if (model(app)?.id == "qwen2.5-0.5b") " (the Small model often does; try Standard)" else ". Try Update.") }
+                    wrongNumbers.isNotEmpty() -> main.post { onDone(null, "the summary had figures not in the messages (${wrongNumbers.joinToString()}), so it isn't shown. Try Update.") }
+                    else -> main.post { onDone(text, err) }
+                }
             } catch (t: Throwable) {
                 Log.e(TAG, "lead failed", t)
                 main.post { onDone(null, t.message ?: t.javaClass.simpleName) }

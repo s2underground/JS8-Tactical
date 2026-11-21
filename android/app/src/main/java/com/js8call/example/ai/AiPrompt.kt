@@ -70,13 +70,52 @@ object AiPrompt {
         if (needs.isEmpty()) appendLine("none") else needs.forEach { appendLine("- ${it.take(200)}") }
         appendLine("WAITING FOR THE OPERATOR:")
         if (forYou.isEmpty()) appendLine("none") else forYou.forEach { appendLine("- ${it.take(200)}") }
-        appendLine("NEWS STORIES (with how many stations reported each independently):")
+        appendLine("NEWS STORIES (numbered, with how many stations reported each independently):")
         if (stories.isEmpty()) appendLine("none")
-        stories.take(6).forEach { (text, n) -> appendLine("- ${text.take(300)} [${if (n == 1) "single report" else "$n independent reports"}]") }
+        stories.take(6).forEachIndexed { i, (text, n) ->
+            appendLine("[${i + 1}] ${text.take(300)} (${if (n == 1) "single report" else "$n independent reports"})")
+        }
         appendLine("ACTIVITY: ${activity.take(200)}")
         appendLine()
         append("Write 2 or 3 sentences: first say what needs action, or that nothing does; then sum up the main news, ")
-        append("saying when a story was confirmed by more than one station and when it is a single report.")
+        append("saying when a story was confirmed by more than one station and when it is a single report. ")
+        append("Put the story's number in square brackets after each story you mention, like [1].")
+    }
+
+    /**
+     * Quantities in [output] (a number with a unit, or a percentage) that don't appear in [input]:
+     * a small model misreading "11 KM" as "5 km" must not reach the operator.
+     */
+    fun unverifiedNumbers(output: String, input: String): List<String> {
+        val units = linkedMapOf(
+            "KILOMETERS" to "KM", "KILOMETRES" to "KM", "KILOMETER" to "KM", "KILOMETRE" to "KM", "KMS" to "KM", "KM" to "KM",
+            "MILES" to "MI", "MILE" to "MI", "MI" to "MI", "FEET" to "FT", "FOOT" to "FT", "FT" to "FT",
+            "MPH" to "MPH", "KNOTS" to "KT", "KNOT" to "KT", "KTS" to "KT", "KT" to "KT", "GALLONS" to "GAL", "GALLON" to "GAL", "GAL" to "GAL",
+            "PERCENT" to "%", "%" to "%", "HOURS" to "H", "HOUR" to "H", "HRS" to "H", "HR" to "H", "MINUTES" to "MIN", "MINS" to "MIN", "MIN" to "MIN",
+            "DAYS" to "D", "DAY" to "D", "MB" to "MB", "HPA" to "MB", "MHZ" to "MHZ", "KHZ" to "KHZ", "WATTS" to "W", "WATT" to "W",
+            "PEOPLE" to "PEOPLE", "PERSONS" to "PEOPLE", "DB" to "DB",
+        )
+        val alt = units.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }
+        val re = Regex("(\\d+(?:[.,]\\d+)?)\\s*-?\\s*($alt)(?![A-Z])")
+        fun quantities(t: String) = re.findAll(t.uppercase().replace("~", "")).map { m ->
+            m.value to (m.groupValues[1].replace(',', '.') + units.getValue(m.groupValues[2]))
+        }.toList()
+        val known = quantities(input).map { it.second }.toSet()
+        return quantities(output).filter { it.second !in known }.map { it.first.trim() }
+    }
+
+    /** First [n] sentences of [text], at most [max] characters. */
+    fun firstSentences(text: String, n: Int = 2, max: Int = 260): String {
+        val parts = Regex("(?<=[.!?])\\s+").split(text.trim())
+        return parts.take(n).joinToString(" ").let { if (it.length > max) it.take(max).substringBeforeLast(' ') + "…" else it }
+    }
+
+    /** The lead must not copy the prepared facts' framing; restating a story line is fine. */
+    fun isLeadEcho(output: String, input: String): Boolean {
+        val headers = listOf("NEEDS AND EMERGENCIES:", "WAITING FOR THE OPERATOR", "NEWS STORIES", "ACTIVITY:")
+        if (headers.any { output.uppercase().contains(it) }) return true
+        val factsOnly = input.lines().filterNot { it.startsWith("- ") || Regex("^\\[\\d+]").containsMatchIn(it) }.joinToString("\n")
+        return isEcho(output, factsOnly)
     }
 
     /**

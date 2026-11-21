@@ -59,3 +59,27 @@ class AiPromptCleanTest {
         org.junit.Assert.assertTrue(u.contains("BULLETIN SUMMARIES:\n- Cable fault off Karachi.\n\nNow write"))
     }
 }
+
+class AiPromptChecksTest {
+    private val bulletin = "QST SUBSEA // PAKISTAN CABLE FAULT CONFIRMED A FAULT IN THE SEA-ME-WE 5 UNDERSEA CABLE ~11KM OFFSHORE NEAR KARACHI. ~50% OF AFFECTED TRAFFIC REROUTED."
+
+    @Test
+    fun wrongDistanceIsCaughtRightOnesPass() {
+        org.junit.Assert.assertEquals(listOf("5 KM"), AiPrompt.unverifiedNumbers("A cable fault 5 km offshore near Karachi.", bulletin))
+        org.junit.Assert.assertTrue(AiPrompt.unverifiedNumbers("SEA-ME-WE 5 cable fault about 11 km off Karachi; about 50% of traffic rerouted.", bulletin).isEmpty())
+        org.junit.Assert.assertEquals(listOf("80%"), AiPrompt.unverifiedNumbers("80% rerouted", bulletin))
+        org.junit.Assert.assertTrue(AiPrompt.unverifiedNumbers("11 kilometres offshore, half the traffic rerouted", bulletin).isEmpty())
+    }
+
+    @Test
+    fun leadMayRestateStoriesButNotCopyTheNotes() {
+        val input = AiPrompt.leadUser(emptyList(), emptyList(), listOf("A cable fault off Karachi was confirmed by the regulator and traffic was rerouted." to 1), "No open needs. 12 stations heard.")
+        org.junit.Assert.assertFalse(AiPrompt.isLeadEcho("Nothing needs action. A cable fault off Karachi was confirmed by the regulator and traffic was rerouted, a single report.", input))
+        org.junit.Assert.assertTrue(AiPrompt.isLeadEcho("NEEDS AND EMERGENCIES: none. WAITING FOR THE OPERATOR: none.", input))
+    }
+
+    @Test
+    fun firstSentencesCaps() {
+        org.junit.Assert.assertEquals("One. Two.", AiPrompt.firstSentences("One. Two. Three."))
+    }
+}

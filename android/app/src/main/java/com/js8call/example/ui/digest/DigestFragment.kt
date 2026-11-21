@@ -222,17 +222,18 @@ class DigestFragment : Fragment() {
             val lead = TextView(ctx).apply {
                 textSize = 16f
                 setTextColor(color(R.color.tac_text))
-                setTextIsSelectable(true)
                 text = when {
                     overviewBusy -> overviewText.ifBlank { getString(R.string.ai_overview_working) }
+                    overviewText.isNotBlank() && !overviewFailed -> withCitations(overviewText)
                     overviewText.isNotBlank() -> overviewText
                     !usable -> getString(R.string.ai_overview_no_model)
                     else -> getString(R.string.ai_overview_hint)
                 }
-                if (!overviewBusy && overviewText.isBlank()) setTextColor(color(R.color.tac_text_dim))
+                movementMethod = android.text.method.LinkMovementMethod.getInstance()
+                if (!overviewBusy && (overviewText.isBlank() || overviewFailed)) setTextColor(color(R.color.tac_text_dim))
             }
             addView(lead)
-            if (overviewText.isNotBlank() && !overviewBusy) addView(TextView(ctx).apply {
+            if (overviewText.isNotBlank() && !overviewBusy && !overviewFailed) addView(TextView(ctx).apply {
                 text = getString(R.string.ai_overview_written, java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(overviewAtMs)))
                 textSize = 12f
                 setTextColor(color(R.color.tac_text_quiet))
@@ -242,6 +243,10 @@ class DigestFragment : Fragment() {
             if (usable && !overviewBusy) row.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                 text = getString(if (overviewText.isBlank()) R.string.ai_overview_write else R.string.ai_overview_update)
                 setOnClickListener { writeOverview(d) }
+            })
+            if (leadInput.isNotBlank() && !overviewBusy) row.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+                text = getString(R.string.ai_notes)
+                setOnClickListener { showNotes() }
             })
             if (!usable) row.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                 text = getString(R.string.settings_ai_open)
@@ -261,21 +266,113 @@ class DigestFragment : Fragment() {
             val now = System.currentTimeMillis()
             stories.take(8).forEach { st ->
                 val line = ai.summary(ctx, st.rawBody)
-                addView(TextView(ctx).apply {
-                    text = line ?: (com.js8call.example.ai.AiStories.sentenceCase(st.body).let { if (it.length > 220) it.take(220) + "…" else it })
-                    setTextColor(color(R.color.tac_text))
-                    textSize = 15f
-                    setPadding(0, dp(8), 0, 0)
-                })
-                addView(TextView(ctx).apply {
-                    val tag = com.js8call.example.ai.AiStories.sourceLine(st)
-                    text = listOfNotNull(tag, ago(st.lastMs, now), if (line == null && usable) getString(R.string.ai_story_pending) else null).joinToString("  ·  ")
-                    setTextColor(if (st.sources > 1) CONFIRMED else color(R.color.tac_text_quiet))
-                    textSize = 12f
-                    if (st.sources > 1) setTypeface(typeface, Typeface.BOLD)
+                addView(LinearLayout(ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(0, dp(6), 0, dp(4))
+                    val tv = TypedValue()
+                    ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                    setBackgroundResource(tv.resourceId)
+                    setOnClickListener { showSources(st) }
+                    addView(TextView(ctx).apply {
+                        text = line ?: (com.js8call.example.ai.AiStories.sentenceCase(st.body).let { if (it.length > 220) it.take(220) + "…" else it })
+                        setTextColor(color(R.color.tac_text))
+                        textSize = 15f
+                    })
+                    addView(TextView(ctx).apply {
+                        val tag = com.js8call.example.ai.AiStories.sourceLine(st)
+                        text = listOfNotNull(tag, ago(st.lastMs, now), if (line == null && usable) getString(R.string.ai_story_pending) else null,
+                            getString(R.string.ai_sources_link)).joinToString("  ·  ")
+                        setTextColor(if (st.sources > 1) CONFIRMED else color(R.color.tac_text_quiet))
+                        textSize = 12f
+                        if (st.sources > 1) setTypeface(typeface, Typeface.BOLD)
+                    })
                 })
             }
         }
+    }
+
+    /** "[2]" in the AI text becomes a link to story 2's transmissions. */
+    private fun withCitations(text: String): CharSequence {
+        val out = android.text.SpannableStringBuilder(text)
+        Regex("\\[(\\d+)]").findAll(text).forEach { m ->
+            val st = leadStories.getOrNull(m.groupValues[1].toInt() - 1) ?: return@forEach
+            out.setSpan(object : android.text.style.ClickableSpan() {
+                override fun onClick(widget: View) = showSources(st)
+                override fun updateDrawState(ds: android.text.TextPaint) { ds.color = AI_TEXT; ds.isUnderlineText = true }
+            }, m.range.first, m.range.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return out
+    }
+
+    /** The exact transmissions behind a story: who, when, how well heard, the full text. */
+    private fun showSources(st: com.js8call.example.ai.AiStories.Story) {
+        val ctx = requireContext()
+        val fmt = java.text.SimpleDateFormat("dd MMM HH:mm'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(8)) }
+        box.addView(TextView(ctx).apply {
+            text = com.js8call.example.ai.AiStories.sourceLine(st)
+            setTextColor(if (st.sources > 1) CONFIRMED else color(R.color.tac_text_dim))
+            textSize = 13f
+        })
+        st.msgs.forEach { m ->
+            box.addView(TextView(ctx).apply {
+                text = listOfNotNull(
+                    "${m.sender ?: "?"} → ${m.recipient ?: "everyone"}",
+                    fmt.format(java.util.Date(m.timeMs)),
+                    m.snr?.let { "SNR $it dB" },
+                    if (m.complete) "complete" else "${m.missingFrames} frame(s) missing",
+                    if (m.sender?.uppercase() in st.relayedBy) "relayed copy" else "own report",
+                ).joinToString("  ·  ")
+                setTextColor(color(R.color.tac_text_dim))
+                textSize = 12.5f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, dp(14), 0, dp(2))
+            })
+            box.addView(TextView(ctx).apply {
+                text = m.body.trim()
+                setTextColor(color(R.color.tac_text))
+                textSize = 14f
+                typeface = Typeface.MONOSPACE
+                setTextIsSelectable(true)
+            })
+            m.sender?.let { call ->
+                box.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+                    text = getString(R.string.ai_open_in_traffic, call)
+                    setOnClickListener {
+                        sourcesDialog?.dismiss()
+                        traffic.select(call)
+                        val nav = findNavController()
+                        if (!nav.popBackStack(R.id.navigation_traffic, false)) nav.navigate(R.id.navigation_traffic)
+                    }
+                })
+            }
+        }
+        sourcesDialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle(getString(R.string.ai_sources_title, st.msgs.size))
+            .setView(ScrollView(ctx).apply { addView(box) })
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private var sourcesDialog: androidx.appcompat.app.AlertDialog? = null
+
+    /** Exactly what the model was given for the summary. */
+    private fun showNotes() {
+        val ctx = requireContext()
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.ai_notes_title)
+            .setView(ScrollView(ctx).apply {
+                addView(TextView(ctx).apply {
+                    text = leadInput
+                    typeface = Typeface.MONOSPACE
+                    textSize = 12.5f
+                    setTextColor(color(R.color.tac_text))
+                    setTextIsSelectable(true)
+                    setPadding(dp(20), dp(8), dp(20), dp(8))
+                })
+            })
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun ago(ms: Long, now: Long): String {
@@ -287,11 +384,13 @@ class DigestFragment : Fragment() {
         val ctx = requireContext()
         fun section(title: String) = d.sections.firstOrNull { it.title == title }?.lines.orEmpty()
             .filter { it.tone != Tone.GREEN }.map { listOf(it.text, it.detail).filter(String::isNotBlank).joinToString(" · ") }
-        val storyFacts = stories.take(6).map { st ->
+        leadStories = stories.take(6)
+        val storyFacts = leadStories.map { st ->
             (com.js8call.example.ai.AiWork.summary(ctx, st.rawBody) ?: com.js8call.example.ai.AiStories.sentenceCase(st.body).take(300)) to st.sources
         }
         val activity = d.headline + ". " + d.sections.firstOrNull { it.title == "Stations" }?.lines?.firstOrNull()?.text.orEmpty()
         val user = com.js8call.example.ai.AiPrompt.leadUser(section("Needs and emergencies"), section("For you"), storyFacts, activity)
+        leadInput = user
         overviewBusy = true
         overviewText = ""
         last?.let { render(it) }
@@ -299,7 +398,8 @@ class DigestFragment : Fragment() {
             onText = { t -> overviewText = t; if (view != null) last?.let { render(it) } },
             onDone = { t, err ->
                 overviewBusy = false
-                overviewText = t ?: (err?.let { getString(R.string.ai_overview_failed, it) } ?: "")
+                overviewFailed = t == null
+                overviewText = t ?: getString(R.string.ai_overview_failed, err ?: "no text came back")
                 overviewAtMs = System.currentTimeMillis()
                 if (view != null) last?.let { render(it) }
             })
@@ -351,6 +451,10 @@ class DigestFragment : Fragment() {
         // Kept across visits to the tab (the model takes a while to write it).
         private var overviewText = ""
         private var overviewBusy = false
+        private var overviewFailed = false
+        // The stories and the exact notes the last summary was written from (its citations).
+        private var leadStories: List<com.js8call.example.ai.AiStories.Story> = emptyList()
+        private var leadInput = ""
         private var overviewAtMs = 0L
     }
 }

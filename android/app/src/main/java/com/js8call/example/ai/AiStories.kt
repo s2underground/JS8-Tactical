@@ -21,6 +21,8 @@ object AiStories {
         val relayedBy: List<String>,
         val firstMs: Long,
         val lastMs: Long,
+        /** Every transmission behind this story, oldest first: the citations. */
+        val msgs: List<DigestBuilder.Msg> = emptyList(),
     ) {
         val sources get() = independent.size
     }
@@ -56,7 +58,7 @@ object AiStories {
             val originals = c.mapNotNull { g -> g.msgs.first().sender?.uppercase() }.distinct()
             val relayers = c.flatMap { g -> g.msgs.drop(1).mapNotNull { it.sender?.uppercase() } }.distinct().filter { it !in originals }
             val newest = all.last()
-            Story(AiPrompt.bulletinBody(newest.body), newest.body.trim(), originals, relayers, all.first().timeMs, newest.timeMs)
+            Story(AiPrompt.bulletinBody(newest.body), newest.body.trim(), originals, relayers, all.first().timeMs, newest.timeMs, all)
         }.sortedWith(compareByDescending<Story> { it.sources }.thenByDescending { it.lastMs })
     }
 
