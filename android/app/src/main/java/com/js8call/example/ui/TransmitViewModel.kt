@@ -104,7 +104,24 @@ class TransmitViewModel internal constructor(application: Application) : Android
         if (_txState.value == TransmitState.TRANSMITTING || activeMessage != null) return
         // With the Net Switcher on, a message waits for the net it was queued on.
         val dial = currentDialHz()
-        val next = txQueue.firstOrNull { it.dialHz == null || dial == null || com.js8call.example.nets.NetSwitcher.sameDial(it.dialHz, dial) } ?: return
+        // Automatic replies (heartbeat/SNR/ACK) wait while a long message is coming in: keying up
+        // would lose its frames (11-21: an HB reply cut a frame out of a 27-frame report). Stale
+        // ones are dropped. Messages the operator sends go when asked.
+        val now = System.currentTimeMillis()
+        val stale = txQueue.filter { it.priority > 0 && now - it.timestamp > AUTO_STALE_MS && it !== activeMessage }
+        if (stale.isNotEmpty()) {
+            txQueue.removeAll(stale.toSet())
+            stale.forEach { Log.i(TAG, "Dropped stale automatic reply: '${it.text}'") }
+            publishQueue()
+        }
+        val receiving = txQueue.any { it.priority > 0 } && runCatching {
+            com.js8call.example.ui.traffic.TrafficViewModel.of(getApplication()).messageInProgress(now)
+        }.getOrDefault(false)
+        val next = txQueue.firstOrNull {
+            (it.dialHz == null || dial == null || com.js8call.example.nets.NetSwitcher.sameDial(it.dialHz, dial)) && !(receiving && it.priority > 0)
+        }
+        if (receiving) retrySoon()
+        next ?: return
         // Keep this entry tied to the eventual TX result even if a higher-priority one is queued meanwhile.
         beginTransmission(next)
         Log.d(TAG, "Sending to service: text='${next.text}' directed=${next.directed}")
@@ -122,6 +139,14 @@ class TransmitViewModel internal constructor(application: Application) : Android
             activeMessage = null
             settleState()
         }
+    }
+
+    private val retryHandler by lazy { runCatching { android.os.Handler(android.os.Looper.getMainLooper()) }.getOrNull() }
+    private val retry = Runnable { processNext() }
+
+    /** Look at the queue again shortly (an automatic reply is waiting for a message to finish). */
+    private fun retrySoon() {
+        retryHandler?.let { h -> h.removeCallbacks(retry); h.postDelayed(retry, 5_000L) }
     }
 
     private fun currentDialHz(): Long? = runCatching {
@@ -346,6 +371,8 @@ class TransmitViewModel internal constructor(application: Application) : Android
 
     companion object {
         private const val TAG = "TransmitViewModel"
+        /** An automatic reply still waiting after this long is no use; drop it. */
+        private const val AUTO_STALE_MS = 10 * 60_000L
 
         @Volatile private var instance: TransmitViewModel? = null
 

@@ -183,7 +183,8 @@ object DigestBuilder {
             .sortedByDescending { it.timeMs }.take(5).map { m ->
                 val body = m.body.trim().replace(Regex("\\s+"), " ")
                 Line("${m.sender}${m.recipient?.let { " → $it" }.orEmpty()}: ${body.take(140)}${if (body.length > 140) "…" else ""}",
-                    "${body.length} chars · ${ago(m.timeMs, input.nowMs)}", Tone.NEUTRAL, m.sender, full = body)
+                    listOfNotNull("${body.length} chars", incompleteText(m), ago(m.timeMs, input.nowMs)).joinToString(" · "),
+                    if (m.complete) Tone.NEUTRAL else Tone.AMBER, m.sender, full = body)
             }
 
         // ---- Nets and groups: who sent to each group (check-ins included), and how much.
@@ -290,8 +291,26 @@ object DigestBuilder {
     private const val BULLETIN_CHARS = 80
 
     /** Complete, substantial traffic worth reading in full (not a structured report). */
+    /**
+     * A substantial message worth reading in full. A copy with a few frames missing still counts
+     * (marked incomplete, gaps shown as […]): 26 of 27 frames of a report is worth having, and
+     * the gap can be filled with a resend request.
+     */
     fun isBulletin(m: Msg): Boolean =
-        m.complete && m.sender != null && m.body.trim().length >= BULLETIN_CHARS && Reports.parse(m.body) == null
+        m.sender != null && Reports.parse(m.body) == null &&
+            readable(m.body).length >= BULLETIN_CHARS && (m.complete || m.missingFrames <= MAX_MISSING_FOR_BULLETIN)
+
+    /** Body without the gap markers, for length checks. */
+    fun readable(body: String): String = body.replace("[…]", " ").replace(Regex("\\s+"), " ").trim()
+
+    /** A long message held back because more than this many frames are missing. */
+    const val MAX_MISSING_FOR_BULLETIN = 3
+    /** "incomplete: 1 frame missing" for a partial copy, null for a complete one. */
+    fun incompleteText(m: Msg): String? = when {
+        m.complete -> null
+        m.missingFrames > 0 -> "incomplete: ${m.missingFrames} frame${s(m.missingFrames)} missing"
+        else -> "incomplete: end not heard"
+    }
     private const val QUIET_MIN_MS = 60 * 60_000L
     /** Groups that are just beacons or calls to everyone, not nets. */
     private val quietGroups = setOf("@HB", "@ALLCALL", "@CQ")

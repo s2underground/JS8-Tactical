@@ -23,6 +23,8 @@ object AiStories {
         val lastMs: Long,
         /** Every transmission behind this story, oldest first: the citations. */
         val msgs: List<DigestBuilder.Msg> = emptyList(),
+        /** No complete copy was heard (gaps shown as […]); the AI doesn't summarise it. */
+        val partial: Boolean = msgs.isNotEmpty() && msgs.none { it.complete },
     ) {
         val sources get() = independent.size
     }
@@ -57,7 +59,8 @@ object AiStories {
             val all = c.flatMap { it.msgs }.sortedBy { it.timeMs }
             val originals = c.mapNotNull { g -> g.msgs.first().sender?.uppercase() }.distinct()
             val relayers = c.flatMap { g -> g.msgs.drop(1).mapNotNull { it.sender?.uppercase() } }.distinct().filter { it !in originals }
-            val newest = all.last()
+            // The newest complete copy is the story's wording; a partial one only if that's all there is.
+            val newest = all.lastOrNull { it.complete } ?: all.last()
             Story(AiPrompt.bulletinBody(newest.body), newest.body.trim(), originals, relayers, all.first().timeMs, newest.timeMs, all)
         }.sortedWith(compareByDescending<Story> { it.sources }.thenByDescending { it.lastMs })
     }

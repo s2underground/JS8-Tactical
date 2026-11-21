@@ -41,3 +41,24 @@ class AiStoriesTest {
             AiStories.sentenceCase("VARA HF MODEM UPDATE RELEASED. CONTACT K4ABC OR THE EOC."))
     }
 }
+
+class PartialBulletinTest {
+    private fun msg(id: Long, sender: String, body: String, complete: Boolean, missing: Int) =
+        com.js8call.example.digest.DigestBuilder.Msg(id, sender, "@GHOSTNET", body, 1_000L * id, complete, missing, -12)
+
+    private val text = "QST AVIATION // TERROR ALERT FBI/DHS/TSA ISSUED A NOV 19 ADVISORY TO U.S. AIRLINES, AIRPORTS AND CARGO OPERATORS […] AFFILIATES PRAISED SEPTEMBER S THWARTED FLYDUBAI COCKPIT HIJACKING"
+
+    @org.junit.Test fun aFewMissingFramesStillMakeABulletin() {
+        org.junit.Assert.assertTrue(com.js8call.example.digest.DigestBuilder.isBulletin(msg(1, "K9DGY", text, false, 1)))
+        org.junit.Assert.assertFalse(com.js8call.example.digest.DigestBuilder.isBulletin(msg(1, "K9DGY", text, false, 4)))
+        org.junit.Assert.assertEquals("incomplete: 1 frame missing", com.js8call.example.digest.DigestBuilder.incompleteText(msg(1, "K9DGY", text, false, 1)))
+    }
+
+    @org.junit.Test fun storyUsesACompleteCopyWhenThereIsOne() {
+        val partialOnly = AiStories.build(listOf(msg(1, "K9DGY", text, false, 1)))
+        org.junit.Assert.assertTrue(partialOnly.single().partial)
+        val full = text.replace(" […]", " WARNING THAT")
+        val both = AiStories.build(listOf(msg(1, "K9DGY", text, false, 1), msg(2, "N0DDK", full, true, 0)))
+        org.junit.Assert.assertFalse(both.first().partial)
+    }
+}

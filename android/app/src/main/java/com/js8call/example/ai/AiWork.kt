@@ -126,7 +126,8 @@ object AiWork {
     fun summariseBulletins(ctx: Context, messages: List<DigestBuilder.Msg>) {
         if (!usable(ctx)) return
         val app = ctx.applicationContext
-        val todo = messages.filter { DigestBuilder.isBulletin(it) }
+        // Only complete copies: a model summarising across a gap would fill it in.
+        val todo = messages.filter { DigestBuilder.isBulletin(it) && it.complete }
             .sortedByDescending { it.timeMs }
             .map { it.body.trim() }
             .filter { b -> val k = keyOf(b); k !in cache(app) && synchronized(queued) { queued.add(k) } }

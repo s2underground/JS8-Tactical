@@ -3056,6 +3056,12 @@ class JS8EngineService : Service() {
     private fun heartbeatOffsetHz(submode: Int): Float = TxOffsets.heartbeatFor(this, submode)
 
     private fun sendHeartbeat() {
+        // Don't key up over a long message that's still coming in (we'd lose its frames).
+        if (runCatching { com.js8call.example.ui.traffic.TrafficViewModel.of(applicationContext).messageInProgress(System.currentTimeMillis()) }.getOrDefault(false)) {
+            Log.i(TAG, "Skipping heartbeat: a message is coming in")
+            scheduleHeartbeat(false)
+            return
+        }
         if (System.currentTimeMillis() < netHoldUntilMs) {
             Log.i(TAG, "Skipping heartbeat: held after the Net Switcher changed band")
             scheduleHeartbeat(false)
@@ -3740,6 +3746,14 @@ class JS8EngineService : Service() {
         val result = synchronized(msgLock) {
             val key = findMatchingMsgBufferKey(freq) ?: return@synchronized null
             val buffer = msgBuffers[key] ?: return@synchronized null
+            // A frame slot went by with nothing heard (often our own transmission over it): mark
+            // the gap, so the Inbox doesn't show a message with words missing as if it were whole.
+            val period = buffer.timeoutMs / 4
+            if (period > 0 && now - buffer.lastUpdated > period * 8 / 5) {
+                val missed = ((now - buffer.lastUpdated + period / 2) / period - 1).coerceAtLeast(1)
+                buffer.parts.add(" [… $missed frame${if (missed == 1L) "" else "s"} missing …] ")
+                Log.i(TAG, "maybeHandleIncomingMessage: gap of $missed frame(s) in MSG from ${buffer.from}")
+            }
             buffer.parts.add(text)
             buffer.lastUpdated = now
             Log.d(TAG, "maybeHandleIncomingMessage: added data frame to buffer, parts=${buffer.parts.size} isLastFrame=${isLastFrame(type)}")

@@ -233,7 +233,7 @@ class DigestFragment : Fragment() {
                 setTextColor(color(R.color.tac_text))
             })
             // With two or more stories the model sums up the main news; one story speaks for itself.
-            if (stories.size >= 2 || overviewBusy || overviewText.isNotBlank()) {
+            if (stories.count { !it.partial } >= 2 || overviewBusy || overviewText.isNotBlank()) {
                 addView(TextView(ctx).apply {
                     textSize = 16f
                     setPadding(0, dp(6), 0, 0)
@@ -262,7 +262,7 @@ class DigestFragment : Fragment() {
                     setPadding(0, dp(4), 0, 0)
                 })
                 val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(6), 0, dp(4)) }
-                if (usable && !overviewBusy && stories.size >= 2) row.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                if (usable && !overviewBusy && stories.count { !it.partial } >= 2) row.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                     text = getString(if (overviewText.isBlank()) R.string.ai_overview_write else R.string.ai_overview_update)
                     setOnClickListener { writeOverview(d) }
                 })
@@ -288,7 +288,7 @@ class DigestFragment : Fragment() {
             })
             val now = System.currentTimeMillis()
             stories.take(8).forEach { st ->
-                val aiLine = ai.summary(ctx, st.rawBody)
+                val aiLine = if (st.partial) null else ai.summary(ctx, st.rawBody)
                 val check = if (aiLine != null) ai.lineCheck(ctx, st.rawBody) else null
                 if (check == com.js8call.example.ai.AiWork.Check.PENDING) ai.check(ctx, listOf(com.js8call.example.ai.AiPrompt.bulletinBody(st.rawBody) to aiLine!!))
                 // A line the model's own check rejects is replaced by the message's own wording.
@@ -309,7 +309,9 @@ class DigestFragment : Fragment() {
                     addView(TextView(ctx).apply {
                         val tag = com.js8call.example.ai.AiStories.sourceLine(st)
                         text = listOfNotNull(tag, ago(st.lastMs, now),
+                            st.msgs.lastOrNull()?.takeIf { st.partial }?.let { com.js8call.example.digest.DigestBuilder.incompleteText(it) },
                             when {
+                                st.partial -> null
                                 check == com.js8call.example.ai.AiWork.Check.FAILED -> getString(R.string.ai_line_failed_check)
                                 line == null && usable -> getString(R.string.ai_story_pending)
                                 flagged.isNotEmpty() -> getString(R.string.ai_line_unsupported)
@@ -476,7 +478,8 @@ class DigestFragment : Fragment() {
 
     private fun writeOverview(d: DigestBuilder.Digest) {
         val ctx = requireContext()
-        leadStories = stories.take(6)
+        // Partial copies stay out of the AI's input: it would fill the gaps in.
+        leadStories = stories.filterNot { it.partial }.take(6)
         val storyFacts = leadStories.map { st ->
             (com.js8call.example.ai.AiWork.summary(ctx, st.rawBody) ?: com.js8call.example.ai.AiStories.sentenceCase(st.body).take(300)) to st.sources
         }
