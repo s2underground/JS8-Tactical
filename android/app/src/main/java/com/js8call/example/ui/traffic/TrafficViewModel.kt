@@ -196,8 +196,18 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     val pendingCompose: LiveData<String?> = _pendingCompose
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Saved history is being replayed, a slice at a time between screen frames. Meanwhile live
+     * frames and sends wait in [pendingLive] (applied in order right after), and the ticker doesn't
+     * close transmissions whose later frames are still to be replayed.
+     */
+    private var historyPending = false
+    private val pendingLive = ArrayList<() -> Unit>()
+
     private val ticker = object : Runnable {
         override fun run() {
+            if (historyPending) { handler.postDelayed(this, TICK_MS); return }
             val now = System.currentTimeMillis()
             safeEngine { engine.tick(now) }
             if (listening) currentBand()?.let { listeningLog.add(now, it, TICK_MS / 60_000.0) }
@@ -216,7 +226,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             listeningLog.flush()
             // Receiver off: nothing is still arriving, so close half-received transmissions now
             // (otherwise "RX…" stays on a station until the idle timeout).
-            if (wasListening) { safeEngine { engine.tick(System.currentTimeMillis() + 10 * 60_000L) }; requestPublish() }
+            if (wasListening && !historyPending) { safeEngine { engine.tick(System.currentTimeMillis() + 10 * 60_000L) }; requestPublish() }
         }
     }
 
@@ -315,41 +325,64 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val keep = keepMs()
         if (keep <= 0) { historyIo.execute { history.clear() }; _historyLoaded.value = true; return }
         val since = System.currentTimeMillis() - keep
+        historyPending = true
         historyIo.execute {
-            val entries = history.load(since)
+            // Never leave live traffic waiting on a history file that can't be read.
+            val entries = runCatching { history.load(since) }.getOrElse {
+                android.util.Log.w("TrafficViewModel", "history load failed", it); emptyList()
+            }
             handler.post { replay(entries) }
         }
     }
 
     private fun replay(entries: List<TrafficHistory.Entry>) {
         val t0 = android.os.SystemClock.elapsedRealtime()
-        if (entries.isNotEmpty()) {
-            replaying = true
-            try {
-                // Anything live that arrived while the file was being read stays; replayed frames go underneath.
-                val live = engine.messages().isNotEmpty()
-                if (!live) {
-                    entries.forEach { e ->
-                        when (e) {
-                            is TrafficHistory.Entry.Frame -> with(e.frame) { addFrameAt(utc, snr, frequencyHz, text, type, mode, receivedAtMs, e.dialHz) }
-                            is TrafficHistory.Entry.Sent -> addOutgoingAt(e.text, e.frequencyHz, e.timeMs)
+        // Demo traffic already showing: leave it, don't mix the history in.
+        if (entries.isEmpty() || engine.messages().isNotEmpty()) { finishReplay(entries, t0, replayed = false); return }
+        var i = 0
+        var failed = 0
+        val slice = object : Runnable {
+            override fun run() {
+                // About half a screen frame of work per slice, so the app stays responsive at launch.
+                val until = android.os.SystemClock.elapsedRealtime() + REPLAY_SLICE_MS
+                replaying = true
+                try {
+                    while (i < entries.size && android.os.SystemClock.elapsedRealtime() < until) {
+                        val e = entries[i++]
+                        try {
+                            when (e) {
+                                is TrafficHistory.Entry.Frame -> with(e.frame) { addFrameAt(utc, snr, frequencyHz, text, type, mode, receivedAtMs, e.dialHz) }
+                                is TrafficHistory.Entry.Sent -> addOutgoingAt(e.text, e.frequencyHz, e.timeMs)
+                            }
+                        } catch (ex: Exception) {
+                            if (failed++ == 0) android.util.Log.w("TrafficViewModel", "history replay: skipped a bad entry", ex)
                         }
                     }
-                    historyStartMs = entries.first().timeMs
+                } finally {
+                    replaying = false
                 }
-            } catch (e: Exception) {
-                android.util.Log.w("TrafficViewModel", "history replay failed", e)
-            } finally {
-                replaying = false
+                if (i < entries.size) handler.post(this) else finishReplay(entries, t0, replayed = true, failed = failed)
             }
+        }
+        handler.post(slice)
+    }
+
+    private fun finishReplay(entries: List<TrafficHistory.Entry>, t0: Long, replayed: Boolean, failed: Int = 0) {
+        if (replayed) {
+            historyStartMs = entries.first().timeMs
             val now = System.currentTimeMillis()
             safeEngine { engine.tick(now) }
             // Evidence in old messages was logged when they were first heard.
             engine.messages().forEach { reportedIds += it.id }
             viewedBaselineMs = now
-            // Runs on the main thread at startup: logged so diagnostics show if a long history slows launch.
-            android.util.Log.i("TrafficViewModel", "history replay: ${entries.size} entries in ${android.os.SystemClock.elapsedRealtime() - t0} ms")
+            android.util.Log.i("TrafficViewModel", "history replay: ${entries.size} entries in " +
+                "${android.os.SystemClock.elapsedRealtime() - t0} ms (in slices)" + if (failed > 0) ", $failed skipped" else "")
         }
+        historyPending = false
+        // Live traffic that arrived meanwhile, in the order it came.
+        val waiting = pendingLive.toList()
+        pendingLive.clear()
+        waiting.forEach { runCatching(it).onFailure { e -> android.util.Log.w("TrafficViewModel", "live frame after replay failed", e) } }
         _historyLoaded.value = true
         publish()
     }
@@ -456,8 +489,11 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** One decoded frame from the engine service. */
-    fun addFrame(utc: Int, snr: Int, frequency: Float, text: String, type: Int, mode: Int) =
-        addFrameAt(utc, snr, frequency, text, type, mode, System.currentTimeMillis())
+    fun addFrame(utc: Int, snr: Int, frequency: Float, text: String, type: Int, mode: Int) {
+        val now = System.currentTimeMillis()
+        if (historyPending) { pendingLive += { addFrameAt(utc, snr, frequency, text, type, mode, now) }; return }
+        addFrameAt(utc, snr, frequency, text, type, mode, now)
+    }
 
     /**
      * [historyDialHz]: for a frame replayed from history, the dial it was heard on (null if the
@@ -731,6 +767,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     /** Something this station transmitted. */
     fun addOutgoing(text: String, frequency: Float) {
         val now = System.currentTimeMillis()
+        if (historyPending) { pendingLive += { record(TrafficHistory.Entry.Sent(now, frequency, text)); addOutgoingAt(text, frequency, now) }; return }
         record(TrafficHistory.Entry.Sent(now, frequency, text))
         addOutgoingAt(text, frequency, now)
     }
@@ -1189,6 +1226,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         private const val MARKER_MS = 5 * 60_000L
         /** Own echo heard further than this from where we sent it counts as a mismatch. */
         const val ECHO_TOLERANCE_HZ = 15f
+        private const val REPLAY_SLICE_MS = 8L
         private const val PREF_MAP_BANDS_RESET = "map_bands_reset_v2"
 
         /**

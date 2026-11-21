@@ -5,7 +5,7 @@ This directory contains the Android Gradle project for JS8Android.
 ## Prerequisites
 
 - Android Studio or command line tools
-- Android SDK + NDK (26.1.10909125 recommended)
+- Android SDK + NDK (28.2.13676358; needed for 16 KB page support)
 - Java 17
 
 The cleanroom js8core uses vendored header-only Eigen and pocketfft, so the
@@ -17,7 +17,7 @@ Android native build no longer needs FFTW3 or Boost. Eigen is picked up from
 From the repo root:
 
 ```bash
-export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/26.1.10909125
+export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358
 ./android/hamlib/build-hamlib-android.sh
 ```
 

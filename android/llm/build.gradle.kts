@@ -9,7 +9,9 @@ plugins {
 android {
     namespace = "com.js8call.llm"
     compileSdk = 36
-    ndkVersion = "26.1.10909125"
+    // NDK r28 builds 16 KB-page-compatible libraries (and ships a 16 KB libc++_shared). A machine
+    // that only has an older NDK can build with -Pjs8.ndkVersion=<version>.
+    ndkVersion = (findProperty("js8.ndkVersion") as String?) ?: "28.2.13676358"
 
     defaultConfig {
         minSdk = 26
@@ -24,6 +26,7 @@ android {
                     "-DCMAKE_BUILD_TYPE=Release",
                     "-DANDROID_STL=c++_shared",
                     "-DANDROID_PLATFORM=android-26",
+                    "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
                 )
                 targets += listOf("js8llm")
             }

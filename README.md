@@ -1,97 +1,65 @@
-# JS8Android
+# JS8-Tactical
 
-JS8Android is the Android port of JS8Call.
+JS8-Tactical is an Android app for JS8 digital radio messaging, built for field and
+emergency use: weak-signal HF traffic on a phone or tablet, with tools that make a busy
+net easier to follow and use. It is a fork of
+[JS8Android](docs/UPSTREAM-JS8ANDROID-README.md), the Android port of
+[JS8Call](https://github.com/js8call/js8call), and stays on the air compatible with
+standard JS8: everything it sends is ordinary JS8 that any JS8Call station can read.
 
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/punk.kaos)
+**Status: early alpha (1.2-alpha).** Expect rough edges. Please send a diagnostic report
+(Settings → Diagnostics → Share diagnostic report) after any crash, freeze or odd behaviour.
 
-## Beta status
+## What it does
 
-This port is beta.. Currently RX and TX work, as do basic auto-reply responses.
-Network rig control via rigctld works, plus USB rig control via Hamlib. The GUI *will* change. Not
-responsible for this code doing unexpected things, draining all of your batteries, or
-kidnapping your pets. User beware.
+- **Traffic**: all messages rolled up by station, group and #tag, with incomplete messages
+  marked and one-tap resend requests; waterfall with station tags; heartbeats, auto-replies
+  and a relay finder that suggests who can pass a message on.
+- **Digest**: a roll-up of what came in while you were away: needs and emergencies, messages
+  for you, bulletins, nets and groups, who heard you. Export as text (reports only or the full
+  raw log, optionally with every callsign removed).
+- **Reports**: write and save long reports or forms (SITREP, SALUTE, SPOT, check-in, POSREP,
+  weather and more), send at a chosen speed, or schedule them to go out automatically.
+- **Nets**: the Net Switcher moves the radio between the nets you follow on a UTC schedule,
+  with per-net speed and heartbeat settings (needs CAT rig control).
+- **Map**: stations, paths, links between other stations and located reports; a propagation
+  view with predicted coverage and solar data.
+- **Team**: a roster of the stations you work with.
+- **Optional on-device AI** (off by default): plain-English summaries of bulletins with
+  citations back to the raw transmissions. The model is downloaded only if you choose to, runs
+  entirely on the device, and can be deleted at any time.
 
-Please open bug reports when you find things wrong, bug reports help me build this app quicker! 
+Radio control: Hamlib over USB (many radios, e.g. Xiegu G90), rigctld over the network,
+QMX and truSDX over USB serial, RTS/DTR PTT, and the BTECH UV-Pro over Bluetooth.
 
-## Android Port Summary
+## Operating notes
 
-- Extracted a platform-agnostic core engine under `core/` with public headers in
-  `core/include` and protocol/DSP implementations in `core/src`.
-- Added an Android adapter layer in `adapters/android/` plus a JNI bridge in
-  `adapters/android/jni` (native `js8_engine_jni.cpp` with Kotlin/Java wrappers).
-- Introduced a Gradle/NDK build in `android/` with the `js8core-lib` AAR module and
-  `app` example, including FFTW3 build scripting in `android/build-fftw3.sh`.
-- Implemented a foreground decoding service (`JS8EngineService`) and AudioRecord
-  capture via `JS8AudioHelper`, with UI updates delivered through local broadcasts.
-- Built a Material 3 Android UI (Monitor, Decodes, Transmit, Settings) with
-  ViewModel-backed decode buffering for multipart messages.
+- You are responsible for operating within your licence and local rules.
+- Set your radio's transmit time-out timer. If Android stops the app in the middle of a
+  transmission, a radio keyed over CAT stays keyed until its own timer releases it.
+- Only your 4-character grid square goes out over the air.
+- The app keeps receiving in the background when swiped away (Settings → General).
+  Traffic ⋮ → Exit shuts everything down.
 
-See `android/README.md` for build and usage details, and
-`android/ENGINE_INTEGRATION_COMPLETE.md` for the end-to-end architecture notes.
+## Building
 
-## License
+See [android/README.md](android/README.md). In short: Android SDK with NDK 28.2.13676358 and
+CMake 3.22.1, then `cd android && ./gradlew assembleDebug`. The GitHub Actions workflow builds
+every push to `master` and publishes it as the rolling `test-build` release. Pushing a version
+tag (for example `v1.2.0-alpha.1`) builds a signed release APK and publishes it as a GitHub
+release; the signing key is created once with `scripts/make-release-key.sh`.
 
-JS8Call is licensed under the GPLv3. See [LICENSE](LICENSE) for details.
+## Licence and credits
 
-## History - JS8Call
+JS8-Tactical is free software under the GNU General Public License v3 (see [LICENSE](LICENSE)).
 
-JS8Call is an experiment in combining the robustness of FT8 (a weak-signal mode by
-K1JT) with a messaging and network protocol layer for weak signal communication.
-The open source software is designed for connecting amateur radio operators who are
-operating under weak signal conditions and offers real-time keyboard-to-keyboard
-messaging, store-and-forward messaging, and automatic station announcements.
+- JS8Call by Jordan Sherer, KN4CRD, derived from WSJT-X (K1JT and the WSJT development group).
+  JS8Call is not supported or endorsed by the WSJT-X development group.
+- JS8Android by Punk Kaos and contributors.
+- Third-party components: Hamlib (LGPL 2.1), FFTW3 (GPL 2+), Oboe (Apache 2.0), MapLibre
+  Native (BSD 2-clause), llama.cpp (MIT), the SBC codec from HTCommander (Apache 2.0),
+  AndroidX and Material Components (Apache 2.0). Map data © OpenStreetMap contributors (ODbL),
+  served by OpenFreeMap. Optional AI models: Qwen2.5 (Apache 2.0).
 
-* July 6, 2017 - The initial idea of using a modification to the FT8 protocol to
-  support long-form QSOs was developed by Jordan, KN4CRD, and submitted to the WSJT-X
-  mailing list: https://sourceforge.net/p/wsjt/mailman/message/35931540/
-* August 31, 2017 - Jordan, KN4CRD, did a little development and modified WSJT-X to
-  support long-form QSOs using the existing FT8 protocol:
-  https://sourceforge.net/p/wsjt/mailman/message/36020051/ He sent a video example to
-  the WSJT-X group: https://widefido.wistia.com/medias/7bb1uq62ga
-* January 8, 2018 - Jordan, KN4CRD, started working on the design of a long-form QSO
-  application built on top of FT8 with a redesigned interface.
-* February 9, 2018 - Jordan, KN4CRD, submitted question to the WSJT-X group to see if
-  there was any interest in pursuing the idea:
-  https://sourceforge.net/p/wsjt/mailman/message/36221549/
-* February 10, 2018 - Jordan KN4CRD, Julian OH8STN, John N0JDS, and the Portable
-  Digital QRP group did an experiment using FSQ. The idea of JS8Call, combining FT8,
-  long-form QSOs, and FSQCall like features was born.
-* February 11, 2018 - Jordan, KN4CRD, inquired about the idea of integrating
-  long-form messages into WSJT-X:
-  https://sourceforge.net/p/wsjt/mailman/message/36223372/
-* February 12, 2018 - Joe Taylor, K1JT, wrote back:
-  https://sourceforge.net/p/wsjt/mailman/message/36224507/ saying that "Please don't
-  let my comment discourage you from proceeding as you wish, toward something new."
-* March 4, 2018 - Jordan, KN4CRD, published a design document for JS8Call:
-  https://github.com/jsherer/js8call
-* July 6, 2018 - Version 0.0.1 of JS8Call released to the development group
-* July 15, 2018 - Version 0.1 released - a dozen testers
-* July 21, 2018 - Version 0.2 released - 75 testers
-* July 27, 2018 - Version 0.3 released - 150 testers
-* August 12, 2018 - Version 0.4 released - ("leaked" on QRZ) - 500 testers
-* September 2, 2018 - Version 0.5 released - 3000 testers
-* September 14, 2018 - Version 0.6 released - 5000 testers
-* October 8, 2018 - Version 0.7 released - 6000 testers, name changed to JS8 & JS8Call
-* October 31, 2018 - Version 0.8 released - ~7000 testers
-* November 15, 2018 - Version 0.9 released - ~7500 testers
-* November 30, 2018 - Version 0.10 released - ~7800 testers
-* December 18, 2018 - Version 0.11 released - ~8200 testers
-* January 1, 2019 - Version 0.12 released - ~9000 testers
-* January 23, 2019 - Version 0.13 released - ~9250 testers
-* February 7, 2019 - Version 0.14 released - ~9600 testers
-* February 21, 2019 - Version 1.0.0-RC1 released - ~10000 testers
-* March 11, 2019 - Version 1.0.0-RC2 released - >10000 testers
-* March 26, 2019 - Version 1.0.0-RC3 released - >11000 testers
-* April 1, 2019 - Version 1.0.0 general availability - Public Release
-* June 6, 2019 - Version 1.1.0 general availability
-* November 29, 2019 - Version 2.0.0 general availability - Fast and Turbo speeds introduced
-* December 22, 2019 - Version 2.1.0 general availability - Slow speed introduced
-
-## Notice
-
-JS8Call is a derivative of the WSJT-X application, restructured and redesigned for
-message passing using a custom FSK modulation called JS8. It is not supported by nor
-endorsed by the WSJT-X development group. While the WSJT-X group maintains copyright
-over the original work and code, JS8Call is a derivative work licensed under and in
-accordance with the terms of the GPLv3 license. The source code modifications are
-public and can be found in this repository: https://github.com/js8call/js8call .
+The upstream README, with the history of JS8Call, is kept in
+[docs/UPSTREAM-JS8ANDROID-README.md](docs/UPSTREAM-JS8ANDROID-README.md).

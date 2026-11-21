@@ -10,10 +10,14 @@ plugins {
 android {
     namespace = "com.js8call.example"
     compileSdk = 36
-    ndkVersion = "26.1.10909125"
+    // NDK r28 builds 16 KB-page-compatible libraries (and ships a 16 KB libc++_shared). A machine
+    // that only has an older NDK can build with -Pjs8.ndkVersion=<version>.
+    ndkVersion = (findProperty("js8.ndkVersion") as String?) ?: "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.s2underground.js8tactical"
+        // The radio engine is built for ARM only, so the x86 map libraries MapLibre brings are dead weight.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         minSdk = 26
         targetSdk = 34
         versionCode = 5

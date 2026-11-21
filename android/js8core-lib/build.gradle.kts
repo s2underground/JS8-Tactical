@@ -10,7 +10,9 @@ val eigenIncludeDir = rootProject.projectDir.parentFile.resolve("vendor")
 android {
     namespace = "com.js8call.core"
     compileSdk = 36
-    ndkVersion = "26.1.10909125"
+    // NDK r28 builds 16 KB-page-compatible libraries (and ships a 16 KB libc++_shared). A machine
+    // that only has an older NDK can build with -Pjs8.ndkVersion=<version>.
+    ndkVersion = (findProperty("js8.ndkVersion") as String?) ?: "28.2.13676358"
 
     defaultConfig {
         minSdk = 26  // Android 8.0 (required for Oboe)
@@ -32,6 +34,7 @@ android {
                 arguments += listOf(
                     "-DANDROID_STL=c++_shared",
                     "-DANDROID_PLATFORM=android-26",
+                    "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
                     "-DEIGEN3_INCLUDE_DIR=${eigenIncludeDir.absolutePath}"
                 )
             }
@@ -126,7 +129,7 @@ android {
 
 dependencies {
     // Oboe for audio
-    implementation("com.google.oboe:oboe:1.8.0")
+    implementation("com.google.oboe:oboe:1.9.3") // 1.9.3: prebuilt library is 16 KB aligned
 
     // AndroidX core
     implementation("androidx.core:core-ktx:1.12.0")

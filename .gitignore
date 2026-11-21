@@ -23,3 +23,8 @@ Makefile
 
 # Local backup of the pre-cleanroom core
 core.__old_backup__/
+
+# Release signing key: never commit
+js8tactical-release.jks
+js8tactical-release.jks.base64.txt
+*.jks
