@@ -63,7 +63,8 @@ object DigestBuilder {
     enum class Tone { RED, AMBER, GREEN, NEUTRAL }
 
     /** One line of the digest. [call] makes it tappable (opens that station's traffic). */
-    data class Line(val text: String, val detail: String = "", val tone: Tone = Tone.NEUTRAL, val call: String? = null)
+    /** [full]: the whole message, for bulletins (the AI one-line summary is keyed on it). */
+    data class Line(val text: String, val detail: String = "", val tone: Tone = Tone.NEUTRAL, val call: String? = null, val full: String? = null)
 
     data class Section(val title: String, val lines: List<Line>, val tone: Tone = Tone.NEUTRAL, val empty: String = "Nothing")
 
@@ -178,11 +179,11 @@ object DigestBuilder {
 
         // ---- Bulletins and long messages: complete, substantial traffic worth reading in full.
         val bulletinLines = inWindow
-            .filter { it.complete && it.sender != null && it.body.trim().length >= BULLETIN_CHARS && Reports.parse(it.body) == null }
+            .filter { isBulletin(it) }
             .sortedByDescending { it.timeMs }.take(5).map { m ->
                 val body = m.body.trim().replace(Regex("\\s+"), " ")
                 Line("${m.sender}${m.recipient?.let { " → $it" }.orEmpty()}: ${body.take(140)}${if (body.length > 140) "…" else ""}",
-                    "${body.length} chars · ${ago(m.timeMs, input.nowMs)}", Tone.NEUTRAL, m.sender)
+                    "${body.length} chars · ${ago(m.timeMs, input.nowMs)}", Tone.NEUTRAL, m.sender, full = body)
             }
 
         // ---- Nets and groups: who sent to each group (check-ins included), and how much.
@@ -287,6 +288,10 @@ object DigestBuilder {
 
     /** A complete message at least this long counts as a bulletin. */
     private const val BULLETIN_CHARS = 80
+
+    /** Complete, substantial traffic worth reading in full (not a structured report). */
+    fun isBulletin(m: Msg): Boolean =
+        m.complete && m.sender != null && m.body.trim().length >= BULLETIN_CHARS && Reports.parse(m.body) == null
     private const val QUIET_MIN_MS = 60 * 60_000L
     /** Groups that are just beacons or calls to everyone, not nets. */
     private val quietGroups = setOf("@HB", "@ALLCALL", "@CQ")

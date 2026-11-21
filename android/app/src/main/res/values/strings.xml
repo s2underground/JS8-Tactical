@@ -628,4 +628,12 @@
     <string name="ai_need_model">Download a model first.</string>
     <string name="ai_copy">Copy results</string>
     <string name="ai_copied">Speed test results copied</string>
+    <string name="ai_overview_title">AI OVERVIEW</string>
+    <string name="ai_overview_hint">A few sentences on what needs your attention and the general picture, written on this device from the digest below. Takes about half a minute.</string>
+    <string name="ai_overview_working">Writing…</string>
+    <string name="ai_overview_write">Write overview</string>
+    <string name="ai_overview_update">Update</string>
+    <string name="ai_overview_written">Written at %1$s · check anything important against the messages below</string>
+    <string name="ai_overview_no_model">Download a model to use the AI overview.</string>
+    <string name="ai_overview_failed">Could not write the overview: %1$s</string>
 </resources>

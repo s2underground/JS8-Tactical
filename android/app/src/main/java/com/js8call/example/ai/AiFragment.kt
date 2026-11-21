@@ -31,7 +31,6 @@ import com.js8call.example.digest.DigestBuilder
 import com.js8call.example.ui.traffic.TrafficViewModel
 import com.js8call.llm.LlamaBridge
 import java.util.Locale
-import kotlin.concurrent.thread
 
 /**
  * AI summary (experimental): download or delete a model, and time one summary on this device.
@@ -174,7 +173,7 @@ class AiFragment : Fragment() {
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(getString(R.string.ai_delete_title, m.name))
             .setMessage(getString(R.string.ai_delete_text, mb(m.approxBytes)))
-            .setPositiveButton(R.string.ai_delete) { _, _ -> AiModels.delete(requireContext(), m); renderModels() }
+            .setPositiveButton(R.string.ai_delete) { _, _ -> AiWork.release(); AiModels.delete(requireContext(), m); renderModels() }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
@@ -202,7 +201,7 @@ class AiFragment : Fragment() {
         output.text = getString(R.string.ai_loading)
         results.text = ""
         val mem = memoryLine(ctx)
-        thread(name = "ai-speed-test") {
+        AiWork.exclusive {
             val started = System.currentTimeMillis()
             val sb = StringBuilder()
             var report: String

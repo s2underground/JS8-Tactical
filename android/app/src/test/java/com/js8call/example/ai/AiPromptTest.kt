@@ -26,3 +26,27 @@ class AiPromptTest {
         assertFalse(p.contains("left out"))
     }
 }
+
+class AiPromptCleanTest {
+    @Test
+    fun cleanStripsMarkdownAndKeepsFirstLine() {
+        val raw = "**Cable fault** off Karachi; ~50% rerouted.\n\n- extra line"
+        org.junit.Assert.assertEquals("Cable fault off Karachi; ~50% rerouted.", AiPrompt.clean(raw, oneLine = true))
+        org.junit.Assert.assertEquals("A\n\nB", AiPrompt.clean("- **A**\n\n\n\n- B"))
+    }
+
+    @Test
+    fun bulletinFramingRemovedAndKeysIgnorePunctuation() {
+        val body = "@GHOSTNET MSG ,V54,QST SUBSEA // PAKISTAN CABLE FAULT"
+        org.junit.Assert.assertEquals("Bulletin:\nQST SUBSEA // PAKISTAN CABLE FAULT", AiPrompt.bulletinUser(body))
+        org.junit.Assert.assertEquals(AiPrompt.key(body), AiPrompt.key("@ghostnet  msg, v54, qst subsea//pakistan cable fault"))
+        org.junit.Assert.assertNotEquals(AiPrompt.key(body), AiPrompt.key("OTHER TEXT"))
+    }
+
+    @Test
+    fun overviewAppendsBulletinSummaries() {
+        val u = AiPrompt.overviewUser("JS8 DIGEST\nLINE", listOf("Cable fault off Karachi."))
+        org.junit.Assert.assertTrue(u.startsWith("JS8 DIGEST\nLINE"))
+        org.junit.Assert.assertTrue(u.endsWith("BULLETIN SUMMARIES:\n- Cable fault off Karachi."))
+    }
+}

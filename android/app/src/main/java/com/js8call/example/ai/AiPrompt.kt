@@ -17,6 +17,48 @@ object AiPrompt {
 
     data class Msg(val timeMs: Long, val from: String?, val to: String?, val text: String)
 
+    // ---- One bulletin -> one line. Short in, short out: a few seconds each.
+
+    const val BULLETIN_SYSTEM =
+        "You condense amateur radio bulletins. Reply with ONE plain sentence of at most 25 words " +
+        "that keeps the key facts: what happened, where, numbers, and what to do. " +
+        "No preamble, no lists, no formatting, no callsigns unless they matter."
+
+    /** The bulletin text with radio framing (group, MSG, serial numbers) removed. */
+    fun bulletinUser(body: String): String =
+        "Bulletin:\n" + body.trim().replace(Regex("\\s+"), " ")
+            .replace(Regex("^(@\\S+\\s+)?(MSG\\s+)?(,?V\\d+,?)?\\s*"), "")
+            .take(1500)
+
+    /** Stable key for a bulletin's text (repeats and relays of the same text share one summary). */
+    fun key(body: String): String {
+        val norm = body.uppercase().replace(Regex("[^A-Z0-9]"), "")
+        val md = java.security.MessageDigest.getInstance("SHA-1").digest(norm.toByteArray())
+        return md.take(10).joinToString("") { "%02x".format(it) }
+    }
+
+    // ---- Overview of the whole digest, built from the rule-based digest (not the raw log).
+
+    const val OVERVIEW_SYSTEM =
+        "You brief a radio operator in the field. From the digest below, write 2 to 4 short plain sentences: " +
+        "first anything needing action (emergencies, needs, messages waiting for them), then the general picture " +
+        "(main news from bulletins, how busy the band was). Use only the digest; never invent anything. " +
+        "No lists, no headings, no formatting. If nothing needs attention, say so first."
+
+    /** Digest text with each bulletin replaced by its one-line summary when there is one. */
+    fun overviewUser(digestText: String, bulletinSummaries: List<String>, maxChars: Int = 3500): String {
+        val lines = digestText.lines().map { it.take(160) }
+        val b = if (bulletinSummaries.isEmpty()) "" else "\n\nBULLETIN SUMMARIES:\n" + bulletinSummaries.joinToString("\n") { "- $it" }
+        return (lines.joinToString("\n").take(maxChars - b.length.coerceAtMost(maxChars / 2)) + b)
+    }
+
+    /** Model output as plain text: no markdown marks, no leading bullet, single spaces. */
+    fun clean(text: String, oneLine: Boolean = false): String {
+        var t = text.replace(Regex("[*_`#]+"), "").replace(Regex("(?m)^[ \\t]*[-•][ \\t]*"), "").trim()
+        if (oneLine) t = t.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+        return t.replace(Regex("[ \\t]+"), " ").replace(Regex("\\n{3,}"), "\n\n").trim()
+    }
+
     /** The digest's own summary, then the raw messages (newest kept when it is too long). */
     fun user(digestText: String, messages: List<Msg>, maxChars: Int = 6000): String {
         val fmt = SimpleDateFormat("HHmm'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }

@@ -382,8 +382,21 @@ class JS8EngineService : Service() {
     private val reportTicker = object : Runnable {
         override fun run() {
             try { sendDueReports() } catch (e: Exception) { Log.e(TAG, "Scheduled report failed", e) }
+            try { if (engineRunning) scanForAi() } catch (e: Exception) { Log.e(TAG, "AI scan failed", e) }
             mainHandler.postDelayed(this, REPORT_TICK_MS)
         }
+    }
+
+    private var lastAiScanMs = 0L
+
+    /** While the receiver runs, bulletins get their AI one-line summary as they arrive (if AI is on). */
+    private fun scanForAi() {
+        val now = System.currentTimeMillis()
+        if (now - lastAiScanMs < 60_000L) return
+        lastAiScanMs = now
+        if (!com.js8call.example.ai.AiModels.enabled(this)) return
+        val input = com.js8call.example.ui.traffic.TrafficViewModel.of(applicationContext).digestInput(now - 24 * 3_600_000L, now)
+        com.js8call.example.ai.AiWork.summariseBulletins(this, input.messages)
     }
 
     private fun sendDueReports() {
