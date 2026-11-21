@@ -475,6 +475,11 @@
     <string name="nets_save">Save</string>
     <string name="nets_delete">Delete</string>
     <string name="nets_delete_q">Delete %1$s?</string>
+    <string name="nets_delete_cd">Delete %1$s</string>
+    <string name="nets_toggle_cd">%1$s on or off</string>
+    <string name="nets_state_on">ON</string>
+    <string name="nets_state_off">OFF</string>
+    <string name="nets_tap_to_edit">Tap to edit</string>
     <string name="nets_f_name">Name</string>
     <string name="nets_f_freq">Dial frequency (MHz)</string>
     <string name="nets_f_freq_home">Dial frequency (MHz, empty = stay)</string>

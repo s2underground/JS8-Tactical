@@ -87,6 +87,8 @@ class NetsFragment : Fragment() {
             text = getString(R.string.nets_title); textSize = 20f; setTypeface(typeface, Typeface.BOLD); setTextColor(color(R.color.tac_text))
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(TextView(ctx).apply { text = getString(R.string.nets_switcher); textSize = 14f; setTextColor(color(R.color.tac_text_dim)); setPadding(0, 0, dp(8), 0) })
+        val switcherState = onOffLabel(store.enabled)
+        header.addView(switcherState)
         header.addView(MaterialSwitch(ctx).apply {
             isChecked = store.enabled
             setOnCheckedChangeListener { _, on ->
@@ -96,7 +98,9 @@ class NetsFragment : Fragment() {
                     return@setOnCheckedChangeListener
                 }
                 store.enabled = on
+                setOnOff(switcherState, on)
                 store.log(System.currentTimeMillis(), if (on) "Net Switcher on" else "Net Switcher off")
+                render()
             }
         })
         header.addView(MaterialButton(ctx).apply {
@@ -211,11 +215,24 @@ class NetsFragment : Fragment() {
             text = n.name; textSize = 16f; setTypeface(typeface, Typeface.BOLD)
             setTextColor(color(if (n.enabled) R.color.tac_text else R.color.tac_text_quiet))
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val state = onOffLabel(n.enabled)
+        row.addView(state)
         row.addView(MaterialSwitch(ctx).apply {
             isChecked = n.enabled
-            setOnCheckedChangeListener { _, on -> store.put(n.copy(enabled = on)) }
+            contentDescription = getString(R.string.nets_toggle_cd, n.name)
+            setOnCheckedChangeListener { _, on -> store.put(n.copy(enabled = on)); setOnOff(state, on) }
+        })
+        row.addView(android.widget.ImageButton(ctx).apply {
+            setImageResource(R.drawable.ic_delete)
+            imageTintList = android.content.res.ColorStateList.valueOf(color(R.color.tac_text_dim))
+            background = null
+            contentDescription = getString(R.string.nets_delete_cd, n.name)
+            setPadding(dp(10), dp(8), dp(4), dp(8))
+            setOnClickListener { confirmDelete(n) }
         })
         c.addView(row)
+        if (!n.enabled) c.alpha = 0.6f
+        c.addView(tapToEdit())
         val end = (n.startMin + n.lengthMin) % 1440
         c.addView(TextView(ctx).apply {
             text = "${NetSchedule.mhz(n.dialHz)} MHz · ${NetSchedule.daysText(n.days)} · ${NetSchedule.hhmm(n.startMin)}–${NetSchedule.hhmm(end)}Z" +
@@ -246,6 +263,7 @@ class NetsFragment : Fragment() {
             text = home.dialHz?.let { getString(R.string.nets_home_go, NetSchedule.mhz(it)) } ?: getString(R.string.nets_home_stay)
             textSize = 15f; setTextColor(color(R.color.tac_text))
         })
+        c.addView(tapToEdit())
         c.addView(TextView(ctx).apply {
             text = listOf(home.speed?.let { getString(R.string.nets_speed_x, speedName(it)) } ?: getString(R.string.nets_speed_keep),
                 home.heartbeatMin?.let { hbText(it) } ?: getString(R.string.nets_hb_keep)).joinToString(" · ")
@@ -261,6 +279,7 @@ class NetsFragment : Fragment() {
             g.addView(Chip(ctx).apply {
                 text = if (m == 0) getString(R.string.nets_hold_off) else "$m min"
                 isCheckable = true; id = View.generateViewId(); isChecked = store.holdAfterBandChangeMin == m
+                choiceStyle(this)
                 setOnClickListener { store.holdAfterBandChangeMin = m }
             })
         }
@@ -280,13 +299,13 @@ class NetsFragment : Fragment() {
         box.addView(label(getString(R.string.nets_f_days)))
         val dayGroup = ChipGroup(ctx)
         val dayChips = NetSchedule.DAY_BITS.mapIndexed { i, bit ->
-            Chip(ctx).apply { text = NetSchedule.DAY_NAMES[i]; isCheckable = true; isChecked = n.days and bit != 0; id = View.generateViewId() }
+            Chip(ctx).apply { text = NetSchedule.DAY_NAMES[i]; isCheckable = true; isChecked = n.days and bit != 0; id = View.generateViewId(); choiceStyle(this) }
                 .also { dayGroup.addView(it) }
         }
         box.addView(dayGroup)
         box.addView(ChipGroup(ctx).apply {
             listOf(getString(R.string.nets_every_day) to NetSchedule.EVERY_DAY, getString(R.string.nets_weekdays) to 31, getString(R.string.nets_weekends) to 96).forEach { (t, mask) ->
-                addView(Chip(ctx).apply { text = t; setOnClickListener { dayChips.forEachIndexed { i, ch -> ch.isChecked = mask and NetSchedule.DAY_BITS[i] != 0 } } })
+                addView(Chip(ctx).apply { text = t; actionStyle(this); setOnClickListener { dayChips.forEachIndexed { i, ch -> ch.isChecked = mask and NetSchedule.DAY_BITS[i] != 0 } } })
             }
         })
 
@@ -383,7 +402,7 @@ class NetsFragment : Fragment() {
         val ctx = requireContext()
         val g = ChipGroup(ctx).apply { isSingleLine = true }
         RadioControls.bands(ctx).first.forEach { b ->
-            g.addView(Chip(ctx).apply { text = RadioControls.shortLabel(b.label); setOnClickListener { onPick(b.hz) } })
+            g.addView(Chip(ctx).apply { text = RadioControls.shortLabel(b.label); actionStyle(this); setOnClickListener { onPick(b.hz) } })
         }
         return HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(g) }
     }
@@ -394,10 +413,55 @@ class NetsFragment : Fragment() {
         options.forEach { (t, v) ->
             g.addView(Chip(ctx).apply {
                 text = t; isCheckable = true; id = View.generateViewId(); isChecked = v == selected
+                choiceStyle(this)
                 setOnClickListener { onPick(v) }
             })
         }
         return g
+    }
+
+    /**
+     * A chip that is either picked or not: picked is solid amber with dark text and a tick,
+     * not picked is a plain dark outline, so the state reads at a glance in any light.
+     */
+    private fun choiceStyle(chip: Chip) {
+        val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+        fun csl(on: Int, off: Int) = android.content.res.ColorStateList(states, intArrayOf(on, off))
+        chip.chipBackgroundColor = csl(color(R.color.tac_accent), color(R.color.tac_card))
+        chip.chipStrokeColor = csl(color(R.color.tac_accent), color(R.color.tac_border))
+        chip.chipStrokeWidth = dp(1).toFloat()
+        chip.setTextColor(csl(color(R.color.tac_ground), color(R.color.tac_text_dim)))
+        chip.isCheckedIconVisible = true
+        chip.checkedIconTint = android.content.res.ColorStateList.valueOf(color(R.color.tac_ground))
+        chip.rippleColor = android.content.res.ColorStateList.valueOf(color(R.color.tac_accent_tint))
+        fun bold() { chip.setTypeface(null, if (chip.isChecked) Typeface.BOLD else Typeface.NORMAL) }
+        bold()
+        chip.setOnCheckedChangeListener { _, _ -> bold() }
+    }
+
+    /** A shortcut button (fills in a value, has no on/off state): outlined, amber text. */
+    private fun actionStyle(chip: Chip) {
+        chip.isCheckable = false
+        chip.chipBackgroundColor = android.content.res.ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
+        chip.chipStrokeColor = android.content.res.ColorStateList.valueOf(color(R.color.tac_border))
+        chip.chipStrokeWidth = dp(1).toFloat()
+        chip.setTextColor(color(R.color.tac_accent))
+        chip.rippleColor = android.content.res.ColorStateList.valueOf(color(R.color.tac_accent_tint))
+    }
+
+    private fun onOffLabel(on: Boolean) = TextView(requireContext()).apply {
+        textSize = 13f; setTypeface(typeface, Typeface.BOLD); setPadding(dp(8), 0, dp(6), 0)
+        setOnOff(this, on)
+    }
+
+    private fun setOnOff(v: TextView, on: Boolean) {
+        v.text = getString(if (on) R.string.nets_state_on else R.string.nets_state_off)
+        v.setTextColor(color(if (on) R.color.tac_good_text else R.color.tac_text_quiet))
+    }
+
+    private fun tapToEdit() = TextView(requireContext()).apply {
+        text = getString(R.string.nets_tap_to_edit); textSize = 12f
+        setTextColor(color(R.color.tac_accent)); setPadding(0, 0, 0, dp(2))
     }
 
     private fun parseMhz(s: String): Long? =
