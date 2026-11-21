@@ -97,3 +97,25 @@ class AiPromptChecksTest {
         org.junit.Assert.assertEquals("One. Two.", AiPrompt.firstSentences("One. Two. Three."))
     }
 }
+
+class AiPromptTrimTest {
+    @org.junit.Test fun stripsOtherFramingAndJunk() {
+        org.junit.Assert.assertEquals("H5N1 DETECTED IN DAIRY HERDS IN 3 COUNTIES.",
+            AiPrompt.bulletinBody("@ALLCALL MSG ,A57, H5N1 DETECTED IN DAIRY HERDS IN 3 COUNTIES. {^%} Z5B"))
+    }
+
+    @org.junit.Test fun dropsUnfinishedTail() {
+        org.junit.Assert.assertEquals("VARA HF OUTAGE ON 40M. ACKS TURNED OFF.",
+            AiPrompt.bulletinBody("VARA HF OUTAGE ON 40M. ACKS TURNED OFF. AFFECTING MT"))
+        // No punctuation anywhere: left alone.
+        org.junit.Assert.assertEquals("GRID DOWN IN EN52 AFFECTING MT",
+            AiPrompt.bulletinBody("GRID DOWN IN EN52 AFFECTING MT"))
+    }
+
+    @org.junit.Test fun leadCutAtLastSentence() {
+        org.junit.Assert.assertEquals("A cable fault slowed traffic [1]. VARA links are down. [2]",
+            AiPrompt.completeSentences("A cable fault slowed traffic [1]. VARA links are down. [2] Acknowledgments are turned"))
+        org.junit.Assert.assertEquals("All done.", AiPrompt.completeSentences("All done."))
+        org.junit.Assert.assertEquals("Nothing finished here…", AiPrompt.completeSentences("Nothing finished here"))
+    }
+}

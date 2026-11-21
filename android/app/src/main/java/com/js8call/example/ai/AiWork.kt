@@ -76,7 +76,7 @@ object AiWork {
                     val s = acquire(app) ?: return@execute
                     setBusy(true)
                     val raw = s.generate(AiPrompt.BULLETIN_SYSTEM, AiPrompt.bulletinUser(body), 60, 0f)
-                    val line = AiPrompt.firstSentences(AiPrompt.clean(raw, oneLine = true))
+                    val line = AiPrompt.completeSentences(AiPrompt.firstSentences(AiPrompt.clean(raw, oneLine = true)))
                     val bad = AiPrompt.unverifiedNumbers(line, body)
                     if (bad.isNotEmpty()) Log.w(TAG, "bulletin summary dropped: numbers not in the bulletin: $bad")
                     // A copy, or a summary with numbers the bulletin doesn't contain, is not shown; remembered so it isn't retried every minute.
@@ -113,7 +113,7 @@ object AiWork {
                 val err = s.error().takeIf { it.isNotBlank() && raw.isBlank() }
                 val st = s.stats()
                 Log.i(TAG, "lead: ${st.promptTokens} tokens in ${st.promptMs} ms, ${st.genTokens} out in ${st.genMs} ms")
-                val text = AiPrompt.clean(raw).ifBlank { null }
+                val text = AiPrompt.clean(raw).let { AiPrompt.completeSentences(it) }.ifBlank { null }
                 val wrongNumbers = text?.let { AiPrompt.unverifiedNumbers(it, userText) }.orEmpty()
                 when {
                     text != null && AiPrompt.isLeadEcho(text, userText) -> main.post { onDone(null, "the model copied out its notes instead of writing a summary" +

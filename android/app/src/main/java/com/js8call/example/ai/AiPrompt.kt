@@ -25,10 +25,39 @@ object AiPrompt {
 
     /** Radio framing removed: sender prefix, @GROUP, MSG, serial numbers like ,V54, and QST. */
     fun bulletinBody(body: String): String =
-        body.trim().replace(Regex("\\s+"), " ")
-            .replace(Regex("^[A-Z0-9/]+:\\s*"), "")
-            .replace(Regex("^(@\\S+\\s+)?(MSG\\s+)?(,?V\\d+,?)?\\s*(QST\\s+)?"), "")
-            .take(1500)
+        dropUnfinishedTail(
+            body.trim().replace(Regex("\\s+"), " ")
+                .replace(Regex("^[A-Z0-9/]+:\\s*"), "")
+                .replace(Regex("^(@\\S+\\s+)?(MSG\\s+)?(,?[A-Z]\\d+,?)?\\s*(QST\\s+)?"), "")
+                // JS8 end-of-message junk after a garbled last frame ("{^%} Z5B").
+                .replace(Regex("\\s*\\{\\^%\\}.*$"), "")
+                .trim()
+        ).take(1500)
+
+    /**
+     * A message cut short by a missed frame ends mid-word ("… AFFECTING MT"). When the text has
+     * at least one finished sentence, a short unfinished tail after it is dropped so the model
+     * does not guess at it. Messages with no punctuation at all are left alone.
+     */
+    fun dropUnfinishedTail(text: String): String {
+        val t = text.trimEnd()
+        if (t.isEmpty() || t.last() in ".!?") return t
+        val end = t.indexOfLast { it in ".!?" }
+        if (end < 20) return t
+        val tail = t.substring(end + 1).trim()
+        return if (tail.split(' ').size <= 6 && tail.length <= 40) t.substring(0, end + 1) else t
+    }
+
+    /**
+     * Model output cut off at the token limit ("… acknowledgments are turned") is trimmed back
+     * to its last finished sentence, keeping a citation that follows it ("…rerouted. [2]").
+     */
+    fun completeSentences(text: String): String {
+        val t = text.trim()
+        if (t.isEmpty() || Regex("[.!?](\\s*\\[[\\d,\\s]+])*$").containsMatchIn(t)) return t
+        val m = Regex("[.!?](\\s*\\[[\\d,\\s]+])*(?=\\s)").findAll(t).lastOrNull()
+        return if (m != null && m.range.last >= 20) t.substring(0, m.range.last + 1) else "$t…"
+    }
 
     /** The bulletin first, the instruction last (small models follow the last thing they read). */
     fun bulletinUser(body: String): String =
@@ -38,7 +67,7 @@ object AiPrompt {
 
     /** Stable key for a bulletin's text (repeats and relays of the same text share one summary). */
     fun key(body: String): String {
-        val norm = "v3:" + body.uppercase().replace(Regex("[^A-Z0-9]"), "")
+        val norm = "v4:" + body.uppercase().replace(Regex("[^A-Z0-9]"), "")
         val md = java.security.MessageDigest.getInstance("SHA-1").digest(norm.toByteArray())
         return md.take(10).joinToString("") { "%02x".format(it) }
     }
