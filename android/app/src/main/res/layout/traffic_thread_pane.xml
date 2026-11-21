@@ -189,40 +189,10 @@
                 app:closeIconTint="@color/tac_text_dim"
                 app:closeIconVisible="true" />
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/tpl_checkin"
-                style="@style/Widget.Material3.Chip.Assist"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/tpl_checkin" />
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/tpl_spot"
-                style="@style/Widget.Material3.Chip.Assist"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/tpl_spot" />
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/tpl_salute"
-                style="@style/Widget.Material3.Chip.Assist"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/tpl_salute" />
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/tpl_sitrep"
-                style="@style/Widget.Material3.Chip.Assist"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/tpl_sitrep" />
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/tpl_posrep"
-                style="@style/Widget.Material3.Chip.Assist"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/tpl_posrep" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/chip_repeat3"

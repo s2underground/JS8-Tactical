@@ -577,19 +577,10 @@ class TrafficFragment : Fragment() {
             chip.setOnCloseIconClickListener { chip.performClick() }
         }
 
-        // Report buttons open the report writer for the current selection.
-        fun openWriter(tag: String) {
-            if (childFragmentManager.findFragmentByTag(ReportWriterSheet.TAG) != null) return
-            ReportWriterSheet.newInstance(tag, traffic.sendTarget()).show(childFragmentManager, ReportWriterSheet.TAG)
-        }
         // Heartbeat: one tap, always to @HB (the service adds your grid and picks the heartbeat offset).
         view.findViewById<Chip>(R.id.tpl_heartbeat).setOnClickListener { queueBroadcast("HB") }
         view.findViewById<Chip>(R.id.tpl_cq).setOnClickListener { queueBroadcast("CQ CQ CQ") }
-        view.findViewById<Chip>(R.id.tpl_checkin).setOnClickListener { openWriter("CHECKIN") }
-        view.findViewById<Chip>(R.id.tpl_spot).setOnClickListener { openWriter("SPOT") }
-        view.findViewById<Chip>(R.id.tpl_salute).setOnClickListener { openWriter("SALUTE") }
-        view.findViewById<Chip>(R.id.tpl_sitrep).setOnClickListener { openWriter("SITREP") }
-        view.findViewById<Chip>(R.id.tpl_posrep).setOnClickListener { openWriter("POSREP") }
+        // Report buttons moved to the Reports tab (rail; Traffic ⋮ on phones).
         childFragmentManager.setFragmentResultListener(ReportWriterSheet.RESULT_KEY, viewLifecycleOwner) { _, result ->
             val line = result.getString(ReportWriterSheet.ARG_LINE).orEmpty()
             if (result.getBoolean(ReportWriterSheet.ARG_SEND)) {
