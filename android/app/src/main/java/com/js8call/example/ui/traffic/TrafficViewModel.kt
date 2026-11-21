@@ -998,6 +998,16 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Everything the Digest tab needs for the window starting at [sinceMs]. */
+    /** Everything kept on this device, for the Digest's exports: all traffic heard (heartbeats too) and sent. */
+    fun exportEntries(): List<com.js8call.example.digest.ExportBuilder.Entry> =
+        engine.messages().filterNot { isOwnEcho(it) }.map { m ->
+            com.js8call.example.digest.ExportBuilder.Entry(m.firstHeardMs, false, m.sender, m.recipient, m.bodyText,
+                m.bestSnr, m.laneHz, m.isComplete, m.missingFrames, m.copies)
+        } + outgoing.map { com.js8call.example.digest.ExportBuilder.Entry(it.sentMs, true, null, it.to, it.text, laneHz = it.laneHz) }
+
+    /** Oldest time the app still has traffic for (history kept, or since it started). */
+    fun dataStartMs(): Long = minOf(startedMs, historyStartMs ?: startedMs)
+
     fun digestInput(sinceMs: Long, now: Long = System.currentTimeMillis()): DigestBuilder.Input {
         val prefs = PreferenceManager.getDefaultSharedPreferences(getApplication())
         val messages = engine.messages().filterNot { isBeacon(it) || isOwnEcho(it) }.map { m ->

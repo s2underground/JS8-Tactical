@@ -83,6 +83,10 @@ class DigestFragment : Fragment() {
             setOnClickListener { androidx.navigation.fragment.NavHostFragment.findNavController(this@DigestFragment).navigate(R.id.navigation_ai) }
         })
         header.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+            text = getString(R.string.export_button)
+            setOnClickListener { showExport() }
+        })
+        header.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
             text = "Share"
             setOnClickListener { share() }
         })
@@ -521,6 +525,101 @@ class DigestFragment : Fragment() {
         Tone.AMBER -> color(R.color.tac_warn_text)
         Tone.GREEN -> color(R.color.tac_good_text)
         Tone.NEUTRAL -> color(R.color.tac_text)
+    }
+
+    // ------------------------------------------------------------------ export
+
+    /** Text waiting for the user to pick where to save it. */
+    private var pendingExport: String? = null
+
+    private val saveExport = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        val text = pendingExport ?: return@registerForActivityResult
+        pendingExport = null
+        if (uri == null) return@registerForActivityResult
+        val ctx = context ?: return@registerForActivityResult
+        val ok = runCatching { ctx.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) } != null }.getOrDefault(false)
+        com.google.android.material.snackbar.Snackbar.make(requireView(),
+            getString(if (ok) R.string.export_saved else R.string.export_save_failed), com.google.android.material.snackbar.Snackbar.LENGTH_LONG).show()
+    }
+
+    /** Export Roll-Up: the longer reports only, or the complete raw log, saved as a text file or shared. */
+    private fun showExport() {
+        val ctx = requireContext()
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), 0) }
+        fun label(t: String) = TextView(ctx).apply {
+            text = t; textSize = 12f; letterSpacing = 0.06f
+            setTypeface(typeface, Typeface.BOLD); setTextColor(color(R.color.tac_text_dim)); setPadding(0, dp(10), 0, dp(2))
+        }
+        fun radio(t: String, sub: String) = android.widget.RadioButton(ctx).apply {
+            id = View.generateViewId()
+            text = android.text.SpannableStringBuilder(t).apply {
+                append("\n")
+                val at = length
+                append(sub)
+                setSpan(android.text.style.RelativeSizeSpan(0.82f), at, length, 0)
+                setSpan(android.text.style.ForegroundColorSpan(color(R.color.tac_text_dim)), at, length, 0)
+            }
+            setPadding(dp(4), dp(6), 0, dp(6))
+        }
+        box.addView(label(getString(R.string.export_what)))
+        val what = android.widget.RadioGroup(ctx)
+        val rollup = radio(getString(R.string.export_rollup), getString(R.string.export_rollup_sub)).also { what.addView(it) }
+        radio(getString(R.string.export_raw), getString(R.string.export_raw_sub)).also { what.addView(it) }
+        what.check(rollup.id)
+        box.addView(what)
+
+        val now = System.currentTimeMillis()
+        val start = traffic.dataStartMs()
+        val keptH = ((now - start) / 3_600_000L).coerceAtLeast(1)
+        val windowLabel = windows.firstOrNull { it.first == windowHours }?.second ?: "$windowHours h"
+        box.addView(label(getString(R.string.export_period)))
+        val period = android.widget.RadioGroup(ctx)
+        val win = radio(getString(R.string.export_window, windowLabel), getString(R.string.export_window_sub)).also { period.addView(it) }
+        val all = radio(getString(R.string.export_all), getString(R.string.export_all_sub,
+            if (keptH < 48) "$keptH h" else "${keptH / 24} days")).also { period.addView(it) }
+        period.check(win.id)
+        box.addView(period)
+
+        fun build(): Pair<String, String> {
+            val isRollup = what.checkedRadioButtonId == rollup.id
+            val since = if (period.checkedRadioButtonId == all.id) start else now - windowHours * 3_600_000L
+            val myCall = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
+                .getString("callsign", "").orEmpty().trim().uppercase()
+            val label = if (period.checkedRadioButtonId == all.id) "everything kept on this device" else "last $windowLabel"
+            val h = com.js8call.example.digest.ExportBuilder.Header(myCall, since, now, label)
+            val entries = traffic.exportEntries()
+            val text = if (isRollup) com.js8call.example.digest.ExportBuilder.rollup(h, entries)
+                else com.js8call.example.digest.ExportBuilder.rawLog(h, entries)
+            return com.js8call.example.digest.ExportBuilder.fileName(isRollup, now, myCall.substringBefore('/')) to text
+        }
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.export_title)
+            .setView(ScrollView(ctx).apply { addView(box) })
+            .setPositiveButton(R.string.export_save) { _, _ ->
+                val (name, text) = build()
+                pendingExport = text
+                runCatching { saveExport.launch(name) }.onFailure { pendingExport = null; shareExport(name, text) }
+            }
+            .setNeutralButton(R.string.export_share) { _, _ -> build().let { (name, text) -> shareExport(name, text) } }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** Hand the file to another app (email, Drive, a USB stick via Files…). */
+    private fun shareExport(name: String, text: String) {
+        val ctx = requireContext()
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, name.removeSuffix(".txt"))
+            runCatching {
+                val dir = java.io.File(ctx.cacheDir, "exports").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+                val file = dir.resolve(name).apply { writeText(text) }
+                putExtra(Intent.EXTRA_STREAM, androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.diagnostics", file))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }.onFailure { putExtra(Intent.EXTRA_TEXT, text.takeLast(90_000)) }
+        }
+        startActivity(Intent.createChooser(send, getString(R.string.export_title)))
     }
 
     private fun share() {
