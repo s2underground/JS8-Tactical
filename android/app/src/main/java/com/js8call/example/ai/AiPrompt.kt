@@ -28,7 +28,8 @@ object AiPrompt {
         dropUnfinishedTail(
             body.trim().replace(Regex("\\s+"), " ")
                 .replace(Regex("^[A-Z0-9/]+:\\s*"), "")
-                .replace(Regex("^(@\\S+\\s+)?(MSG\\s+)?(,?[A-Z]\\d+,?)?\\s*(QST\\s+)?"), "")
+                // Framing also when the copy starts with a gap ("[…],Q57,QST GRID // …"); the gap mark stays.
+                .replace(Regex("^(\\[…]\\s*)?(@\\S+\\s+)?(MSG\\s+)?(,?[A-Z]\\d+,?)?\\s*(QST\\s+)?")) { m -> if (m.groupValues[1].isNotEmpty()) "[…] " else "" }
                 // JS8 end-of-message junk after a garbled last frame ("{^%} Z5B").
                 .replace(Regex("\\s*\\{\\^%\\}.*$"), "")
                 .trim()

@@ -114,6 +114,7 @@
     <color name="tac_accent">#F2A33A</color>
     <color name="tac_accent_tint">#1AF2A33A</color>
     <color name="tac_warn">#FF9F43</color>
+    <color name="tac_alert">#FFE5484D</color>
     <color name="tac_warn_text">#FFB066</color>
     <color name="tac_warn_tint">#29FF9F43</color>
     <color name="tac_warn_border">#5A4520</color>

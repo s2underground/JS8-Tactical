@@ -379,6 +379,8 @@ class DigestFragment : Fragment() {
         val ctx = requireContext()
         val sens = leadSentences()
         val notes = ArrayList<String>()
+        if (leadFixes.isNotEmpty()) notes += getString(R.string.ai_lead_cites_fixed,
+            leadFixes.joinToString(", ") { f -> f.from.joinToString(",", "[", "]") + " → [${f.to}]" })
         if (sens.any { (sen, cited) -> com.js8call.example.ai.AiGrounding.unsupported(sen.text, cited.flatMap { storySources(it) }).isNotEmpty() })
             notes += getString(R.string.ai_lead_unsupported)
         val checks = sens.map { (sen, cited) -> com.js8call.example.ai.AiWork.checkOf(ctx, leadMessage(cited), sen.claim) }
@@ -488,6 +490,7 @@ class DigestFragment : Fragment() {
         overviewBusy = true
         overviewFailed = false
         overviewText = ""
+        leadFixes = emptyList()
         last?.let { render(it) }
         // Shown only when finished and checked (no half-written text on screen).
         com.js8call.example.ai.AiWork.overview(ctx, user,
@@ -495,7 +498,12 @@ class DigestFragment : Fragment() {
             onDone = { t, err ->
                 overviewBusy = false
                 overviewFailed = t == null
-                overviewText = t ?: getString(R.string.ai_overview_failed, err ?: "no text came back")
+                // Fix sentences numbered with the wrong story before anything is checked or shown.
+                val repaired = t?.let { com.js8call.example.ai.AiGrounding.repairCitations(it, leadStories.map { st -> storySources(st) }) }
+                leadFixes = repaired?.second.orEmpty()
+                if (leadFixes.isNotEmpty()) android.util.Log.i("DigestFragment", "AI lead citations corrected: " +
+                    leadFixes.joinToString { f -> "${f.from} -> [${f.to}]" })
+                overviewText = repaired?.first ?: getString(R.string.ai_overview_failed, err ?: "no text came back")
                 overviewAtMs = System.currentTimeMillis()
                 if (t != null) com.js8call.example.ai.AiWork.check(ctx, leadSentences().map { (sen, cited) -> leadMessage(cited) to sen.claim })
                 if (view != null) last?.let { render(it) }
@@ -656,6 +664,7 @@ class DigestFragment : Fragment() {
         private var overviewText = ""
         private var overviewBusy = false
         private var overviewFailed = false
+        private var leadFixes: List<com.js8call.example.ai.AiGrounding.Fix> = emptyList()
         // The stories and the exact notes the last summary was written from (its citations).
         private var leadStories: List<com.js8call.example.ai.AiStories.Story> = emptyList()
         private var leadInput = ""

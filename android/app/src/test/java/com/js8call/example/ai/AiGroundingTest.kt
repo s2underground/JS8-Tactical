@@ -49,3 +49,42 @@ class AiGroundingTest {
         assertEquals(null, AiPrompt.verdict("The summary"))
     }
 }
+
+class CitationRepairTest {
+    private val stories = listOf(
+        listOf("SUBSEA // PAKISTAN CABLE FAULT NEAR KARACHI. ~50% OF AFFECTED TRAFFIC REROUTED"),
+        listOf("VARA HF MODEM UPDATE RESTORES BACKWARD COMPATIBILITY WITH OLDER VERSIONS"),
+        listOf("NET STARTING SOON. HB, AUTO REPLY, ACKS OFF. 35 PRE-NET STATIONS HEARD IN N TEXAS"),
+        listOf("H5N1 // USDA SEQUENCED H5N1 IN CATTLE MOVEMENT LINKING 180 LIVESTOCK DETECTIONS; 21 DAIRY FACILITIES QUARANTINED SINCE NOV 17"),
+    )
+
+    @org.junit.Test fun wrongNumberIsCorrected() {
+        val text = "A cable near Karachi failed [1]. USDA sequenced H5N1 in cattle, linking 180 livestock detections and 21 dairy facilities [3]."
+        val (fixed, fixes) = AiGrounding.repairCitations(text, stories)
+        org.junit.Assert.assertEquals("A cable near Karachi failed [1]. USDA sequenced H5N1 in cattle, linking 180 livestock detections and 21 dairy facilities [4].", fixed)
+        org.junit.Assert.assertEquals(listOf(AiGrounding.Fix(1, listOf(3), 4)), fixes)
+        // Once fixed, nothing in it is unsupported by its story.
+        val sen = AiGrounding.sentences(fixed)[1]
+        org.junit.Assert.assertTrue(AiGrounding.unsupported(sen.text, stories[3]).isEmpty())
+    }
+
+    @org.junit.Test fun rightNumbersAreLeftAlone() {
+        val text = "A VARA modem update restores compatibility with older versions [2]. The net starts soon with 35 stations heard [3]."
+        org.junit.Assert.assertEquals(text to emptyList<AiGrounding.Fix>(), AiGrounding.repairCitations(text, stories))
+    }
+}
+
+class StoryTextTest {
+    @org.junit.Test fun framingAfterALeadingGap() {
+        org.junit.Assert.assertEquals("[…] GRID // AUSTRALIA [PF83] SEVERE STORM TOPPLED 2 TOWERS.",
+            AiPrompt.bulletinBody("[…],Q57,QST GRID // AUSTRALIA [PF83] SEVERE STORM TOPPLED 2 TOWERS."))
+    }
+
+    @org.junit.Test fun acronymsAndMonthsSurviveSentenceCase() {
+        org.junit.Assert.assertEquals(
+            "Aviation // Terror alert FBI/DHS/TSA issued a Nov 19 advisory to U.S. airlines, airports and cargo operators.",
+            AiStories.sentenceCase("AVIATION // TERROR ALERT FBI/DHS/TSA ISSUED A NOV 19 ADVISORY TO U.S. AIRLINES, AIRPORTS AND CARGO OPERATORS."))
+        org.junit.Assert.assertEquals("USDA sequenced H5N1 in cattle, the net is on.",
+            AiStories.sentenceCase("USDA SEQUENCED H5N1 IN CATTLE, THE NET IS ON."))
+    }
+}

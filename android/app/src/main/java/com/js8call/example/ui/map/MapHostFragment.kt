@@ -20,13 +20,14 @@ import com.js8call.example.ui.prop.PropagationFragment
  */
 class MapHostFragment : Fragment() {
 
-    private val containerId = View.generateViewId()
+    /** Fixed id: a restored child is put back into a container with the same id (a new id each time left the tab blank). */
+    private val containerId = R.id.map_host_container
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
         FrameLayout(requireContext()).apply { id = containerId }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        if (savedInstanceState == null) show(mode(), animate = false)
+        if (childFragmentManager.findFragmentById(containerId) == null) show(mode(), animate = false)
     }
 
     private fun mode(): String = PreferenceManager.getDefaultSharedPreferences(requireContext()).getString(PREF_MODE, STATIONS) ?: STATIONS

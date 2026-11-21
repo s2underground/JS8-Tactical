@@ -78,20 +78,58 @@ object AiStories {
         if (s.relayedBy.isNotEmpty()) append(" · relayed by ").append(s.relayedBy.joinToString(", "))
     }
 
-    private val ACRONYMS = setOf("US", "UK", "EU", "UN", "HF", "VHF", "UHF", "EOC", "FEMA", "NOAA", "GPS", "NWS", "SFI", "QST", "VARA", "ARES", "RACES", "CERT", "AM", "PM")
+    private val ACRONYMS = setOf("US", "UK", "EU", "UN", "HF", "VHF", "UHF", "EOC", "FEMA", "NOAA", "GPS", "NWS", "SFI", "QST", "VARA",
+        "ARES", "RACES", "CERT", "AM", "PM", "USDA", "NATO", "CISA", "NASA", "ATAK", "ARRL", "ICAO", "OPEC", "ERCOT", "OSINT",
+        "HUMINT", "SIGINT", "UTC", "JS8", "FT8", "LTE", "GSM", "SAR", "ISP", "CIO", "CEO", "IRGC", "UAV", "UAS", "IED")
 
-    /** ALL-CAPS radio text in ordinary sentence case, callsigns kept (fallback when there is no AI line). */
+    /** Common English words of up to three letters: lower case. Other short all-letter words are taken as acronyms (FBI, DHS, TSA). */
+    private val COMMON_SHORT = setOf(
+        "A", "AN", "AS", "AT", "BE", "BY", "DO", "GO", "HE", "IF", "IN", "IS", "IT", "ME", "MY", "NO", "OF", "ON", "OR", "SO",
+        "TO", "UP", "WE", "OK", "ALL", "AND", "ANY", "ARE", "BUT", "CAN", "DAY", "DID", "FOR", "GET", "GOT", "HAD", "HAS", "HER",
+        "HIM", "HIS", "HOW", "ITS", "LET", "MAY", "NEW", "NOT", "NOW", "OFF", "OLD", "ONE", "OUR", "OUT", "OWN", "PUT", "SAY",
+        "SEE", "SET", "SHE", "SIX", "TEN", "THE", "TOO", "TWO", "USE", "WAS", "WAY", "WHO", "WHY", "YES", "YET", "YOU", "AGO",
+        "AIR", "END", "FAR", "FEW", "LOW", "MAN", "MEN", "RUN", "SEA", "TOP", "WAR", "WET", "OIL", "GAS", "CAR", "BUS", "HIT",
+        "KEY", "LED", "MET", "PER", "VIA", "AID", "ACT", "AGE", "BIG", "BAD", "BAN", "BID", "BOX", "CUT", "DUE", "EYE", "FED",
+        "FLY", "GUN", "HOT", "ICE", "JOB", "LAW", "LAY", "LOT", "MAP", "MIX", "NET", "ODD", "PAY", "RAN", "RED", "ROW", "SAW",
+        "SIT", "SON", "SUN", "TAX", "TIE", "TRY", "WIN", "WON", "ARM", "ASK", "BED", "BOY", "DRY", "EGG", "FAN", "FIT", "FIX",
+        "FOG", "FUN", "GAP", "HAT", "HOG", "HUB", "INK", "JET", "KIT", "LAB", "LEG", "LIE", "MUD", "NOR", "OAK", "OWE", "PEN",
+        "PET", "PIG", "POP", "POT", "RAW", "RIB", "ROD", "RUG", "SKY", "SPY", "TAP", "TIN", "TON", "VAN", "WEB", "WIT", "ZIP")
+
+    private val TITLE_CASE = setOf("JAN", "FEB", "MAR", "APR", "JUN", "JUL", "AUG", "SEP", "SEPT", "OCT", "NOV", "DEC",
+        "JANUARY", "FEBRUARY", "MARCH", "APRIL", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER",
+        "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY")
+
+    /** One piece of a word (split on '/'), cased: acronyms and codes kept, months title case, the rest lower case. */
+    private fun casePart(part: String, inSlashGroup: Boolean): String {
+        val bare = part.trim { !it.isLetterOrDigit() }
+        if (bare.isEmpty()) return part
+        val keep = (bare.any(Char::isDigit) && bare.any(Char::isLetter)) ||
+            bare in ACRONYMS ||
+            Regex("^([A-Z]\\.){2,}$").matches(part.trim { it == ',' || it == ';' || it == ':' || it == ')' || it == '(' }) ||
+            (bare.all(Char::isLetter) && bare.length in 2..3 && bare !in COMMON_SHORT) ||
+            (inSlashGroup && bare.all(Char::isLetter) && bare.length in 2..5)
+        return when {
+            bare in TITLE_CASE -> part.lowercase().replaceFirst(bare.lowercase(), bare.lowercase().replaceFirstChar { it.uppercase() })
+            keep -> part
+            else -> part.lowercase()
+        }
+    }
+
+    /** ALL-CAPS radio text in ordinary sentence case, callsigns and acronyms kept (fallback when there is no AI line). */
     fun sentenceCase(text: String): String {
         val words = text.trim().replace(Regex("\\s+"), " ").split(' ')
         val sb = StringBuilder()
         var startOfSentence = true
         for (w in words) {
-            val bare = w.trim { !it.isLetterOrDigit() }
-            val keep = (bare.any(Char::isDigit) && bare.any(Char::isLetter)) || bare in ACRONYMS
-            var out = if (keep) w else w.lowercase()
-            if (startOfSentence && out.isNotEmpty()) out = out.replaceFirstChar { it.uppercase() }
+            val parts = w.split('/')
+            var out = parts.joinToString("/") { casePart(it, parts.size > 1) }
+            if (startOfSentence && out.isNotEmpty()) {
+                val i = out.indexOfFirst { it.isLetter() }
+                if (i >= 0) out = out.substring(0, i) + out[i].uppercaseChar() + out.substring(i + 1)
+            }
             sb.append(out).append(' ')
-            startOfSentence = w.endsWith('.') || w.endsWith('!') || w.endsWith('?') || w == "//"
+            // "U.S." doesn't end a sentence.
+            startOfSentence = (w.endsWith('.') && !Regex("^([A-Z]\\.){2,},?$").matches(w)) || w.endsWith('!') || w.endsWith('?') || w == "//"
         }
         return sb.toString().trim()
     }

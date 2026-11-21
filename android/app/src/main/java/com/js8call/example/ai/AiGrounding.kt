@@ -94,4 +94,48 @@ object AiGrounding {
 
     private fun canonical(n: String): String =
         n.toBigDecimalOrNull()?.stripTrailingZeros()?.toPlainString() ?: n
+
+    // ------------------------------------------------------------------ citations
+
+    private val STOP = setOf("THAT", "WITH", "FROM", "THIS", "HAVE", "BEEN", "WERE", "THEY", "THEIR", "THERE", "WHICH", "WILL",
+        "ABOUT", "AFTER", "INTO", "ALSO", "MORE", "SOME", "THAN", "THEN", "OVER", "WHEN", "WHAT", "SAID", "SAYS", "REPORT",
+        "REPORTS", "REPORTED", "STATION", "STATIONS", "SINGLE", "INDEPENDENT", "SOURCE", "SOURCES", "NEWS", "STORY")
+
+    /** Content words of [text] (four letters or more, plural folded), plus names and figures. */
+    fun contentWords(text: String): Set<String> =
+        Regex("[\\p{L}\\p{N}]+").findAll(text.uppercase()).map { it.value }
+            .filter { (it.length >= 4 && it !in STOP) || it.any(Char::isDigit) }
+            .map { if (it.length > 4 && it.endsWith("S") && !it.endsWith("SS")) it.dropLast(1) else it }
+            .toSet()
+
+    /** A citation the app changed: in sentence [sentence] (0-based), [from] became [to]. */
+    data class Fix(val sentence: Int, val from: List<Int>, val to: Int)
+
+    /**
+     * Small models sometimes number a sentence with the wrong story. For each cited sentence, if
+     * another story clearly matches its words better than the one cited (at least three shared
+     * content words and twice as many), the citation is changed to that story. [stories]: each
+     * story's source texts, 1-based in citation order. Returns the text and what was changed.
+     */
+    fun repairCitations(text: String, stories: List<List<String>>): Pair<String, List<Fix>> {
+        if (stories.size < 2) return text to emptyList()
+        val words = stories.map { contentWords(it.joinToString(" ")) }
+        val fixes = ArrayList<Fix>()
+        val out = StringBuilder(text)
+        sentences(text).withIndex().reversed().forEach { (i, sen) ->
+            if (sen.cites.isEmpty() || sen.cites.any { it !in 1..stories.size }) return@forEach
+            val mine = contentWords(sen.claim)
+            if (mine.size < 3) return@forEach
+            val score = words.map { w -> mine.count { it in w } }
+            val cited = sen.cites.maxOf { score[it - 1] }
+            val best = score.indices.maxByOrNull { score[it] } ?: return@forEach
+            if (best + 1 in sen.cites || score[best] < 3 || score[best] < 2 * cited) return@forEach
+            // Replace the sentence's citation marks with the right one.
+            val fixed = CITE.replace(sen.text, "").replace(Regex("\\s+([.!?])"), "$1").trimEnd()
+            val withCite = if (fixed.isNotEmpty() && fixed.last() in ".!?") fixed.dropLast(1) + " [${best + 1}]" + fixed.last() else "$fixed [${best + 1}]"
+            out.replace(sen.range.first, sen.range.last + 1, withCite)
+            fixes += Fix(i, sen.cites, best + 1)
+        }
+        return out.toString() to fixes.reversed()
+    }
 }

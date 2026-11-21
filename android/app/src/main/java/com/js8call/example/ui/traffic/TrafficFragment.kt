@@ -321,6 +321,15 @@ class TrafficFragment : Fragment() {
             digest.setTextColor(ContextCompat.getColor(requireContext(), textColor))
             digest.setBackgroundResource(bg)
             digest.contentDescription = if (a.count > 0) "Digest: ${a.count} open needs or emergencies" else getString(R.string.nav_digest)
+            // Digest has its own tab: this pill only shows when something needs attention, and the tab gets a badge.
+            digest.isVisible = a.count > 0
+            requireActivity().findViewById<NavigationBarView>(R.id.bottom_navigation)?.let { bar ->
+                if (bar.menu.findItem(R.id.navigation_digest) == null) return@let
+                if (a.count > 0) bar.getOrCreateBadge(R.id.navigation_digest).apply {
+                    number = a.count
+                    backgroundColor = ContextCompat.getColor(requireContext(), if (a.tone == com.js8call.example.digest.DigestBuilder.Tone.RED) R.color.tac_alert else R.color.tac_warn)
+                } else bar.removeBadge(R.id.navigation_digest)
+            }
         }
     }
 

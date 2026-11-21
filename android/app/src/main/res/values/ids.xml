@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="reports_detail" type="id" />
+    <item name="map_host_container" type="id" />
 </resources>
