@@ -37,6 +37,7 @@ class DigestFragment : Fragment() {
     private lateinit var body: LinearLayout
     private var windowHours = 24
     private var last: DigestBuilder.Digest? = null
+    private var stories: List<com.js8call.example.ai.AiStories.Story> = emptyList()
 
     private val windows = listOf(6 to "6 h", 24 to "24 h", 72 to "3 days", 168 to "7 days")
 
@@ -114,6 +115,8 @@ class DigestFragment : Fragment() {
         val d = try {
             val input = traffic.digestInput(now - windowHours * 3_600_000L, now)
             com.js8call.example.ai.AiWork.summariseBulletins(requireContext(), input.messages)
+            if (com.js8call.example.ai.AiModels.enabled(requireContext()))
+                stories = com.js8call.example.ai.AiStories.build(input.messages.filter { it.timeMs >= input.sinceMs })
             DigestBuilder.build(input)
         } catch (e: Exception) {
             android.util.Log.e("DigestFragment", "digest failed", e)
@@ -177,14 +180,6 @@ class DigestFragment : Fragment() {
                 setTextColor(if (l.tone == Tone.NEUTRAL) color(R.color.tac_text) else toneText(l.tone))
                 textSize = 15f
             })
-            l.full?.let { full -> com.js8call.example.ai.AiWork.summary(ctx, full) }?.let { ai ->
-                addView(TextView(ctx).apply {
-                    text = "AI  ·  $ai"
-                    setTextColor(AI_TEXT)
-                    textSize = 14f
-                    setPadding(0, dp(2), 0, 0)
-                })
-            }
             if (l.detail.isNotEmpty()) addView(TextView(ctx).apply {
                 text = l.detail
                 setTextColor(color(R.color.tac_text_dim))
@@ -205,10 +200,15 @@ class DigestFragment : Fragment() {
         }
     }
 
-    /** AI overview: written on request from this digest (bulletins as their one-line summaries). */
+    /**
+     * News roll-up: the bulletins heard, grouped into stories with how many stations reported each
+     * (counted by the app, not the model), each in plain English (the AI one-line summary), and an
+     * AI-written lead paragraph on request.
+     */
     private fun overviewCard(d: DigestBuilder.Digest): View {
         val ctx = requireContext()
         val ai = com.js8call.example.ai.AiWork
+        val stories = this.stories
         return card(Tone.NEUTRAL).apply {
             addView(TextView(ctx).apply {
                 text = getString(R.string.ai_overview_title)
@@ -218,29 +218,27 @@ class DigestFragment : Fragment() {
                 setTypeface(typeface, Typeface.BOLD)
                 setPadding(0, 0, 0, dp(6))
             })
-            val textView = TextView(ctx).apply {
-                textSize = 15.5f
+            val usable = ai.usable(ctx)
+            val lead = TextView(ctx).apply {
+                textSize = 16f
                 setTextColor(color(R.color.tac_text))
                 setTextIsSelectable(true)
+                text = when {
+                    overviewBusy -> overviewText.ifBlank { getString(R.string.ai_overview_working) }
+                    overviewText.isNotBlank() -> overviewText
+                    !usable -> getString(R.string.ai_overview_no_model)
+                    else -> getString(R.string.ai_overview_hint)
+                }
+                if (!overviewBusy && overviewText.isBlank()) setTextColor(color(R.color.tac_text_dim))
             }
-            val meta = TextView(ctx).apply {
+            addView(lead)
+            if (overviewText.isNotBlank() && !overviewBusy) addView(TextView(ctx).apply {
+                text = getString(R.string.ai_overview_written, java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(overviewAtMs)))
                 textSize = 12f
                 setTextColor(color(R.color.tac_text_quiet))
                 setPadding(0, dp(4), 0, 0)
-            }
-            val usable = ai.usable(ctx)
-            when {
-                overviewBusy -> { textView.text = overviewText.ifBlank { getString(R.string.ai_overview_working) } }
-                overviewText.isNotBlank() -> {
-                    textView.text = overviewText
-                    meta.text = getString(R.string.ai_overview_written, java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(overviewAtMs)))
-                }
-                !usable -> textView.text = getString(R.string.ai_overview_no_model)
-                else -> textView.text = getString(R.string.ai_overview_hint)
-            }
-            addView(textView)
-            if (meta.text.isNotEmpty()) addView(meta)
-            val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(6), 0, 0) }
+            })
+            val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(6), 0, dp(4)) }
             if (usable && !overviewBusy) row.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                 text = getString(if (overviewText.isBlank()) R.string.ai_overview_write else R.string.ai_overview_update)
                 setOnClickListener { writeOverview(d) }
@@ -250,16 +248,54 @@ class DigestFragment : Fragment() {
                 setOnClickListener { findNavController().navigate(R.id.navigation_ai) }
             })
             if (row.childCount > 0) addView(row)
+
+            // The stories themselves.
+            if (stories.isNotEmpty()) addView(TextView(ctx).apply {
+                text = getString(R.string.ai_stories, stories.size)
+                setTextColor(color(R.color.tac_text_dim))
+                textSize = 12f
+                letterSpacing = 0.06f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, dp(10), 0, dp(2))
+            })
+            val now = System.currentTimeMillis()
+            stories.take(8).forEach { st ->
+                val line = ai.summary(ctx, st.rawBody)
+                addView(TextView(ctx).apply {
+                    text = line ?: (com.js8call.example.ai.AiStories.sentenceCase(st.body).let { if (it.length > 220) it.take(220) + "…" else it })
+                    setTextColor(color(R.color.tac_text))
+                    textSize = 15f
+                    setPadding(0, dp(8), 0, 0)
+                })
+                addView(TextView(ctx).apply {
+                    val tag = com.js8call.example.ai.AiStories.sourceLine(st)
+                    text = listOfNotNull(tag, ago(st.lastMs, now), if (line == null && usable) getString(R.string.ai_story_pending) else null).joinToString("  ·  ")
+                    setTextColor(if (st.sources > 1) CONFIRMED else color(R.color.tac_text_quiet))
+                    textSize = 12f
+                    if (st.sources > 1) setTypeface(typeface, Typeface.BOLD)
+                })
+            }
         }
+    }
+
+    private fun ago(ms: Long, now: Long): String {
+        val m = ((now - ms) / 60_000L).coerceAtLeast(0)
+        return when { m < 60 -> "${m} min ago"; m < 48 * 60 -> "${m / 60} h ago"; else -> "${m / 1440} d ago" }
     }
 
     private fun writeOverview(d: DigestBuilder.Digest) {
         val ctx = requireContext()
-        val lines = d.sections.flatMap { it.lines }.mapNotNull { l -> l.full?.let { com.js8call.example.ai.AiWork.summary(ctx, it) } }
+        fun section(title: String) = d.sections.firstOrNull { it.title == title }?.lines.orEmpty()
+            .filter { it.tone != Tone.GREEN }.map { listOf(it.text, it.detail).filter(String::isNotBlank).joinToString(" · ") }
+        val storyFacts = stories.take(6).map { st ->
+            (com.js8call.example.ai.AiWork.summary(ctx, st.rawBody) ?: com.js8call.example.ai.AiStories.sentenceCase(st.body).take(300)) to st.sources
+        }
+        val activity = d.headline + ". " + d.sections.firstOrNull { it.title == "Stations" }?.lines?.firstOrNull()?.text.orEmpty()
+        val user = com.js8call.example.ai.AiPrompt.leadUser(section("Needs and emergencies"), section("For you"), storyFacts, activity)
         overviewBusy = true
         overviewText = ""
         last?.let { render(it) }
-        com.js8call.example.ai.AiWork.overview(ctx, d.toText(), lines,
+        com.js8call.example.ai.AiWork.overview(ctx, user,
             onText = { t -> overviewText = t; if (view != null) last?.let { render(it) } },
             onDone = { t, err ->
                 overviewBusy = false
@@ -311,6 +347,7 @@ class DigestFragment : Fragment() {
 
     companion object {
         private val AI_TEXT = 0xFFB39DDB.toInt()
+        private val CONFIRMED = 0xFF5CC98B.toInt()
         // Kept across visits to the tab (the model takes a while to write it).
         private var overviewText = ""
         private var overviewBusy = false

@@ -51,7 +51,10 @@ object AiWork {
     }
 
     /** The one-line summary, or null (none yet, or the model only copied the bulletin). */
-    fun summary(ctx: Context, body: String): String? = cache(ctx)[AiPrompt.key(body)]?.takeIf { it != FAILED }
+    fun summary(ctx: Context, body: String): String? = cache(ctx)[keyOf(body)]?.takeIf { it != FAILED }
+
+    /** Same text from different senders (relays) shares one summary. */
+    private fun keyOf(body: String) = AiPrompt.key(AiPrompt.bulletinBody(body))
 
     private const val FAILED = "\u0000"
 
@@ -62,10 +65,10 @@ object AiWork {
         val todo = messages.filter { DigestBuilder.isBulletin(it) }
             .sortedByDescending { it.timeMs }
             .map { it.body.trim() }
-            .filter { b -> val k = AiPrompt.key(b); k !in cache(app) && synchronized(queued) { queued.add(k) } }
+            .filter { b -> val k = keyOf(b); k !in cache(app) && synchronized(queued) { queued.add(k) } }
         todo.forEach { body ->
             worker.execute {
-                val key = AiPrompt.key(body)
+                val key = keyOf(body)
                 try {
                     val s = acquire(app) ?: return@execute
                     setBusy(true)
@@ -85,33 +88,33 @@ object AiWork {
     }
 
     /**
-     * The overview paragraph for [digestText] (bulletins replaced by their summaries); [onText] gets the
-     * text so far as it is written, [onDone] the final text or an error.
+     * The news lead for the roll-up from [userText] ([AiPrompt.leadUser]); [onText] gets the text so
+     * far as it is written, [onDone] the final text or an error.
      */
-    fun overview(ctx: Context, digestText: String, bulletinLines: List<String>, onText: (String) -> Unit, onDone: (String?, String?) -> Unit) {
+    fun overview(ctx: Context, userText: String, onText: (String) -> Unit, onDone: (String?, String?) -> Unit) {
         val app = ctx.applicationContext
         worker.execute {
             try {
                 val s = acquire(app) ?: run { main.post { onDone(null, "The model could not be loaded.") }; return@execute }
                 setBusy(true)
                 val sb = StringBuilder()
-                val raw = s.generate(AiPrompt.OVERVIEW_SYSTEM, AiPrompt.overviewUser(digestText, bulletinLines), 180, 0f) { piece ->
+                val raw = s.generate(AiPrompt.LEAD_SYSTEM, userText, 160, 0f) { piece ->
                     sb.append(piece)
                     val so = AiPrompt.clean(sb.toString())
                     main.post { onText(so) }
-                    // Stop early once it is clearly copying the digest out.
-                    !(so.split(' ').size >= 30 && AiPrompt.isEcho(so, digestText))
+                    // Stop early once it is clearly copying its input out.
+                    !(so.split(' ').size >= 30 && AiPrompt.isEcho(so, userText))
                 }
                 val err = s.error().takeIf { it.isNotBlank() && raw.isBlank() }
                 val st = s.stats()
-                Log.i(TAG, "overview: ${st.promptTokens} tokens in ${st.promptMs} ms, ${st.genTokens} out in ${st.genMs} ms")
+                Log.i(TAG, "lead: ${st.promptTokens} tokens in ${st.promptMs} ms, ${st.genTokens} out in ${st.genMs} ms")
                 val text = AiPrompt.clean(raw).ifBlank { null }
-                if (text != null && AiPrompt.isEcho(text, digestText)) {
-                    main.post { onDone(null, "the model repeated the digest instead of summarising it" +
+                if (text != null && AiPrompt.isEcho(text, userText)) {
+                    main.post { onDone(null, "the model repeated its input instead of writing a summary" +
                         if (model(app)?.id == "qwen2.5-0.5b") " (the Small model often does; try Standard)" else "") }
                 } else main.post { onDone(text, err) }
             } catch (t: Throwable) {
-                Log.e(TAG, "overview failed", t)
+                Log.e(TAG, "lead failed", t)
                 main.post { onDone(null, t.message ?: t.javaClass.simpleName) }
             } finally {
                 idle()

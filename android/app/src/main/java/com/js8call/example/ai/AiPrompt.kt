@@ -20,8 +20,8 @@ object AiPrompt {
     // ---- One bulletin -> one line. Short in, short out: a few seconds each.
 
     const val BULLETIN_SYSTEM =
-        "You condense amateur radio bulletins into one short plain sentence in your own words. " +
-        "Never copy the bulletin; never use lists or formatting."
+        "You condense amateur radio bulletins (sent in capitals) into one short plain-English sentence in your own words, " +
+        "written in normal sentence case, never all capitals. Never copy the bulletin; never use lists or formatting."
 
     /** Radio framing removed: sender prefix, @GROUP, MSG, serial numbers like ,V54, and QST. */
     fun bulletinBody(body: String): String =
@@ -57,6 +57,26 @@ object AiPrompt {
             "(emergencies, needs, messages waiting for them), or say nothing needs action; then the general picture " +
             "(the main news, how busy the band was)."
         return "DIGEST:\n" + lines.joinToString("\n").take(maxChars - b.length.coerceAtMost(maxChars / 2)) + b + ask
+    }
+
+    // ---- News roll-up lead: facts prepared by the app (needs, stories with source counts), prose by the model.
+
+    const val LEAD_SYSTEM =
+        "You write the lead of a short radio news roll-up for an operator in the field. Plain English, normal sentence case " +
+        "(never all capitals), in your own words, no lists, no headings, no formatting. Use only the facts given; never invent anything."
+
+    fun leadUser(needs: List<String>, forYou: List<String>, stories: List<Pair<String, Int>>, activity: String): String = buildString {
+        appendLine("NEEDS AND EMERGENCIES:")
+        if (needs.isEmpty()) appendLine("none") else needs.forEach { appendLine("- ${it.take(200)}") }
+        appendLine("WAITING FOR THE OPERATOR:")
+        if (forYou.isEmpty()) appendLine("none") else forYou.forEach { appendLine("- ${it.take(200)}") }
+        appendLine("NEWS STORIES (with how many stations reported each independently):")
+        if (stories.isEmpty()) appendLine("none")
+        stories.take(6).forEach { (text, n) -> appendLine("- ${text.take(300)} [${if (n == 1) "single report" else "$n independent reports"}]") }
+        appendLine("ACTIVITY: ${activity.take(200)}")
+        appendLine()
+        append("Write 2 or 3 sentences: first say what needs action, or that nothing does; then sum up the main news, ")
+        append("saying when a story was confirmed by more than one station and when it is a single report.")
     }
 
     /**
