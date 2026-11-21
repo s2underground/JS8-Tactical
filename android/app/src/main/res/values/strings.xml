@@ -549,6 +549,7 @@
     <string name="reports_empty">No saved reports yet. Tap New report to write one: free text or a form (SITREP, SALUTE, SPOT, WX…). Reports save as you type and can be sent with one tap or automatically at a set time.</string>
     <string name="reports_everyone">everyone</string>
     <string name="reports_to_line">To %1$s</string>
+    <string name="reports_counting">Counting frames…</string>
     <string name="reports_blank">(nothing written yet)</string>
     <string name="reports_edit">Edit</string>
     <string name="reports_send">Send</string>

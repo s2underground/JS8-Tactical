@@ -233,7 +233,7 @@ class ReportsFragment : Fragment() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         card.addView(top)
         card.addView(text(getString(R.string.reports_to_line, d.to.ifBlank { getString(R.string.reports_everyone) }.uppercase()) +
-            (ReportUi.airtime(ctx, d)?.let { "  ·  " + it.label() } ?: ""), 12.5f, color(R.color.tac_text_dim)))
+            (ReportUi.cachedAirtime(ctx, d)?.let { "  ·  " + it.label() } ?: ""), 12.5f, color(R.color.tac_text_dim)))
         card.addView(text(d.onAir.ifBlank { getString(R.string.reports_blank) }, 13.5f).apply {
             maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.MONOSPACE
         })

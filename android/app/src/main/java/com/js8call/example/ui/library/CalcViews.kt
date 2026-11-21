@@ -191,18 +191,27 @@ object CalcViews {
             textSize = 14f
             setTextColor(0xFFE6EAF0.toInt())
         }
+        // Counting runs the JS8 encoder (seconds for a long text): off the main thread, latest text wins.
+        var generation = 0
         fun show() {
             val text = msg.text.toString().trim().uppercase()
             if (text.isEmpty()) { result.text = "Type a message."; return }
-            val lines = Calculators.Speed.entries.map { sp ->
-                val frames = try {
-                    com.js8call.core.JS8Engine.countFrames(myCall, myGrid, "", text, sp.submode)
-                } catch (_: Throwable) { -1 }
-                if (frames > 0) "• ${sp.label}: $frames frame${if (frames == 1) "" else "s"}, about ${Calculators.duration(Calculators.airtimeSeconds(frames, sp))}"
-                else "• ${sp.label}: can't count here"
-            }
-            result.text = "Sent from $myCall:\n" + lines.joinToString("\n") +
-                "\nShorter words and fewer characters mean fewer frames. Your callsign and the recipient's take space in the first frame."
+            val gen = ++generation
+            if (text.length > 200) result.text = "Counting…"
+            Thread {
+                val lines = Calculators.Speed.entries.map { sp ->
+                    if (gen != generation) return@Thread
+                    val frames = try {
+                        com.js8call.core.JS8Engine.countFrames(myCall, myGrid, "", text, sp.submode)
+                    } catch (_: Throwable) { -1 }
+                    if (frames > 0) "• ${sp.label}: $frames frame${if (frames == 1) "" else "s"}, about ${Calculators.duration(Calculators.airtimeSeconds(frames, sp))}"
+                    else "• ${sp.label}: can't count here"
+                }
+                result.post {
+                    if (gen == generation) result.text = "Sent from $myCall:\n" + lines.joinToString("\n") +
+                        "\nShorter words and fewer characters mean fewer frames. Your callsign and the recipient's take space in the first frame."
+                }
+            }.apply { priority = Thread.MIN_PRIORITY + 1 }.start()
         }
         msg.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) = show()

@@ -25,18 +25,30 @@ object ReportUi {
         fun label(): String = "$frames frame${if (frames == 1) "" else "s"} · ${seconds / 60}:${"%02d".format(seconds % 60)} at $speed"
     }
 
-    fun airtime(ctx: Context, d: ReportDrafts.Draft): Airtime? {
+    /**
+     * Counting frames runs the full JS8 encoder over the text: several seconds for a long report.
+     * It is never done on the main thread. Results are cached by exactly what is counted, and the
+     * latest request per screen wins, so typing never waits for it.
+     */
+    private val cache = android.util.LruCache<String, Int>(64)
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "frame-count").apply { priority = Thread.MIN_PRIORITY + 1 } }
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private val waiting = HashMap<String, MutableList<(Airtime?) -> Unit>>()
+
+    private data class Job(val key: String, val call: String, val grid: String, val sent: String, val submode: Int)
+
+    private fun job(ctx: Context, d: ReportDrafts.Draft): Job? {
         val text = d.onAir
         if (text.isBlank()) return null
         val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
         val submode = TxOffsets.submode(ctx)
         val sent = if (d.to.isBlank()) text else "${d.to.uppercase()} $text"
-        val frames = runCatching {
-            JS8Engine.countFrames(
-                prefs.getString("callsign", "").orEmpty().uppercase(),
-                prefs.getString("grid", "").orEmpty().uppercase(), "", sent, submode,
-            )
-        }.getOrDefault(-1)
+        val call = prefs.getString("callsign", "").orEmpty().uppercase()
+        val grid = prefs.getString("grid", "").orEmpty().uppercase()
+        return Job("$call|$grid|$submode|$sent", call, grid, sent, submode)
+    }
+
+    private fun toAirtime(frames: Int, submode: Int): Airtime? {
         if (frames <= 0) return null
         val frameS = when (submode) {
             JS8EngineService.SUBMODE_SLOW -> 30
@@ -51,6 +63,29 @@ object ReportUi {
             else -> "Normal"
         }
         return Airtime(frames, frames * frameS, speed)
+    }
+
+    /** Airtime if already counted, else null (and nothing is computed). */
+    fun cachedAirtime(ctx: Context, d: ReportDrafts.Draft): Airtime? =
+        job(ctx, d)?.let { j -> cache.get(j.key)?.let { toAirtime(it, j.submode) } }
+
+    /** True when [d]'s airtime has been counted (so [cachedAirtime] is the answer, null or not). */
+    fun isCounted(ctx: Context, d: ReportDrafts.Draft): Boolean = job(ctx, d)?.let { cache.get(it.key) != null } ?: true
+
+    /** Count in the background; [onReady] runs on the main thread (at once if cached). */
+    fun airtimeAsync(ctx: Context, d: ReportDrafts.Draft, onReady: (Airtime?) -> Unit) {
+        val j = job(ctx, d) ?: return onReady(null)
+        cache.get(j.key)?.let { return onReady(toAirtime(it, j.submode)) }
+        synchronized(waiting) {
+            waiting[j.key]?.let { it += onReady; return }
+            waiting[j.key] = mutableListOf(onReady)
+        }
+        worker.execute {
+            val frames = runCatching { JS8Engine.countFrames(j.call, j.grid, "", j.sent, j.submode) }.getOrDefault(-1)
+            cache.put(j.key, frames)
+            val cbs = synchronized(waiting) { waiting.remove(j.key).orEmpty() }
+            main.post { cbs.forEach { it(toAirtime(frames, j.submode)) } }
+        }
     }
 
     fun zulu(ms: Long): String = SimpleDateFormat("EEE dd MMM HHmm'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(ms))
@@ -83,16 +118,16 @@ object ReportUi {
             return
         }
         if (!f.readyToSend()) return
-        val air = airtime(ctx, draft)
         val to = draft.to.ifBlank { ctx.getString(R.string.reports_everyone) }.uppercase()
-        val msg = buildString {
+        fun msg(air: String?) = buildString {
             append(ctx.getString(R.string.reports_send_to, to))
-            air?.let { append("\n").append(it.label()) }
+            air?.let { append("\n").append(it) }
             if (!JS8EngineService.engineRunning) append("\n\n").append(ctx.getString(R.string.reports_send_waits))
         }
-        MaterialAlertDialogBuilder(ctx)
+        val counted = isCounted(ctx, draft)
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(draft.displayTitle())
-            .setMessage(msg)
+            .setMessage(msg(if (counted) cachedAirtime(ctx, draft)?.label() else ctx.getString(R.string.reports_counting)))
             .setPositiveButton(R.string.reports_send) { _, _ ->
                 val tx = TransmitViewModel.of(ctx)
                 if (draft.to.isBlank()) tx.queueManualMessage(draft.onAir) else tx.queueThreadMessage(draft.to.uppercase(), draft.onAir)
@@ -102,5 +137,6 @@ object ReportUi {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+        if (!counted) airtimeAsync(ctx, draft) { air -> if (dialog.isShowing) dialog.setMessage(msg(air?.label())) }
     }
 }

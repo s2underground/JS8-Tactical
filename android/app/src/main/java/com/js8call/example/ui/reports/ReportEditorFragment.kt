@@ -200,8 +200,11 @@ class ReportEditorFragment : Fragment() {
         store.put(draft)
     }
 
+    private val previewSoon = Runnable { if (view != null) renderPreview() }
+
     private fun changed(previewToo: Boolean = true) {
-        if (previewToo) renderPreview()
+        // The preview repeats the whole report: redrawn once typing pauses, not on every key.
+        if (previewToo) { handler.removeCallbacks(previewSoon); handler.postDelayed(previewSoon, 250) }
         handler.removeCallbacks(saveSoon)
         handler.postDelayed(saveSoon, 800)
     }
@@ -267,7 +270,20 @@ class ReportEditorFragment : Fragment() {
             to.isBlank() -> text
             else -> "$to $text"
         }
-        airtime.text = ReportUi.airtime(requireContext(), draft)?.label() ?: ""
+        val ctx = requireContext()
+        if (ReportUi.isCounted(ctx, draft)) { airtime.text = ReportUi.cachedAirtime(ctx, draft)?.label() ?: ""; return }
+        airtime.text = getString(R.string.reports_counting)
+        // Counted once typing pauses, off the main thread; only the latest text's answer is shown.
+        handler.removeCallbacks(countSoon)
+        handler.postDelayed(countSoon, 700)
+    }
+
+    private val countSoon = Runnable {
+        if (view == null) return@Runnable
+        val asked = draft
+        ReportUi.airtimeAsync(requireContext(), asked) { air ->
+            if (view != null && draft.onAir == asked.onAir && draft.to == asked.to) airtime.text = air?.label() ?: ""
+        }
     }
 
     // ---------------------------------------------------------------- schedule
