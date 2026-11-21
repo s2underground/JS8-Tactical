@@ -102,6 +102,7 @@ class DigestFragment : Fragment() {
         traffic.digestAlerts.observe(viewLifecycleOwner) { refresh() }
         traffic.stations.observe(viewLifecycleOwner) { refresh() }
         com.js8call.example.ai.AiWork.bulletins.observe(viewLifecycleOwner) { last?.let { render(it) } }
+        com.js8call.example.ai.AiWork.checks.observe(viewLifecycleOwner) { last?.let { render(it) } }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -235,13 +236,21 @@ class DigestFragment : Fragment() {
                     setTextColor(if (overviewFailed || overviewText.isBlank()) color(R.color.tac_text_dim) else color(R.color.tac_text))
                     text = when {
                         overviewBusy -> getString(R.string.ai_overview_working)
-                        overviewText.isNotBlank() && !overviewFailed -> withCitations(overviewText)
+                        overviewText.isNotBlank() && !overviewFailed -> leadText()
                         overviewText.isNotBlank() -> overviewText
                         !usable -> getString(R.string.ai_overview_no_model)
                         else -> getString(R.string.ai_overview_hint)
                     }
                     movementMethod = android.text.method.LinkMovementMethod.getInstance()
                 })
+                if (overviewText.isNotBlank() && !overviewBusy && !overviewFailed) leadNotes().forEach { note ->
+                    addView(TextView(ctx).apply {
+                        text = note
+                        textSize = 12f
+                        setTextColor(color(R.color.tac_warn_text))
+                        setPadding(0, dp(4), 0, 0)
+                    })
+                }
                 if (overviewText.isNotBlank() && !overviewBusy && !overviewFailed) addView(TextView(ctx).apply {
                     text = getString(R.string.ai_overview_written, java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(overviewAtMs)))
                     textSize = 12f
@@ -275,7 +284,12 @@ class DigestFragment : Fragment() {
             })
             val now = System.currentTimeMillis()
             stories.take(8).forEach { st ->
-                val line = ai.summary(ctx, st.rawBody)
+                val aiLine = ai.summary(ctx, st.rawBody)
+                val check = if (aiLine != null) ai.lineCheck(ctx, st.rawBody) else null
+                if (check == com.js8call.example.ai.AiWork.Check.PENDING) ai.check(ctx, listOf(com.js8call.example.ai.AiPrompt.bulletinBody(st.rawBody) to aiLine!!))
+                // A line the model's own check rejects is replaced by the message's own wording.
+                val line = aiLine.takeIf { check != com.js8call.example.ai.AiWork.Check.FAILED }
+                val flagged = line?.let { com.js8call.example.ai.AiGrounding.unsupported(it, storySources(st)) }.orEmpty()
                 addView(LinearLayout(ctx).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(0, dp(6), 0, dp(4))
@@ -284,13 +298,20 @@ class DigestFragment : Fragment() {
                     setBackgroundResource(tv.resourceId)
                     setOnClickListener { showSources(st) }
                     addView(TextView(ctx).apply {
-                        text = line ?: (com.js8call.example.ai.AiStories.sentenceCase(st.body).let { if (it.length > 220) it.take(220) + "…" else it })
+                        text = line?.let { marked(it, flagged) } ?: (com.js8call.example.ai.AiStories.sentenceCase(st.body).let { if (it.length > 220) it.take(220) + "…" else it })
                         setTextColor(color(R.color.tac_text))
                         textSize = 15f
                     })
                     addView(TextView(ctx).apply {
                         val tag = com.js8call.example.ai.AiStories.sourceLine(st)
-                        text = listOfNotNull(tag, ago(st.lastMs, now), if (line == null && usable) getString(R.string.ai_story_pending) else null,
+                        text = listOfNotNull(tag, ago(st.lastMs, now),
+                            when {
+                                check == com.js8call.example.ai.AiWork.Check.FAILED -> getString(R.string.ai_line_failed_check)
+                                line == null && usable -> getString(R.string.ai_story_pending)
+                                flagged.isNotEmpty() -> getString(R.string.ai_line_unsupported)
+                                check == com.js8call.example.ai.AiWork.Check.PENDING && usable -> getString(R.string.ai_checking)
+                                else -> null
+                            },
                             getString(R.string.ai_sources_link)).joinToString("  ·  ")
                         setTextColor(if (st.sources > 1) CONFIRMED else color(R.color.tac_text_quiet))
                         textSize = 12f
@@ -301,8 +322,67 @@ class DigestFragment : Fragment() {
         }
     }
 
+    /** Everything the AI could have taken a name or figure from for this story: the raw transmissions. */
+    private fun storySources(st: com.js8call.example.ai.AiStories.Story): List<String> =
+        st.msgs.flatMap { listOfNotNull(it.body, it.sender, it.recipient) } + st.rawBody + st.sources.toString()
+
+    /** Words the messages don't contain are underlined in amber. */
+    private fun marked(text: String, ranges: List<IntRange>, into: android.text.SpannableStringBuilder? = null): CharSequence {
+        val out = into ?: android.text.SpannableStringBuilder(text)
+        val warn = color(R.color.tac_warn_text)
+        ranges.forEach { r ->
+            out.setSpan(android.text.style.UnderlineSpan(), r.first, r.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            out.setSpan(android.text.style.ForegroundColorSpan(warn), r.first, r.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return out
+    }
+
+    /** The lead's sentences, each with the stories it cites (all of them when it cites none). */
+    private fun leadSentences(): List<Pair<com.js8call.example.ai.AiGrounding.Sentence, List<com.js8call.example.ai.AiStories.Story>>> =
+        com.js8call.example.ai.AiGrounding.sentences(overviewText).map { sen ->
+            sen to sen.cites.mapNotNull { leadStories.getOrNull(it - 1) }.ifEmpty { leadStories }
+        }
+
+    /** What the model's check reads for a lead sentence: the cited stories as the lead was given them. */
+    private fun leadMessage(cited: List<com.js8call.example.ai.AiStories.Story>): String =
+        cited.joinToString("\n\n") { st ->
+            "[${leadStories.indexOf(st) + 1}] ${st.body} (${if (st.sources <= 1) "single report" else "${st.sources} independent reports"})"
+        }
+
+    /** The lead with links, unsupported words underlined, and ⚠ on sentences that failed the model's check. */
+    private fun leadText(): CharSequence {
+        val ctx = requireContext()
+        val out = withCitations(overviewText)
+        val failed = ArrayList<IntRange>()
+        leadSentences().forEach { (sen, cited) ->
+            val bad = com.js8call.example.ai.AiGrounding.unsupported(sen.text, cited.flatMap { storySources(it) })
+            marked(overviewText, bad.map { (it.first + sen.range.first)..(it.last + sen.range.first) }, out)
+            if (com.js8call.example.ai.AiWork.checkOf(ctx, leadMessage(cited), sen.claim) == com.js8call.example.ai.AiWork.Check.FAILED) failed += sen.range
+        }
+        // Back to front, so inserting the markers doesn't move the sentences still to do.
+        failed.sortedByDescending { it.first }.forEach { r ->
+            out.setSpan(android.text.style.StyleSpan(Typeface.ITALIC), r.first, r.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            out.setSpan(android.text.style.ForegroundColorSpan(color(R.color.tac_text_dim)), r.first, r.last + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            out.insert(r.first, "⚠ ")
+        }
+        return out
+    }
+
+    /** Explains the marks on the lead, and says when the model is still checking it. */
+    private fun leadNotes(): List<String> {
+        val ctx = requireContext()
+        val sens = leadSentences()
+        val notes = ArrayList<String>()
+        if (sens.any { (sen, cited) -> com.js8call.example.ai.AiGrounding.unsupported(sen.text, cited.flatMap { storySources(it) }).isNotEmpty() })
+            notes += getString(R.string.ai_lead_unsupported)
+        val checks = sens.map { (sen, cited) -> com.js8call.example.ai.AiWork.checkOf(ctx, leadMessage(cited), sen.claim) }
+        if (checks.any { it == com.js8call.example.ai.AiWork.Check.FAILED }) notes += getString(R.string.ai_lead_failed_check)
+        if (checks.any { it == com.js8call.example.ai.AiWork.Check.PENDING } && com.js8call.example.ai.AiWork.usable(ctx)) notes += getString(R.string.ai_checking_lead)
+        return notes
+    }
+
     /** "[2]" in the AI text becomes a link to story 2's transmissions. */
-    private fun withCitations(text: String): CharSequence {
+    private fun withCitations(text: String): android.text.SpannableStringBuilder {
         val out = android.text.SpannableStringBuilder(text)
         Regex("\\[(\\d+)]").findAll(text).forEach { m ->
             val st = leadStories.getOrNull(m.groupValues[1].toInt() - 1) ?: return@forEach
@@ -410,6 +490,7 @@ class DigestFragment : Fragment() {
                 overviewFailed = t == null
                 overviewText = t ?: getString(R.string.ai_overview_failed, err ?: "no text came back")
                 overviewAtMs = System.currentTimeMillis()
+                if (t != null) com.js8call.example.ai.AiWork.check(ctx, leadSentences().map { (sen, cited) -> leadMessage(cited) to sen.claim })
                 if (view != null) last?.let { render(it) }
             })
     }

@@ -637,6 +637,14 @@
     <string name="ai_overview_no_model">Download a model to use the AI overview.</string>
     <string name="ai_overview_failed">No summary this time: %1$s</string>
     <string name="ai_stories">STORIES (%1$d)</string>
+    <string name="ai_line_failed_check">original wording: the AI line failed its own check</string>
+    <string name="ai_line_unsupported">underlined words are not in the messages</string>
+    <string name="ai_checking">double-checking</string>
+    <string name="ai_lead_unsupported">Underlined words are not in the messages the sentence cites. Tap its [n] to look.</string>
+    <string name="ai_lead_failed_check">⚠ The AI\'s own check says the cited message doesn\'t back this sentence up.</string>
+    <string name="ai_checking_lead">Double-checking against the messages…</string>
+    <string name="settings_ai_double_check">Double-check AI text</string>
+    <string name="settings_ai_double_check_summary">After writing, the AI checks each line against its message (a yes/no question). Lines that fail are marked, or replaced with the message\'s own wording. Takes a few seconds per line.</string>
     <string name="ai_story_pending">plain-English version coming</string>
     <string name="ai_notes">What the AI was given</string>
     <string name="ai_notes_title">Notes the summary was written from</string>

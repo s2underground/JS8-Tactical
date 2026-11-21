@@ -116,6 +116,19 @@ object AiPrompt {
     }
 
     /** For two or more stories: the model joins them into the main news in 1-2 sentences, citing [n]. */
+    /** The model's own fact check: a yes/no question is far easier for a small model than writing. */
+    const val CHECK_SYSTEM = "You check summaries of radio messages for mistakes. Reply with one word: YES if the message " +
+        "says what the summary says, or NO if the summary adds, changes or gets wrong anything (a name, place, number or meaning)."
+
+    fun checkUser(message: String, claim: String): String =
+        "MESSAGE:\n${message.take(1500)}\n\nSUMMARY: $claim\n\nDoes the message say what the summary says? Answer YES or NO."
+
+    /** true = supported, false = not, null = the model gave no clear answer. */
+    fun verdict(raw: String): Boolean? {
+        val w = raw.trim().uppercase().trimStart('*', '"', '\'', ' ').take(3)
+        return when { w.startsWith("YES") -> true; w.startsWith("NO") -> false; else -> null }
+    }
+
     fun newsUser(stories: List<Pair<String, Int>>): String = buildString {
         appendLine("NEWS STORIES (numbered, with how many stations reported each independently):")
         stories.take(6).forEachIndexed { i, (text, n) ->

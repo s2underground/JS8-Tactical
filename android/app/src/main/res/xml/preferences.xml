@@ -477,6 +477,14 @@
             app:defaultValue="false"
             app:iconSpaceReserved="false" />
 
+        <SwitchPreferenceCompat
+            app:key="ai_double_check"
+            app:title="@string/settings_ai_double_check"
+            app:summary="@string/settings_ai_double_check_summary"
+            app:defaultValue="true"
+            app:dependency="ai_enabled"
+            app:iconSpaceReserved="false" />
+
         <Preference
             app:key="open_ai"
             app:title="@string/settings_ai_open"

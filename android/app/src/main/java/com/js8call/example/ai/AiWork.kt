@@ -26,6 +26,8 @@ object AiWork {
     private const val IDLE_UNLOAD_S = 120L
     private const val CACHE_FILE = "ai_bulletins.txt"
     private const val CACHE_MAX = 400
+    private const val CHECK_FILE = "ai_checks.txt"
+    const val PREF_DOUBLE_CHECK = "ai_double_check"
 
     private val worker = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "ai-work").apply { priority = Thread.MIN_PRIORITY + 1 } }
     private val main = Handler(Looper.getMainLooper())
@@ -34,6 +36,65 @@ object AiWork {
     private var unloadTask: ScheduledFuture<*>? = null
     private val queued = HashSet<String>()
     private var cache: LinkedHashMap<String, String>? = null
+    private var checkCache: LinkedHashMap<String, String>? = null
+    private val checkQueued = HashSet<String>()
+
+    /** The model's own yes/no check of a piece of AI text against its message. */
+    enum class Check { PENDING, OK, FAILED, UNCLEAR, OFF }
+
+    private val _checks = MutableLiveData(0)
+    /** Bumped whenever a check finishes, so screens can redraw. */
+    val checks: LiveData<Int> = _checks
+
+    fun doubleCheck(ctx: Context): Boolean =
+        PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(PREF_DOUBLE_CHECK, true)
+
+    private fun checkKey(message: String, claim: String): String {
+        val md = java.security.MessageDigest.getInstance("SHA-1").digest("c1:$message\u0001$claim".toByteArray())
+        return md.take(10).joinToString("") { "%02x".format(it) }
+    }
+
+    /** Result of the model's check of [claim] against [message] (OFF when the setting is off). */
+    fun checkOf(ctx: Context, message: String, claim: String): Check {
+        if (!doubleCheck(ctx)) return Check.OFF
+        return when (checks(ctx)[checkKey(message, claim)]) {
+            "Y" -> Check.OK; "N" -> Check.FAILED; "?" -> Check.UNCLEAR; else -> Check.PENDING
+        }
+    }
+
+    /** Check of a bulletin's one-line summary ([summary]) against the bulletin itself. */
+    fun lineCheck(ctx: Context, body: String): Check =
+        summary(ctx, body)?.let { checkOf(ctx, AiPrompt.bulletinBody(body), it) } ?: Check.PENDING
+
+    /** Queue the model's check for each (message, claim) not checked yet. */
+    fun check(ctx: Context, items: List<Pair<String, String>>) {
+        if (!usable(ctx) || !doubleCheck(ctx)) return
+        val app = ctx.applicationContext
+        items.distinct().forEach { (message, claim) ->
+            val k = checkKey(message, claim)
+            if (k in checks(app) || !synchronized(checkQueued) { checkQueued.add(k) }) return@forEach
+            worker.execute {
+                try {
+                    val s = acquire(app) ?: return@execute
+                    setBusy(true)
+                    runCheck(app, s, message, claim)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "check failed", t)
+                } finally {
+                    synchronized(checkQueued) { checkQueued.remove(k) }
+                    idle()
+                }
+            }
+        }
+    }
+
+    /** Worker thread: ask the model, remember the answer. */
+    private fun runCheck(ctx: Context, s: LlamaBridge.Session, message: String, claim: String) {
+        val raw = s.generate(AiPrompt.CHECK_SYSTEM, AiPrompt.checkUser(message, claim), 3, 0f)
+        val v = AiPrompt.verdict(raw)
+        Log.i(TAG, "check: ${when (v) { true -> "supported"; false -> "NOT supported"; null -> "unclear (\"${raw.trim().take(20)}\")" }} in ${s.stats().let { it.promptMs + it.genMs }} ms")
+        storeCheck(ctx, checkKey(message, claim), when (v) { true -> "Y"; false -> "N"; null -> "?" })
+    }
 
     private val _bulletins = MutableLiveData<Map<String, String>>(emptyMap())
     /** Bulletin key ([AiPrompt.key]) → one-line summary. */
@@ -80,7 +141,10 @@ object AiWork {
                     val bad = AiPrompt.unverifiedNumbers(line, body)
                     if (bad.isNotEmpty()) Log.w(TAG, "bulletin summary dropped: numbers not in the bulletin: $bad")
                     // A copy, or a summary with numbers the bulletin doesn't contain, is not shown; remembered so it isn't retried every minute.
-                    store(app, key, if (line.isBlank() || AiPrompt.isEcho(line, body) || bad.isNotEmpty()) FAILED else line)
+                    val ok = !(line.isBlank() || AiPrompt.isEcho(line, body) || bad.isNotEmpty())
+                    store(app, key, if (ok) line else FAILED)
+                    // Straight away, while the model is loaded: does the bulletin say what the line says?
+                    if (ok && doubleCheck(app)) summary(app, body)?.let { runCheck(app, s, AiPrompt.bulletinBody(body), it) }
                     Log.i(TAG, "bulletin summarised in ${s.stats().let { it.promptMs + it.genMs }} ms")
                 } catch (t: Throwable) {
                     Log.e(TAG, "bulletin summary failed", t)
@@ -192,5 +256,28 @@ object AiWork {
         while (map.size > CACHE_MAX) map.remove(map.keys.first())
         runCatching { File(ctx.filesDir, CACHE_FILE).writeText(map.entries.joinToString("\n") { "${it.key}\t${it.value}" }) }
         _bulletins.postValue(HashMap(map))
+    }
+
+    @Synchronized
+    private fun checks(ctx: Context): LinkedHashMap<String, String> {
+        checkCache?.let { return it }
+        val map = LinkedHashMap<String, String>()
+        runCatching {
+            File(ctx.filesDir, CHECK_FILE).takeIf { it.exists() }?.readLines()?.forEach { l ->
+                val i = l.indexOf('\t')
+                if (i > 0) map[l.substring(0, i)] = l.substring(i + 1)
+            }
+        }
+        checkCache = map
+        return map
+    }
+
+    @Synchronized
+    private fun storeCheck(ctx: Context, key: String, v: String) {
+        val map = checks(ctx)
+        map[key] = v
+        while (map.size > CACHE_MAX * 2) map.remove(map.keys.first())
+        runCatching { File(ctx.filesDir, CHECK_FILE).writeText(map.entries.joinToString("\n") { "${it.key}\t${it.value}" }) }
+        _checks.postValue((_checks.value ?: 0) + 1)
     }
 }
