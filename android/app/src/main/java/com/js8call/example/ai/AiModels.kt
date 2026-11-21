@@ -29,14 +29,14 @@ object AiModels {
     val ALL = listOf(
         Model(
             "qwen2.5-0.5b", "Small (Qwen2.5 0.5B)",
-            "Fastest. Rough summaries; good for checking the device can run a model at all.",
+            "Fastest, but often copies text instead of summarising. Good for checking the device can run a model.",
             "qwen2.5-0.5b-instruct-q4_k_m.gguf",
             "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
             491_000_000L,
         ),
         Model(
             "qwen2.5-1.5b", "Standard (Qwen2.5 1.5B)",
-            "Better summaries, about three times slower.",
+            "Recommended. Real summaries, about three times slower.",
             "qwen2.5-1.5b-instruct-q4_k_m.gguf",
             "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
             1_120_000_000L,

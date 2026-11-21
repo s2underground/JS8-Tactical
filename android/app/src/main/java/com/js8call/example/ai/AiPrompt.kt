@@ -20,19 +20,25 @@ object AiPrompt {
     // ---- One bulletin -> one line. Short in, short out: a few seconds each.
 
     const val BULLETIN_SYSTEM =
-        "You condense amateur radio bulletins. Reply with ONE plain sentence of at most 25 words " +
-        "that keeps the key facts: what happened, where, numbers, and what to do. " +
-        "No preamble, no lists, no formatting, no callsigns unless they matter."
+        "You condense amateur radio bulletins into one short plain sentence in your own words. " +
+        "Never copy the bulletin; never use lists or formatting."
 
-    /** The bulletin text with radio framing (group, MSG, serial numbers) removed. */
-    fun bulletinUser(body: String): String =
-        "Bulletin:\n" + body.trim().replace(Regex("\\s+"), " ")
-            .replace(Regex("^(@\\S+\\s+)?(MSG\\s+)?(,?V\\d+,?)?\\s*"), "")
+    /** Radio framing removed: sender prefix, @GROUP, MSG, serial numbers like ,V54, and QST. */
+    fun bulletinBody(body: String): String =
+        body.trim().replace(Regex("\\s+"), " ")
+            .replace(Regex("^[A-Z0-9/]+:\\s*"), "")
+            .replace(Regex("^(@\\S+\\s+)?(MSG\\s+)?(,?V\\d+,?)?\\s*(QST\\s+)?"), "")
             .take(1500)
+
+    /** The bulletin first, the instruction last (small models follow the last thing they read). */
+    fun bulletinUser(body: String): String =
+        "Bulletin:\n" + bulletinBody(body) + "\n\n" +
+            "In one sentence of at most 25 words, in your own words, say what this bulletin reports: " +
+            "what happened, where, key numbers, and any action to take."
 
     /** Stable key for a bulletin's text (repeats and relays of the same text share one summary). */
     fun key(body: String): String {
-        val norm = body.uppercase().replace(Regex("[^A-Z0-9]"), "")
+        val norm = "v2:" + body.uppercase().replace(Regex("[^A-Z0-9]"), "")
         val md = java.security.MessageDigest.getInstance("SHA-1").digest(norm.toByteArray())
         return md.take(10).joinToString("") { "%02x".format(it) }
     }
@@ -40,16 +46,30 @@ object AiPrompt {
     // ---- Overview of the whole digest, built from the rule-based digest (not the raw log).
 
     const val OVERVIEW_SYSTEM =
-        "You brief a radio operator in the field. From the digest below, write 2 to 4 short plain sentences: " +
-        "first anything needing action (emergencies, needs, messages waiting for them), then the general picture " +
-        "(main news from bulletins, how busy the band was). Use only the digest; never invent anything. " +
-        "No lists, no headings, no formatting. If nothing needs attention, say so first."
+        "You brief a radio operator in the field in plain sentences, in your own words. " +
+        "Use only the digest you are given; never invent anything; never copy it out; no lists, headings or formatting."
 
-    /** Digest text with each bulletin replaced by its one-line summary when there is one. */
+    /** Digest text with each bulletin replaced by its one-line summary when there is one; instruction last. */
     fun overviewUser(digestText: String, bulletinSummaries: List<String>, maxChars: Int = 3500): String {
         val lines = digestText.lines().map { it.take(160) }
         val b = if (bulletinSummaries.isEmpty()) "" else "\n\nBULLETIN SUMMARIES:\n" + bulletinSummaries.joinToString("\n") { "- $it" }
-        return (lines.joinToString("\n").take(maxChars - b.length.coerceAtMost(maxChars / 2)) + b)
+        val ask = "\n\nNow write 2 to 4 short sentences for the operator: first anything that needs action " +
+            "(emergencies, needs, messages waiting for them), or say nothing needs action; then the general picture " +
+            "(the main news, how busy the band was)."
+        return "DIGEST:\n" + lines.joinToString("\n").take(maxChars - b.length.coerceAtMost(maxChars / 2)) + b + ask
+    }
+
+    /**
+     * True when the model copied its input instead of summarising: most of its 5-word runs
+     * appear word for word in the input. Small models do this; such output is not shown.
+     */
+    fun isEcho(output: String, input: String): Boolean {
+        fun words(t: String) = t.uppercase().split(Regex("[^A-Z0-9]+")).filter { it.isNotEmpty() }
+        val o = words(output)
+        if (o.size < 6) return false
+        val inGrams = words(input).windowed(5).map { it.joinToString(" ") }.toHashSet()
+        val outGrams = o.windowed(5).map { it.joinToString(" ") }
+        return outGrams.count { it in inGrams }.toDouble() / outGrams.size > 0.6
     }
 
     /** Model output as plain text: no markdown marks, no leading bullet, single spaces. */

@@ -50,7 +50,10 @@ object AiWork {
         return AiModels.byId(id)?.takeIf { AiModels.ready(ctx, it) } ?: AiModels.ALL.firstOrNull { AiModels.ready(ctx, it) }
     }
 
-    fun summary(ctx: Context, body: String): String? = cache(ctx)[AiPrompt.key(body)]
+    /** The one-line summary, or null (none yet, or the model only copied the bulletin). */
+    fun summary(ctx: Context, body: String): String? = cache(ctx)[AiPrompt.key(body)]?.takeIf { it != FAILED }
+
+    private const val FAILED = "\u0000"
 
     /** Queue a one-line summary for every bulletin in [messages] that doesn't have one yet. */
     fun summariseBulletins(ctx: Context, messages: List<DigestBuilder.Msg>) {
@@ -68,7 +71,8 @@ object AiWork {
                     setBusy(true)
                     val raw = s.generate(AiPrompt.BULLETIN_SYSTEM, AiPrompt.bulletinUser(body), 60, 0f)
                     val line = AiPrompt.clean(raw, oneLine = true)
-                    if (line.isNotBlank()) store(app, key, line)
+                    // A copy of the bulletin is not a summary: remember the failure so it isn't retried every minute.
+                    store(app, key, if (line.isBlank() || AiPrompt.isEcho(line, body)) FAILED else line)
                     Log.i(TAG, "bulletin summarised in ${s.stats().let { it.promptMs + it.genMs }} ms")
                 } catch (t: Throwable) {
                     Log.e(TAG, "bulletin summary failed", t)
@@ -95,12 +99,17 @@ object AiWork {
                     sb.append(piece)
                     val so = AiPrompt.clean(sb.toString())
                     main.post { onText(so) }
-                    true
+                    // Stop early once it is clearly copying the digest out.
+                    !(so.split(' ').size >= 30 && AiPrompt.isEcho(so, digestText))
                 }
                 val err = s.error().takeIf { it.isNotBlank() && raw.isBlank() }
                 val st = s.stats()
                 Log.i(TAG, "overview: ${st.promptTokens} tokens in ${st.promptMs} ms, ${st.genTokens} out in ${st.genMs} ms")
-                main.post { onDone(AiPrompt.clean(raw).ifBlank { null }, err) }
+                val text = AiPrompt.clean(raw).ifBlank { null }
+                if (text != null && AiPrompt.isEcho(text, digestText)) {
+                    main.post { onDone(null, "the model repeated the digest instead of summarising it" +
+                        if (model(app)?.id == "qwen2.5-0.5b") " (the Small model often does; try Standard)" else "") }
+                } else main.post { onDone(text, err) }
             } catch (t: Throwable) {
                 Log.e(TAG, "overview failed", t)
                 main.post { onDone(null, t.message ?: t.javaClass.simpleName) }
