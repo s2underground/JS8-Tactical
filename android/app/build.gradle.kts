@@ -20,7 +20,9 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
+        // CI builds count up with the workflow run, so every build (rolling test build or tagged
+        // release) installs over the one before it. Local builds stay at 5.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.let { 100 + it } ?: 5
         versionName = "1.2.0-alpha.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -62,21 +64,27 @@ android {
         }
     }
 
+    // The release key is available (CI secrets or keystore.properties).
+    val releaseReady = signingConfigs.findByName("release")?.let {
+        it.storeFile?.exists() == true && !it.storePassword.isNullOrBlank() &&
+            !it.keyAlias.isNullOrBlank() && !it.keyPassword.isNullOrBlank()
+    } == true
+
     buildTypes {
+        getByName("debug") {
+            // Test builds say so in their version ("1.2.0-alpha.1-test"), and are signed with the
+            // release key when it's available, so they install over a release and vice versa.
+            versionNameSuffix = "-test"
+            if (releaseReady) signingConfig = signingConfigs.getByName("release")
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            val releaseSigning = signingConfigs.findByName("release")
-            if (releaseSigning != null &&
-                releaseSigning.storeFile != null &&
-                !releaseSigning.storePassword.isNullOrBlank() &&
-                !releaseSigning.keyAlias.isNullOrBlank() &&
-                !releaseSigning.keyPassword.isNullOrBlank()
-            ) {
-                signingConfig = releaseSigning
+            if (releaseReady) {
+                signingConfig = signingConfigs.getByName("release")
             } else {
                 logger.warn(
                     "Release signing is not configured. Building an unsigned release APK. " +

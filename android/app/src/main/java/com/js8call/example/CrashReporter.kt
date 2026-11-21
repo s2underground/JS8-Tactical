@@ -147,7 +147,8 @@ object CrashReporter {
             .setPositiveButton(R.string.crash_share) { _, _ ->
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "JS8-Tactical error report")
+                    putExtra(Intent.EXTRA_EMAIL, arrayOf(activity.getString(R.string.bug_report_email)))
+                    putExtra(Intent.EXTRA_SUBJECT, "JS8-Tactical crash report, ${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_SHA})")
                     putExtra(Intent.EXTRA_TEXT, newestFirst)
                 }
                 activity.startActivity(Intent.createChooser(send, activity.getString(R.string.crash_share)))

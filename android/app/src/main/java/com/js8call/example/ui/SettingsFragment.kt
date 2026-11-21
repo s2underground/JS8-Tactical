@@ -374,7 +374,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     if (!isAdded) return@post
                     val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"
-                        putExtra(android.content.Intent.EXTRA_SUBJECT, "JS8-Tactical diagnostics")
+                        // Pre-addressed for email apps (others ignore it); the subject says which build.
+                        putExtra(android.content.Intent.EXTRA_EMAIL, arrayOf(getString(R.string.bug_report_email)))
+                        putExtra(android.content.Intent.EXTRA_SUBJECT,
+                            "JS8-Tactical bug report, ${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_SHA})")
                         runCatching {
                             val uri = androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.diagnostics", file)
                             putExtra(android.content.Intent.EXTRA_STREAM, uri)

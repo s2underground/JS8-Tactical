@@ -8,7 +8,8 @@ net easier to follow and use. It is a fork of
 standard JS8: everything it sends is ordinary JS8 that any JS8Call station can read.
 
 **Status: early alpha (1.2-alpha).** Expect rough edges. Please send a diagnostic report
-(Settings → Diagnostics → Share diagnostic report) after any crash, freeze or odd behaviour.
+(Settings → Diagnostics → Share diagnostic report) after any crash, freeze or odd behaviour;
+it is pre-addressed to js8tactical@proton.me.
 
 ## What it does
 
