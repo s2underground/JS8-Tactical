@@ -100,12 +100,17 @@ bool OboeAudioInput::start(AudioStreamParams const& params,
 }
 
 void OboeAudioInput::stop() {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  if (stream_) {
-    stream_->stop();
-    stream_->close();
-    stream_.reset();
+  // Take the stream out under the lock, then stop it without the lock. Stopping waits for the
+  // audio callback thread to finish, and onAudioReady() takes mutex_: holding it here
+  // deadlocked (operator TX halt, 2026-11-21: main thread stuck in requestStop -> ANR).
+  std::shared_ptr<oboe::AudioStream> stream;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stream = std::move(stream_);
+  }
+  if (stream) {
+    stream->stop();
+    stream->close();
   }
 }
 
@@ -274,12 +279,17 @@ bool OboeAudioOutput::start(AudioStreamParams const& params,
 }
 
 void OboeAudioOutput::stop() {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  if (stream_) {
-    stream_->stop();
-    stream_->close();
-    stream_.reset();
+  // Take the stream out under the lock, then stop it without the lock. Stopping waits for the
+  // audio callback thread to finish, and onAudioReady() takes mutex_: holding it here
+  // deadlocked (operator TX halt, 2026-11-21: main thread stuck in requestStop -> ANR).
+  std::shared_ptr<oboe::AudioStream> stream;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stream = std::move(stream_);
+  }
+  if (stream) {
+    stream->stop();
+    stream->close();
   }
 }
 

@@ -3501,7 +3501,9 @@ class JS8EngineService : Service() {
         txMonitorHandler.removeCallbacks(txMonitorRunnable)
         pttHoldSinceMs = 0L
         engine?.setTransmitReady(false)
-        engine?.stopTransmit()
+        // Stopping the audio can wait on the audio thread; never on the main thread (an ANR here
+        // would leave the app frozen). PTT has already been dropped above on the TX thread.
+        engine?.let { e -> Thread({ runCatching { e.stopTransmit() }.onFailure { Log.e(TAG, "stopTransmit failed", it) } }, "tx-halt").start() }
         txSessionActive = false
         txAudioActive = false
         txMonitorWasAudioActive = false
