@@ -71,7 +71,7 @@ class UvProSession(
     /** Connects to the first paired UV-Pro. Blocks for the RFCOMM connect. */
     fun start(): Boolean {
         lastError = null
-        if (!hasBluetoothPermission()) return fail("Allow Nearby devices for JS8Call in Android Settings")
+        if (!hasBluetoothPermission()) return fail("Allow Nearby devices for JS8-Tactical in Android Settings")
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
         if (adapter == null || !adapter.isEnabled) return fail("Bluetooth is off")
         val device = adapter.bondedDevices?.firstOrNull { isUvPro(it) }

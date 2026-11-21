@@ -322,6 +322,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun replay(entries: List<TrafficHistory.Entry>) {
+        val t0 = android.os.SystemClock.elapsedRealtime()
         if (entries.isNotEmpty()) {
             replaying = true
             try {
@@ -346,6 +347,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             // Evidence in old messages was logged when they were first heard.
             engine.messages().forEach { reportedIds += it.id }
             viewedBaselineMs = now
+            // Runs on the main thread at startup: logged so diagnostics show if a long history slows launch.
+            android.util.Log.i("TrafficViewModel", "history replay: ${entries.size} entries in ${android.os.SystemClock.elapsedRealtime() - t0} ms")
         }
         _historyLoaded.value = true
         publish()

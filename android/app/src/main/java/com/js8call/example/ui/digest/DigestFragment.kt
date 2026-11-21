@@ -602,29 +602,38 @@ class DigestFragment : Fragment() {
         period.check(win.id)
         box.addView(period)
 
-        fun build(): Pair<String, String> {
+        /** Read the choices and the traffic here; format (and sanitize) off the main thread; [then] on the main thread. */
+        fun build(then: (Pair<String, String>) -> Unit) {
             val isRollup = what.checkedRadioButtonId == rollup.id
+            val sanitized = sanitize.isChecked
             val since = if (period.checkedRadioButtonId == all.id) start else now - windowHours * 3_600_000L
             val myCall = androidx.preference.PreferenceManager.getDefaultSharedPreferences(ctx)
                 .getString("callsign", "").orEmpty().trim().uppercase()
             val label = if (period.checkedRadioButtonId == all.id) "everything kept on this device" else "last $windowLabel"
-            var h = com.js8call.example.digest.ExportBuilder.Header(myCall, since, now, label)
-            var entries = traffic.exportEntries()
-            if (sanitize.isChecked) com.js8call.example.digest.ExportBuilder.sanitize(h, entries).let { (sh, se) -> h = sh; entries = se }
-            val text = if (isRollup) com.js8call.example.digest.ExportBuilder.rollup(h, entries)
-                else com.js8call.example.digest.ExportBuilder.rawLog(h, entries)
-            return com.js8call.example.digest.ExportBuilder.fileName(isRollup, now, myCall.substringBefore('/'), sanitize.isChecked) to text
+            val header = com.js8call.example.digest.ExportBuilder.Header(myCall, since, now, label)
+            val all = traffic.exportEntries()
+            val main = android.os.Handler(android.os.Looper.getMainLooper())
+            Thread({
+                var h = header
+                var entries = all
+                if (sanitized) com.js8call.example.digest.ExportBuilder.sanitize(h, entries).let { (sh, se) -> h = sh; entries = se }
+                val text = if (isRollup) com.js8call.example.digest.ExportBuilder.rollup(h, entries)
+                    else com.js8call.example.digest.ExportBuilder.rawLog(h, entries)
+                val name = com.js8call.example.digest.ExportBuilder.fileName(isRollup, now, myCall.substringBefore('/'), sanitized)
+                main.post { if (isAdded) then(name to text) }
+            }, "export").start()
         }
 
         com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.export_title)
             .setView(ScrollView(ctx).apply { addView(box) })
             .setPositiveButton(R.string.export_save) { _, _ ->
-                val (name, text) = build()
-                pendingExport = text
-                runCatching { saveExport.launch(name) }.onFailure { pendingExport = null; shareExport(name, text) }
+                build { (name, text) ->
+                    pendingExport = text
+                    runCatching { saveExport.launch(name) }.onFailure { pendingExport = null; shareExport(name, text) }
+                }
             }
-            .setNeutralButton(R.string.export_share) { _, _ -> build().let { (name, text) -> shareExport(name, text) } }
+            .setNeutralButton(R.string.export_share) { _, _ -> build { (name, text) -> shareExport(name, text) } }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }

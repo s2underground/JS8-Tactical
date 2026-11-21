@@ -60,12 +60,11 @@ object ExportBuilder {
         val known = sorted.flatMap { listOfNotNull(it.sender, it.recipient) }.filterNot { it.startsWith("@") }
             .map { base(it.uppercase()) }.filter { it.length >= 3 }.distinct().sortedByDescending { it.length }
         known.forEach { label(it) }
+        // One pass for every call heard as a sender or recipient (longest first), then any other call-shaped word.
+        val knownRe = if (known.isEmpty()) null else Regex(
+            "(?<![A-Z0-9/])(" + known.joinToString("|") { Regex.escape(it) } + ")(?:/[A-Z0-9]{1,4})?(?![A-Z0-9])", RegexOption.IGNORE_CASE)
         fun clean(text: String): String {
-            var t = text
-            known.forEach { c ->
-                t = Regex("(?<![A-Z0-9/])${Regex.escape(c)}(?:/[A-Z0-9]{1,4})?(?![A-Z0-9])", RegexOption.IGNORE_CASE)
-                    .replace(t) { label(c) }
-            }
+            val t = knownRe?.replace(text) { m -> label(m.groupValues[1].uppercase()) } ?: text
             return CALL.replace(t) { m -> if (m.value in labels.values) m.value else label(m.value) }
         }
         fun field(v: String?): String? = v?.let { if (it.startsWith("@")) it else label(it.uppercase()) }

@@ -85,11 +85,19 @@ class SettingsFragment : PreferenceFragmentCompat() {
         setPreferencesFromResource(R.xml.preferences, rootKey)
 
         findPreference<Preference>("app_version")?.summary = BuildConfig.VERSION_NAME
+        findPreference<Preference>("about_licences")?.setOnPreferenceClickListener {
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                .setTitle(getString(R.string.app_name) + " " + BuildConfig.VERSION_NAME)
+                .setMessage(R.string.about_text)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            true
+        }
 
         val prefs = preferenceManager.sharedPreferences
         if (prefs != null && !prefs.contains("my_status")) {
             val statusPref = findPreference<EditTextPreference>("my_status")
-            statusPref?.text = "JS8Android-${BuildConfig.VERSION_NAME}"
+            statusPref?.text = "JS8-Tactical ${BuildConfig.VERSION_NAME}"
         }
 
         val callsignPref = findPreference<EditTextPreference>("callsign")

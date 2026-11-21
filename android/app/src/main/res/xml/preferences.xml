@@ -504,6 +504,12 @@
             app:selectable="false"
             app:iconSpaceReserved="false" />
 
+        <Preference
+            app:key="about_licences"
+            app:title="@string/about_licences"
+            app:summary="@string/about_licences_summary"
+            app:iconSpaceReserved="false" />
+
     </PreferenceCategory>
 
 </PreferenceScreen>

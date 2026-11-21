@@ -16,8 +16,8 @@ android {
         applicationId = "com.s2underground.js8tactical"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.1"
+        versionCode = 5
+        versionName = "1.2-alpha.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Which commit a test build came from, shown in crash and diagnostic reports.

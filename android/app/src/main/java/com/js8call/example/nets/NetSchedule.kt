@@ -1,7 +1,5 @@
 package com.js8call.example.nets
 
-import java.util.Calendar
-import java.util.TimeZone
 
 /**
  * Net Switcher schedule: named nets with a dial frequency, UTC days and times, and optional
@@ -60,10 +58,7 @@ object NetSchedule {
     private fun utcMidnight(ms: Long): Long = Math.floorDiv(ms, DAY_MS) * DAY_MS
 
     /** Monday = 0 … Sunday = 6 for the UTC day containing [ms]. */
-    fun dayIndex(ms: Long): Int {
-        val c = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = ms }
-        return (c.get(Calendar.DAY_OF_WEEK) + 5) % 7
-    }
+    fun dayIndex(ms: Long): Int = Math.floorMod(Math.floorDiv(ms, DAY_MS) + 3, 7L).toInt() // 1970-01-01 was a Thursday
 
     /** Every time [net] is on that overlaps [fromMs, toMs). */
     fun occurrences(net: Net, fromMs: Long, toMs: Long): List<Occurrence> {

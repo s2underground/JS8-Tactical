@@ -406,6 +406,12 @@ class JS8EngineService : Service() {
     /** Heartbeats and auto-replies wait until then after the switcher changed band (setting). */
     private var netHoldUntilMs = 0L
 
+    /** When the switcher last changed the dial (a rig's frequency report from before it is ignored). */
+    private var netSwitchedAtMs = 0L
+
+    /** Rig control that can set the dial is configured (whether or not it is connected right now). */
+    private fun catConfigured(): Boolean = rigControlMode !in setOf("none", "rts_ptt", "btech_uvpro")
+
     /** Every tick: change net when one is due, unless transmitting (never cut off) or a message is coming in. */
     private fun runNetSwitcher() {
         val store = com.js8call.example.nets.NetStore.of(this)
@@ -419,7 +425,16 @@ class JS8EngineService : Service() {
                 if (store.waiting != d.reason) Log.i(TAG, "Net Switcher: change due, waiting for ${d.reason}")
                 store.waiting = d.reason
             }
-            is com.js8call.example.nets.NetSwitcher.Decision.Switch -> applyNetTarget(store, d.target, now)
+            is com.js8call.example.nets.NetSwitcher.Decision.Switch -> {
+                // Rig control configured but dropped out (USB hiccup): wait for it rather than
+                // asking the operator to retune, up to 3 minutes.
+                val prevDial = currentDialHz.takeIf { it > 0 }
+                val needsDial = d.target.dialHz != null && !com.js8call.example.nets.NetSwitcher.sameDial(d.target.dialHz, prevDial)
+                if (needsDial && catConfigured() && !isRigControlConnected() && now - d.target.sinceMs < 3 * 60_000L) {
+                    if (store.waiting == null) Log.i(TAG, "Net Switcher: change due, waiting for rig control to reconnect")
+                    store.waiting = "rig control to reconnect"
+                } else applyNetTarget(store, d.target, now)
+            }
         }
     }
 
@@ -432,10 +447,11 @@ class JS8EngineService : Service() {
         t.dialHz?.let { hz ->
             if (!com.js8call.example.nets.NetSwitcher.sameDial(hz, prevDial)) {
                 store.lastSetDialHz = hz
+                netSwitchedAtMs = now
                 currentDialHz = hz
                 prefs.edit().putString("last_frequency", hz.toString()).apply()
                 val mhz = com.js8call.example.nets.NetSchedule.mhz(hz)
-                val canCat = isRigControlConnected() && rigControlMode !in setOf("none", "rts_ptt", "btech_uvpro")
+                val canCat = isRigControlConnected() && catConfigured()
                 if (canCat) {
                     setFrequency(hz)
                     broadcastRadioFrequency(hz)
@@ -473,9 +489,11 @@ class JS8EngineService : Service() {
     }
 
     /** The dial changed: if not by the switcher, the operator did it, so step back until the next change. */
-    private fun noteDialChange(hz: Long) {
+    private fun noteDialChange(hz: Long, fromRig: Boolean = false) {
         val store = com.js8call.example.nets.NetStore.of(this)
         if (!store.enabled || hz <= 0) return
+        // A frequency report the rig made before it finished retuning isn't the operator's doing.
+        if (fromRig && System.currentTimeMillis() - netSwitchedAtMs < 15_000L) return
         // Messages queued for the net we're now on can go.
         mainHandler.post { runCatching { com.js8call.example.ui.TransmitViewModel.of(applicationContext).processNext() } }
         if (com.js8call.example.nets.NetSwitcher.sameDial(hz, store.lastSetDialHz)) return
@@ -786,7 +804,7 @@ class JS8EngineService : Service() {
             QmxCatSession(direct, object : QmxCatSession.Listener {
                 override fun onFrequency(frequencyHz: Long) {
                     currentDialHz = frequencyHz
-                    mainHandler.post { broadcastRadioFrequency(frequencyHz); noteDialChange(frequencyHz) }
+                    mainHandler.post { broadcastRadioFrequency(frequencyHz); noteDialChange(frequencyHz, fromRig = true) }
                 }
 
                 override fun onMessage(message: String) {
@@ -4094,7 +4112,7 @@ class JS8EngineService : Service() {
 
     private fun initPskReporter() {
         if (pskReporterClient != null) return
-        val programInfo = "JS8Android-${BuildConfig.VERSION_NAME}"
+        val programInfo = "JS8-Tactical ${BuildConfig.VERSION_NAME}"
         pskReporterClient = PskReporterClient(programInfo)
         updatePskReporterState()
     }
