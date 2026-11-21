@@ -473,6 +473,7 @@ class JS8EngineService : Service() {
                 mainHandler.removeCallbacks(reconnectRestart)
                 mainHandler.removeCallbacks(reconnectGiveUp)
                 Log.i(TAG, "Exit: stopping engine and closing the app")
+                PreferenceManager.getDefaultSharedPreferences(this).edit().putLong(com.js8call.example.MainActivity.PREF_EXITED_AT, System.currentTimeMillis()).apply()
                 runCatching { com.js8call.example.ui.TransmitViewModel.of(applicationContext).cancelAll() }
                 stopEngine()
                 runCatching { (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).appTasks.forEach { it.finishAndRemoveTask() } }

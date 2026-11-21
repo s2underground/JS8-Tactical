@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.MenuItem
 import android.view.WindowManager
 import android.widget.Toast
@@ -152,6 +153,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** When Exit was last used (ms); a USB-triggered reopen right after it closes itself. */
+        const val PREF_EXITED_AT = "exited_at_ms"
         private const val REQUEST_RECORD_AUDIO = 1
         private const val REQUEST_BLUETOOTH_CONNECT = 3
         private const val REQUEST_LOCATION = 2
@@ -170,6 +173,16 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         CrashReporter.install(this)
         super.onCreate(savedInstanceState)
+        Log.i("JS8MainActivity", "Opened by: action=${intent?.action} extras=${intent?.extras?.keySet()}")
+        // Just after Exit, the radio's USB reconnecting (the rig port was closed) can ask
+        // Android to open the app again. That is not the user opening it: close again.
+        val exitedAgo = System.currentTimeMillis() -
+            PreferenceManager.getDefaultSharedPreferences(this).getLong(PREF_EXITED_AT, 0L)
+        if (savedInstanceState == null && intent?.action != Intent.ACTION_MAIN && exitedAgo in 0..15_000L) {
+            Log.i("JS8MainActivity", "Reopened ${exitedAgo} ms after Exit by ${intent?.action}; closing")
+            finishAndRemoveTask()
+            return
+        }
         setContentView(R.layout.activity_main)
         if (savedInstanceState == null) CrashReporter.showIfPending(this)
         // First run: Listener / Operator / Net control (sets the Start-here guide).
@@ -311,7 +324,7 @@ class MainActivity : AppCompatActivity() {
         LocalBroadcastManager.getInstance(this)
             .unregisterReceiver(monitorReceiver)
         decodeViewModel.persistDecodesOnStop()
-        if (isFinishing && !isChangingConfigurations) {
+        if (isFinishing && !isChangingConfigurations && !exiting) {
             stopEngineService()
         }
         super.onStop()
@@ -490,9 +503,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun exitApp() {
         transmitViewModel.cancelAll()
+        PreferenceManager.getDefaultSharedPreferences(this).edit().putLong(PREF_EXITED_AT, System.currentTimeMillis()).apply()
+        exiting = true
         stopEngineService()
+        // Every window of the app, not just this one (a second copy may have been opened by the radio's USB).
+        runCatching { (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).appTasks.forEach { it.finishAndRemoveTask() } }
         finishAndRemoveTask()
     }
+
+    private var exiting = false
 
     private fun stopEngineService() {
         val intent = Intent(this, JS8EngineService::class.java).apply {

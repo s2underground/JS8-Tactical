@@ -146,7 +146,9 @@ class ReportEditorFragment : Fragment() {
                 val copy = draft.copy(id = java.util.UUID.randomUUID().toString(), title = getString(R.string.reports_copy_of, draft.displayTitle()),
                     createdMs = now, updatedMs = now, schedule = null, lastSentMs = null, lastResult = null)
                 store.put(copy)
-                NavHostFragment.findNavController(this@ReportEditorFragment).navigate(R.id.navigation_report_edit, Bundle().apply { putString(ARG_ID, copy.id) })
+                val host = parentFragment as? ReportsFragment
+                if (embedded && host != null) host.open(copy.id)
+                else NavHostFragment.findNavController(this@ReportEditorFragment).navigate(R.id.navigation_report_edit, Bundle().apply { putString(ARG_ID, copy.id) })
             }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) })
         actions.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
@@ -159,7 +161,9 @@ class ReportEditorFragment : Fragment() {
                         handler.removeCallbacks(saveSoon)
                         store.delete(draft.id)
                         deleted = true
-                        NavHostFragment.findNavController(this@ReportEditorFragment).popBackStack()
+                        val host = parentFragment as? ReportsFragment
+                        if (embedded && host != null) host.onDeleted(draft.id)
+                        else NavHostFragment.findNavController(this@ReportEditorFragment).popBackStack()
                     }
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
@@ -175,6 +179,7 @@ class ReportEditorFragment : Fragment() {
     }
 
     private var deleted = false
+    private val embedded get() = arguments?.getBoolean(ARG_EMBEDDED, false) == true
 
     override fun onPause() {
         super.onPause()
@@ -183,9 +188,10 @@ class ReportEditorFragment : Fragment() {
 
     private fun save() {
         handler.removeCallbacks(saveSoon)
-        val stored = store.get(draft.id)
+        // Deleted elsewhere (e.g. a blank report discarded from the list): don't bring it back.
+        val stored = store.get(draft.id) ?: return
         // Keep what the auto-sender wrote (schedule moved on, last sent) unless we changed it here.
-        val merged = if (stored != null && stored.lastSentMs != draft.lastSentMs && (stored.lastSentMs ?: 0) > (draft.lastSentMs ?: 0))
+        val merged = if (stored.lastSentMs != draft.lastSentMs && (stored.lastSentMs ?: 0) > (draft.lastSentMs ?: 0))
             draft.copy(lastSentMs = stored.lastSentMs, lastResult = stored.lastResult,
                 schedule = if (draft.schedule == null) null else stored.schedule)
         else draft
@@ -368,5 +374,7 @@ class ReportEditorFragment : Fragment() {
 
     companion object {
         const val ARG_ID = "id"
+        /** Shown in the Reports tab's right-hand pane rather than on its own page. */
+        const val ARG_EMBEDDED = "embedded"
     }
 }

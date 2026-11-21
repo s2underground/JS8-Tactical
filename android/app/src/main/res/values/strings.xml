@@ -591,4 +591,7 @@
         <item quantity="one">%d scheduled report won\'t go out while the app is closed.</item>
         <item quantity="other">%d scheduled reports won\'t go out while the app is closed.</item>
     </plurals>
+    <string name="reports_search">Search reports</string>
+    <string name="reports_no_match">No reports match.</string>
+    <string name="reports_pick">Pick a report on the left, or start a new one.</string>
 </resources>
