@@ -7,7 +7,7 @@ net easier to follow and use. It is a fork of
 [JS8Call](https://github.com/js8call/js8call), and stays on the air compatible with
 standard JS8: everything it sends is ordinary JS8 that any JS8Call station can read.
 
-**Status: early alpha (1.2-alpha).** Expect rough edges. Please send a diagnostic report
+**Status: early alpha (1.2.0-alpha.2).** Expect rough edges. Please send a diagnostic report
 (Settings → Diagnostics → Share diagnostic report) after any crash, freeze or odd behaviour;
 it is pre-addressed to js8tactical@proton.me.
 
