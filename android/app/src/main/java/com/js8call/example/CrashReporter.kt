@@ -307,7 +307,9 @@ object CrashReporter {
                 "processNextTxIfIdle|ACTION_PROCESS_TX_QUEUE|BLASTBufferQueue|VRI\\[|InsetsController|Ring buffer aligned|spectrum|" +
                 // Twice-a-second engine status lines: idle TX audio, audio submits, empty decode passes.
                 "TX audio: .*active=0|Audio submit|DecodeStarted|DecodeFinished: count=0|Spectrum broadcasts|" +
-                "AutofillManager|SmartClip|ImeFocusController|ImeTracker|InputTransport")
+                "AutofillManager|SmartClip|ImeFocusController|ImeTracker|InputTransport|" +
+                // Hamlib's step-by-step trace (several lines per CAT command); its warnings and errors stay.
+                " [VD]/HamlibDebug")
             val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "60000"))
             proc.inputStream.bufferedReader().useLines { lines ->
                 lines.filterNot { noise.containsMatchIn(it) }.toList().takeLast(4000).joinToString("\n")
