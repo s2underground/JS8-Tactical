@@ -304,7 +304,7 @@ object DigestBuilder {
     fun readable(body: String): String = body.replace("[…]", " ").replace(Regex("\\s+"), " ").trim()
 
     /** A long message held back because more than this many frames are missing. */
-    const val MAX_MISSING_FOR_BULLETIN = 3
+    const val MAX_MISSING_FOR_BULLETIN = 2
     /** "incomplete: 1 frame missing" for a partial copy, null for a complete one. */
     fun incompleteText(m: Msg): String? = when {
         m.complete -> null

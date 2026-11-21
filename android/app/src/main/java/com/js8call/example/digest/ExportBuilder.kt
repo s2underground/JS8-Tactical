@@ -11,7 +11,9 @@ import java.util.TimeZone
  * Plain-text exports from the Digest, for the operator to keep:
  * - the complete raw log: every transmission heard or sent in the period, as received;
  * - the roll-up: only the longer reports, heard in full, each once (relayed copies merged),
- *   with short traffic (heartbeats, SNR requests, acks) and garbled or incomplete messages left out.
+ *   with short traffic (heartbeats, SNR requests, acks) and garbled messages left out. A long report
+ *   with one or two frames missing is kept and marked (operator, 11-21: don't throw out a whole
+ *   paragraph because part of a sentence is missing); […] shows the gap.
  * Times are UTC. Nothing is summarised or reworded: this is the record.
  */
 object ExportBuilder {
@@ -126,29 +128,50 @@ object ExportBuilder {
     // ------------------------------------------------------------------ roll-up
 
     /** A longer report heard in full: what goes into the roll-up. */
+    /** Most frames a long report may be missing and still go in the roll-up. */
+    const val MAX_MISSING = 2
+
+    private fun whole(e: Entry) = e.complete && e.missingFrames == 0 && !e.body.contains("[…]")
+    private fun readable(body: String) = body.replace("[…]", " ").replace(Regex("\\s+"), " ").trim()
+
     fun isReport(e: Entry): Boolean =
-        !e.tx && e.complete && e.missingFrames == 0 && e.sender != null && !e.body.contains("[…]") &&
-            (e.body.trim().length >= REPORT_CHARS || Reports.parse(e.body) != null)
+        !e.tx && e.sender != null && (whole(e) || (!e.complete && e.missingFrames in 1..MAX_MISSING)) &&
+            (readable(e.body).length >= REPORT_CHARS || Reports.parse(e.body) != null)
 
     private data class Item(val first: Entry, val all: List<Entry>)
+
+    /** Text before the first gap, normalised, for matching a partial copy to a whole one. */
+    private fun lead(body: String) = norm(body.substringBefore("[…]"))
+    private fun norm(s: String) = s.uppercase().replace(Regex("[^A-Z0-9]+"), " ").trim()
 
     fun rollup(h: Header, entries: List<Entry>): String = buildString {
         val heard = entries.filter { !it.tx && it.timeMs in h.sinceMs..h.nowMs }
         val reports = heard.filter { isReport(it) }
         // Identical text from different stations is one report passed on by relays.
-        val items = reports.groupBy { AiPrompt.key(AiPrompt.bulletinBody(it.body)) }.values
-            .map { g -> g.sortedBy { it.timeMs }.let { Item(it.first(), it) } }
+        val grouped = reports.groupBy { AiPrompt.key(AiPrompt.bulletinBody(it.body)) }.values.map { it.sortedBy { e -> e.timeMs } }
+        // A partial copy of a report also heard whole (a relay, a repeat) is folded into the whole one.
+        val wholeTexts = grouped.filter { g -> g.any { whole(it) } }.map { g -> norm(g.first { whole(it) }.body) }
+        val (partialGroups, wholeGroups) = grouped.partition { g -> g.none { whole(it) } }
+        val folded = partialGroups.filter { g ->
+            val l = lead(g.first().body)
+            l.length >= 40 && wholeTexts.any { it.contains(l) }
+        }
+        val items = (wholeGroups + (partialGroups - folded.toSet()))
+            .map { g -> Item(g.firstOrNull { whole(it) } ?: g.first(), g) }
             .sortedBy { it.first.timeMs }
-        val garbled = heard.count { !(it.complete && it.missingFrames == 0 && it.sender != null && !it.body.contains("[…]")) }
-        val short = heard.size - garbled - reports.size
+        val short = heard.count { !isReport(it) && it.complete && it.missingFrames == 0 && it.sender != null }
+        val garbled = heard.size - reports.size - short
         val merged = reports.size - items.size
+        val partial = items.count { !whole(it.first) }
 
         title("roll-up", h)
-        appendLine("Contents:  longer reports heard in full, oldest first, as received.")
+        appendLine("Contents:  longer reports, oldest first, as received.")
         appendLine("           ${items.size} report${s(items.size)}" +
-            (if (merged > 0) " ($merged relayed cop${if (merged == 1) "y" else "ies"} merged)" else "") + ".")
+            (if (merged > 0) " ($merged relayed or repeated cop${if (merged == 1) "y" else "ies"} merged)" else "") + ".")
+        if (partial > 0) appendLine("           $partial with one or two frames missing, marked INCOMPLETE; [...] shows the gap.")
         appendLine("Left out:  $short short message${s(short)} (heartbeats, SNR requests, acks, short calls),")
-        appendLine("           $garbled incomplete or garbled message${s(garbled)}. The raw log export has everything.")
+        appendLine("           $garbled garbled message${s(garbled)} (more than $MAX_MISSING frames missing, or the start not heard).")
+        appendLine("           The raw log export has everything.")
         appendLine()
         if (items.isEmpty()) appendLine("(No longer reports heard in full in this period.)")
         items.forEachIndexed { i, it ->
@@ -162,8 +185,9 @@ object ExportBuilder {
             if (relays.isNotEmpty()) appendLine("     Also heard from: " +
                 relays.distinctBy { o -> o.sender }.joinToString(", ") { o -> "${o.sender} (${hhmm(o.timeMs)})" })
             if (repeats > 0) appendLine("     Heard $repeats more time${s(repeats)} from ${e.sender}")
+            if (!whole(e)) appendLine("     INCOMPLETE: ${if (e.missingFrames > 0) "${e.missingFrames} frame${s(e.missingFrames)} missing" else "part missing"}, marked [...] in the text")
             appendLine()
-            wrap(e.body.trim()).forEach { line -> appendLine(line) }
+            wrap(e.body.trim().replace("[…]", "[...]")).forEach { line -> appendLine(line) }
             appendLine()
         }
     }

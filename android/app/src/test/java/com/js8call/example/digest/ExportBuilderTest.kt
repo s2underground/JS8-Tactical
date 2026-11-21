@@ -26,9 +26,9 @@ class ExportBuilderTest {
         val out = ExportBuilder.rollup(h, entries)
         assertEquals(1, Regex("^\\[\\d+]", RegexOption.MULTILINE).findAll(out).count())
         assertTrue(out.contains("Also heard from: N0BBB"))
-        assertTrue(out.contains("1 report (1 relayed copy merged)"))
+        assertTrue(out.contains("1 report (1 relayed or repeated copy merged)"))
         assertTrue(out.contains("2 short messages"))
-        assertTrue(out.contains("1 incomplete or garbled message"))
+        assertTrue(out.contains("1 garbled message"))
         assertFalse(out.contains("SNR?"))
         assertFalse(out.contains("HEARTBEAT"))
         assertFalse(out.contains("N0OLD"))
@@ -73,5 +73,35 @@ class ExportSanitizeTest {
         assertEquals("@GHOSTNET", se[0].recipient)
         assertTrue(text.contains("Sanitized:"))
         assertEquals("js8tactical-raw-log-sanitized-20251121-0440Z.txt", ExportBuilder.fileName(false, t0, "KF4ABC", true))
+    }
+}
+
+class ExportPartialTest {
+    private val t0 = 1_763_700_000_000L
+    private val h = Header("KF4ABC", t0, t0 + 3_600_000L, "last 6 h")
+    private val start = "QST AVIATION // TERROR ALERT FBI/DHS/TSA ISSUED A NOV 19 ADVISORY TO U.S. AIRLINES, AIRPORTS AND CARGO OPERATORS"
+    private val end = "AFFILIATES PRAISED SEPTEMBER S THWARTED FLYDUBAI COCKPIT HIJACKING. NO SPECIFIC CREDIBLE ACTIVE PLOT IDENTIFIED."
+
+    @Test fun oneOrTwoMissingFramesAreKeptAndMarked() {
+        val e = listOf(
+            Entry(t0 + 1000, false, "K9DGY", "@GHOSTNET", "$start [\u2026] $end", -12, complete = false, missingFrames = 1),
+            Entry(t0 + 2000, false, "N0AAA", "@GHOSTNET", "$start [\u2026] [\u2026] [\u2026] $end", -12, complete = false, missingFrames = 3),
+        )
+        val out = ExportBuilder.rollup(h, e)
+        assertEquals(1, Regex("^\\[\\d+]", RegexOption.MULTILINE).findAll(out).count())
+        assertTrue(out.contains("INCOMPLETE: 1 frame missing"))
+        assertTrue(out.contains("CARGO OPERATORS [...] AFFILIATES"))
+        assertTrue(out.contains("1 garbled message"))
+    }
+
+    @Test fun partialCopyFoldsIntoAWholeOne() {
+        val e = listOf(
+            Entry(t0 + 1000, false, "K9DGY", "@GHOSTNET", "$start [\u2026] $end", -12, complete = false, missingFrames = 1),
+            Entry(t0 + 9000, false, "N0DDK", "@GHOSTNET", "$start WARNING THAT $end", -9),
+        )
+        val out = ExportBuilder.rollup(h, e)
+        assertEquals(1, Regex("^\\[\\d+]", RegexOption.MULTILINE).findAll(out).count())
+        assertTrue(out.contains("WARNING THAT"))
+        assertFalse(out.contains("INCOMPLETE"))
     }
 }
