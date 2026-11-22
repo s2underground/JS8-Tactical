@@ -129,6 +129,7 @@ object AiWork {
     }
 
     fun model(ctx: Context): AiModels.Model? {
+        AiModels.settle(ctx)
         val id = PreferenceManager.getDefaultSharedPreferences(ctx).getString(AiModels.PREF_MODEL, null)
         return AiModels.byId(id)?.takeIf { AiModels.ready(ctx, it) } ?: AiModels.ALL.firstOrNull { AiModels.ready(ctx, it) }
     }

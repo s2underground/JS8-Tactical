@@ -94,6 +94,15 @@ object AiModels {
         return if (ready(ctx, m)) State.Ready else State.None
     }
 
+    /**
+     * Finishes any download that has completed (renames the .part file into place). Only the
+     * Models screen used to do this, so a model downloaded in the background stayed invisible
+     * to the Digest until that screen was opened. Cheap when nothing is downloading.
+     */
+    fun settle(ctx: Context) {
+        ALL.forEach { m -> if (downloadId(ctx, m) != null) runCatching { state(ctx, m) } }
+    }
+
     fun download(ctx: Context, m: Model) {
         if (downloadId(ctx, m) != null) return
         partial(ctx, m).delete()
