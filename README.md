@@ -9,6 +9,47 @@ standard JS8: everything it sends is ordinary JS8 that any JS8Call station can r
 
 **Status: early alpha (1.2.0-alpha.3).** Expect rough edges. Please report bugs (see below).
 
+**Built with AI:** JS8-Tactical's own code is written by an AI model (Anthropic's Claude) under
+the maintainer's direction. See [How this software is made](#how-this-software-is-made) for what
+that means and how the code is checked.
+
+## How this software is made
+
+We want you to be able to judge this for yourself, so here is exactly how JS8-Tactical is built.
+
+**Who writes the code.** JS8-Tactical forked from JS8Android in November 2026. Since then, the
+code changes in this repository have been written by Claude, an AI model made by Anthropic, working
+at the maintainer's direction. Every one of those commits is labelled: its author is "Claude", or it
+carries a `Co-Authored-By: Claude` line, so the git history shows exactly which changes the AI
+wrote.
+The code this project builds on (JS8Call, JS8Android, the JS8Core library, Hamlib, llama.cpp and the
+other components listed under [Licence and credits](#licence-and-credits)) comes from those
+projects and their own developers.
+
+**What the maintainer does.** Decides what gets built and how it must behave, tests builds on real
+phones, tablets and radios, field-tests them on the air (including on the weekly GhostNet net),
+and decides what goes into each release.
+
+**How the code is checked.**
+
+- All of the source code is public, and every release APK is built by GitHub Actions from the
+  tagged source, not on a personal computer. How to verify a download: [SECURITY.md](SECURITY.md).
+- Automated tests (Kotlin unit tests and native core tests) run on every change.
+- Static analysis: CodeQL on the native code and Android lint on the app.
+- The JS8 frame decoders, which handle everything received over the air, are fuzz-tested with
+  sanitizers ([scripts/fuzz-core.sh](scripts/fuzz-core.sh)).
+- Dependencies are monitored for known vulnerabilities, and the project's practices are scored
+  by OpenSSF Scorecard.
+- What the app trusts, and the known gaps, are written down in
+  [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md).
+- An independent security review is planned; its report will be published here.
+
+**Not the same as the AI feature in the app.** This section is about how the code is written. The
+app's optional on-device AI (see below) is a separate feature: off by default, downloaded only if
+you choose, and it never transmits anything.
+
+If you find a problem, please report it. Security problems: see [SECURITY.md](SECURITY.md).
+
 ## Install
 
 1. Download the APK from the latest release on the [Releases](../../releases) page: the file named
@@ -61,6 +102,19 @@ QMX and truSDX over USB serial, RTS/DTR PTT, and the BTECH UV-Pro over Bluetooth
 - Only your 4-character grid square goes out over the air.
 - The app keeps receiving in the background when swiped away (Settings → General).
   Traffic ⋮ → Exit shuts everything down.
+
+## Security
+
+- Report security problems privately: see [SECURITY.md](SECURITY.md) (GitHub private reporting
+  or js8tactical@proton.me).
+- Check that an APK really came from this project: compare its signing certificate with the
+  fingerprint in [SECURITY.md](SECURITY.md#verifying-a-download).
+- What the app trusts and the known gaps: [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md).
+
+## Contributing
+
+Bug reports, on-air testing and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for how changes are proposed, tested and reviewed.
 
 ## Building
 

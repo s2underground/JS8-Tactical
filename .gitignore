@@ -28,3 +28,6 @@ core.__old_backup__/
 js8tactical-release.jks
 js8tactical-release.jks.base64.txt
 *.jks
+
+# Local fuzzing output (scripts/fuzz-core.sh)
+/build/

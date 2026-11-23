@@ -1,0 +1,53 @@
+name: CodeQL
+
+# Static analysis of the native code that handles untrusted input: the JS8 core (frame decoders,
+# protocol), the Android JNI bridge and the on-device AI bridge. Results appear under
+# Security → Code scanning.
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  schedule:
+    - cron: '17 6 * * 1'   # weekly, Monday 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze C/C++
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      # Only the JS8 core submodule is needed; llama.cpp is third-party and scanned upstream.
+      - name: Fetch the JS8 core
+        run: git submodule update --init --depth 1 core
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          languages: c-cpp
+          build-mode: none
+          queries: security-extended
+          config: |
+            paths:
+              - core/src
+              - core/include
+              - adapters/android
+              - android/llm/src/main/cpp
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          category: /language:c-cpp
