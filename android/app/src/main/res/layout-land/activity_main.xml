@@ -4,16 +4,27 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <com.google.android.material.navigationrail.NavigationRailView
-        android:id="@+id/bottom_navigation"
+    <!-- Phones in landscape: seven tabs don't fit the short side (Settings fell off the bottom on a
+         Galaxy S23), so the tabs are a little tighter and the rail scrolls if it still doesn't fit. -->
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/nav_rail_scroll"
         android:layout_width="wrap_content"
         android:layout_height="0dp"
-        app:labelVisibilityMode="labeled"
+        android:fillViewport="true"
+        android:scrollbars="none"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:menu="@menu/bottom_nav_menu"
-        app:menuGravity="center" />
+        app:layout_constraintTop_toTopOf="parent">
+
+        <com.google.android.material.navigationrail.NavigationRailView
+            android:id="@+id/bottom_navigation"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:itemMinHeight="52dp"
+            app:labelVisibilityMode="labeled"
+            app:menu="@menu/bottom_nav_menu"
+            app:menuGravity="center" />
+    </androidx.core.widget.NestedScrollView>
 
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/nav_host_fragment"
@@ -23,7 +34,7 @@
         app:defaultNavHost="true"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@id/bottom_navigation"
+        app:layout_constraintStart_toEndOf="@id/nav_rail_scroll"
         app:layout_constraintTop_toTopOf="parent"
         app:navGraph="@navigation/mobile_navigation" />
 
