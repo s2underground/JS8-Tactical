@@ -1,6 +1,7 @@
 package com.js8call.example.service
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -21,7 +22,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.preference.PreferenceManager
 import com.js8call.core.BluetoothSerialBridge
 import com.js8call.core.BluetoothSerialPortCatalog
@@ -33,27 +33,28 @@ import com.js8call.core.TruSdxDirectSerial
 import com.js8call.core.UsbSerialBridge
 import com.js8call.core.UsbSerialPortCatalog
 import com.js8call.core.rxMaskOf
+import com.js8call.example.AppBroadcasts
+import com.js8call.example.BuildConfig
 import com.js8call.example.MainActivity
-import com.js8call.example.model.DecodedMessage
-import com.js8call.example.ui.AudioDevices
 import com.js8call.example.MessageLogWriter
 import com.js8call.example.R
-import com.js8call.example.BuildConfig
 import com.js8call.example.data.MessageRepository
+import com.js8call.example.model.DecodedMessage
 import com.js8call.example.network.PskReporterClient
+import com.js8call.example.ui.AudioDevices
 import com.js8call.example.util.CallsignValidator
 import com.js8call.example.util.Js8Commands
 import com.js8call.example.util.TxMessageClassifier
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 internal fun assembleMsgPayload(parts: List<String>): String = parts.joinToString(separator = "")
 
@@ -207,7 +208,8 @@ class JS8EngineService : Service() {
     }
 
     private fun broadcastWarning(message: String, quiet: Boolean = false) {
-        LocalBroadcastManager.getInstance(this).sendBroadcast(
+        AppBroadcasts.send(
+            this,
             Intent(ACTION_WARNING).putExtra(EXTRA_ERROR_MESSAGE, message).putExtra(EXTRA_WARNING_QUIET, quiet)
         )
     }
@@ -749,18 +751,16 @@ class JS8EngineService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.notification_channel_name),
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = getString(R.string.notification_channel_desc)
-            }
-
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            getString(R.string.notification_channel_name),
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = getString(R.string.notification_channel_desc)
         }
+
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(channel)
     }
 
     /**
@@ -1267,17 +1267,17 @@ class JS8EngineService : Service() {
                 val session = trusdxSerialSession
                 val opened = session?.start(deviceId, portIndex) == true
                 if (opened) {
-                    session?.setSpeakerEnabled(selectedAudioDeviceId == TRUSDX_AUDIO_SPEAKER_ID)
+                    session.setSpeakerEnabled(selectedAudioDeviceId == TRUSDX_AUDIO_SPEAKER_ID)
                 }
-                val initialized = opened && session?.initializeRigState() == true
+                val initialized = opened && session.initializeRigState() == true
                 if (!isCurrentEngineStart(generation)) {
-                    if (opened) session?.stop()
+                    if (opened) session.stop()
                     trusdxStartupWorkerActive = false
                     return@Thread
                 }
                 mainHandler.post {
                     if (!isCurrentEngineStart(generation)) {
-                        if (opened) session?.stop()
+                        if (opened) session.stop()
                         trusdxStartupWorkerActive = false
                         return@post
                     }
@@ -1289,7 +1289,7 @@ class JS8EngineService : Service() {
                         Log.i(TAG, "TruSDX serial control ready device=$deviceId port=$portIndex")
                         if (currentDialHz > 0L) {
                             Thread {
-                                val ok = session?.setFrequency(currentDialHz) == true
+                                val ok = session.setFrequency(currentDialHz) == true
                                 Log.i(TAG, "TruSDX initial frequency apply: hz=$currentDialHz ok=$ok")
                             }.start()
                         }
@@ -1343,14 +1343,14 @@ class JS8EngineService : Service() {
                     val baudRate = prefs.getString("qmx_cat_baud", "115200")?.toIntOrNull() ?: 115200
                     val session = qmxCatSession
                     val opened = session?.start(usbDevice.deviceId, portIndex, baudRate) == true
-                    val initialized = opened && session?.initialize() == true
+                    val initialized = opened && session.initialize() == true
                     mainHandler.post {
                         if (!isCurrentEngineStart(generation)) {
-                            if (opened) session?.stop()
+                            if (opened) session.stop()
                         } else if (initialized) {
                             qmxConnected = true
                             rigCtlErrorShown = false
-                            if (currentDialHz > 0L) session?.setFrequency(currentDialHz)
+                            if (currentDialHz > 0L) session.setFrequency(currentDialHz)
                             startEngine(generation)
                         } else {
                             session?.stop()
@@ -1734,7 +1734,7 @@ class JS8EngineService : Service() {
                 return@Thread
             }
 
-            val resolvedPortIndex = bridge?.getActivePortIndex() ?: portIndex
+            val resolvedPortIndex = bridge.getActivePortIndex() ?: portIndex
             val serialPath = "android-usb:$deviceId:$resolvedPortIndex"
 
             val ok = hamlib?.openSerialPath(
@@ -2124,6 +2124,8 @@ class JS8EngineService : Service() {
     /** When a stopping engine began releasing its audio (0 = none in progress). */
     @Volatile private var engineStoppingSinceMs = 0L
 
+    // Held for as long as the receiver runs (no timeout on purpose) and released by holdCpu(false).
+    @SuppressLint("Wakelock", "WakelockTimeout")
     private fun holdCpu(on: Boolean) {
         try {
             if (on) {
@@ -2146,7 +2148,7 @@ class JS8EngineService : Service() {
         val intent = Intent(ACTION_ENGINE_STATE).apply {
             putExtra(EXTRA_STATE, state)
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
 
         // The connected flags are assigned in too many places to broadcast from
         // each one, so poll while the engine runs. Every poll sends, not only
@@ -2187,7 +2189,7 @@ class JS8EngineService : Service() {
         val intent = Intent(ACTION_RIG_STATUS).apply {
             putExtra(EXTRA_RIG_CONNECTED, connected)
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     // Shared with injected decodes
@@ -2238,7 +2240,7 @@ class JS8EngineService : Service() {
             putExtra(EXTRA_MODE, mode)
             putExtra(EXTRA_DRIFT_MS, driftMs)
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     private var timeSyncOncePending = false
@@ -2293,7 +2295,7 @@ class JS8EngineService : Service() {
         val intent = Intent(ACTION_TIME_DRIFT).apply {
             putExtra(EXTRA_TIME_DRIFT_MS, driftMs)
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     private fun broadcastSpectrum(
@@ -2306,76 +2308,74 @@ class JS8EngineService : Service() {
             putExtra(EXTRA_POWER_DB, powerDb)
             putExtra(EXTRA_PEAK_DB, peakDb)
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     private fun broadcastDecodeStarted(submodes: Int) {
         val intent = Intent(ACTION_DECODE_STARTED).apply {
             putExtra(EXTRA_SUBMODES, submodes)
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     private fun broadcastDecodeFinished(count: Int) {
         val intent = Intent(ACTION_DECODE_FINISHED).apply {
             putExtra(EXTRA_COUNT, count)
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     private fun broadcastError(message: String) {
         val intent = Intent(ACTION_ERROR).apply {
             putExtra(EXTRA_ERROR_MESSAGE, message)
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     private fun broadcastAudioDevice(deviceName: String) {
         val intent = Intent(ACTION_AUDIO_DEVICE).apply {
             putExtra(EXTRA_AUDIO_DEVICE, deviceName)
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     private fun broadcastAudioDeviceLost(deviceName: String) {
         val intent = Intent(ACTION_AUDIO_DEVICE_LOST).apply {
             putExtra(EXTRA_AUDIO_DEVICE, deviceName)
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     private fun broadcastRadioFrequency(frequencyHz: Long) {
         val intent = Intent(ACTION_RADIO_FREQUENCY).apply {
             putExtra(EXTRA_RADIO_FREQUENCY_HZ, frequencyHz)
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     private fun getActiveAudioDevice(): String {
         val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
         // For Android M (API 23) and above, use AudioDeviceInfo
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val devices = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+        val devices = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
 
-            // If a specific device is selected, find it
-            if (selectedAudioDeviceId != -1) {
-                for (device in devices) {
-                    if (device.id == selectedAudioDeviceId) {
-                        val deviceType = getDeviceName(device)
-                        Log.i(TAG, "Using selected audio device: $deviceType (ID: ${device.id})")
-                        return deviceType
-                    }
+        // If a specific device is selected, find it
+        if (selectedAudioDeviceId != -1) {
+            for (device in devices) {
+                if (device.id == selectedAudioDeviceId) {
+                    val deviceType = getDeviceName(device)
+                    Log.i(TAG, "Using selected audio device: $deviceType (ID: ${device.id})")
+                    return deviceType
                 }
             }
+        }
 
-            // Find the first active input device
-            for (device in devices) {
-                val deviceType = getDeviceName(device)
-                // Return first valid device (Oboe typically uses default)
-                Log.i(TAG, "Detected audio device: $deviceType")
-                return deviceType
-            }
+        // Find the first active input device
+        for (device in devices) {
+            val deviceType = getDeviceName(device)
+            // Return first valid device (Oboe typically uses default)
+            Log.i(TAG, "Detected audio device: $deviceType")
+            return deviceType
         }
 
         // Fallback for older Android versions or if no device found
@@ -2394,7 +2394,6 @@ class JS8EngineService : Service() {
     }
 
     private fun findOutputDeviceId(inputDeviceId: Int): Int {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return -1
         if (inputDeviceId == -1) return -1
 
         val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
@@ -2444,7 +2443,6 @@ class JS8EngineService : Service() {
     }
 
     private fun getOutputDeviceName(deviceId: Int): String {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return "Default Output"
         val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         val outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
         val device = outputs.firstOrNull { it.id == deviceId } ?: return "Default Output"
@@ -2573,7 +2571,6 @@ class JS8EngineService : Service() {
      * with no audio. A prompt (not a block): say so plainly when a radio is set up.
      */
     private fun warnIfTabletMicrophone(deviceId: Int) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         val radioSetUp = PreferenceManager.getDefaultSharedPreferences(this).getBoolean("rig_control_enabled", false)
         if (!radioSetUp) return
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
@@ -2582,7 +2579,8 @@ class JS8EngineService : Service() {
         if (input?.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_MIC) {
             Log.w(TAG, "Receiver started on the tablet's built-in microphone while a radio is configured")
             // A warning, not an error: the receiver is running (an error would show it as stopped).
-            LocalBroadcastManager.getInstance(this).sendBroadcast(
+            AppBroadcasts.send(
+            this,
                 Intent(ACTION_WARNING).putExtra(
                     EXTRA_ERROR_MESSAGE,
                     "Listening through the tablet's own microphone, not the radio. Plug in the radio's USB audio, " +
@@ -2827,9 +2825,12 @@ class JS8EngineService : Service() {
 
     private fun broadcastProcessTxQueue() {
         val intent = Intent(MainActivity.ACTION_PROCESS_TX_QUEUE)
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
+    // The startBluetoothSco/isBluetoothScoOn calls are deprecated from Android 12, where setCommunicationDevice
+    // is tried first; they remain the only way on Android 8–11 and the fallback when that fails.
+    @Suppress("DEPRECATION")
     private fun isScoActive(deviceId: Int): Boolean {
         val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -2857,7 +2858,6 @@ class JS8EngineService : Service() {
     }
 
     private fun applyInputRouting(inputDeviceId: Int) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         val inputDevice = findInputDevice(inputDeviceId)
         if (inputDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
             enableScoRouting(inputDevice)
@@ -2867,12 +2867,15 @@ class JS8EngineService : Service() {
     }
 
     private fun findInputDevice(deviceId: Int): AudioDeviceInfo? {
-        if (deviceId < 0 || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
+        if (deviceId < 0) return null
         val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         return audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
             .firstOrNull { it.id == deviceId }
     }
 
+    // The startBluetoothSco/isBluetoothScoOn calls are deprecated from Android 12, where setCommunicationDevice
+    // is tried first; they remain the only way on Android 8–11 and the fallback when that fails.
+    @Suppress("DEPRECATION")
     private fun enableScoRouting(device: AudioDeviceInfo) {
         val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         val priorMode = audioManager.mode
@@ -2931,6 +2934,9 @@ class JS8EngineService : Service() {
         }
     }
 
+    // The startBluetoothSco/isBluetoothScoOn calls are deprecated from Android 12, where setCommunicationDevice
+    // is tried first; they remain the only way on Android 8–11 and the fallback when that fails.
+    @Suppress("DEPRECATION")
     private fun startBluetoothScoLegacy(audioManager: AudioManager, priorMode: Int): Boolean {
         return try {
             audioManager.startBluetoothSco()
@@ -2959,6 +2965,9 @@ class JS8EngineService : Service() {
         return candidates.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
     }
 
+    // The startBluetoothSco/isBluetoothScoOn calls are deprecated from Android 12, where setCommunicationDevice
+    // is tried first; they remain the only way on Android 8–11 and the fallback when that fails.
+    @Suppress("DEPRECATION")
     private fun disableScoRouting() {
         if (!scoRoutingActive) return
         val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
@@ -3333,7 +3342,7 @@ class JS8EngineService : Service() {
             putExtra(EXTRA_TX_ON_AIR_HZ, lastTxFrequencyHz.toFloat())
             putExtra(EXTRA_TX_ON_AIR_BW_HZ, TxOffsets.bandwidthHz(lastTxSubmode))
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     private fun broadcastTxSent() {
@@ -3350,7 +3359,7 @@ class JS8EngineService : Service() {
             putExtra(EXTRA_TX_SENT_FREQ, lastTxFrequencyHz.toFloat())
             putExtra(EXTRA_UTC, utcHhmmss(startMs))
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
     }
 
     private fun persistIncomingMessage(
@@ -3378,7 +3387,7 @@ class JS8EngineService : Service() {
                     putExtra(EXTRA_MESSAGE_CONVERSATION_ID, conversationId)
                     relayPath?.let { putExtra(EXTRA_MESSAGE_RELAY_PATH, it) }
                 }
-                LocalBroadcastManager.getInstance(this@JS8EngineService).sendBroadcast(intent)
+                AppBroadcasts.send(this@JS8EngineService, intent)
                 showMessageNotification(from, text)
             }
         }
@@ -3395,18 +3404,16 @@ class JS8EngineService : Service() {
             putExtra(EXTRA_QUEUE_TX_PRIORITY, priority)
             submode?.let { putExtra(EXTRA_QUEUE_TX_SUBMODE, it) }
         }
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        AppBroadcasts.send(this, intent)
         Log.d(TAG, "Broadcast queue TX: text='$text' directed=$directed priority=$priority")
     }
 
     private fun showReceiverRestartNotification() {
         val nm = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID_MESSAGES, getString(R.string.notification_message_channel_name), NotificationManager.IMPORTANCE_HIGH)
-                    .apply { description = getString(R.string.notification_message_channel_desc) },
-            )
-        }
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID_MESSAGES, getString(R.string.notification_message_channel_name), NotificationManager.IMPORTANCE_HIGH)
+                .apply { description = getString(R.string.notification_message_channel_desc) },
+        )
         val open = PendingIntent.getActivity(
             this, NOTIFICATION_ID_RECEIVER_RESTART,
             Intent(this, MainActivity::class.java).apply {
@@ -3433,16 +3440,14 @@ class JS8EngineService : Service() {
         val notificationManager = getSystemService(NotificationManager::class.java)
         
         // Create message notification channel if it doesn't exist
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID_MESSAGES,
-                getString(R.string.notification_message_channel_name),
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = getString(R.string.notification_message_channel_desc)
-            }
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID_MESSAGES,
+            getString(R.string.notification_message_channel_name),
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = getString(R.string.notification_message_channel_desc)
         }
+        notificationManager.createNotificationChannel(channel)
         
         // Create intent to open the app
         val intent = Intent(this, MainActivity::class.java).apply {
@@ -3720,7 +3725,7 @@ class JS8EngineService : Service() {
             // If this is the last frame and we have payload, deliver immediately
             if (isLastFrame(type) && initialPayload.isNotBlank() && cmd != Js8Commands.CMD_MSG) {
                 val payload = initialPayload.trim().replace(Regex("\\s*[▪■]+\\s*$"), "").replace(Regex("\\s+[A-Z0-9]{3}$"), "").trim()
-                handleStoreForwardCommand(cmd!!, directed.from.trim().uppercase(), directed.to.trim().uppercase(), payload, snr, freq, submode)
+                handleStoreForwardCommand(cmd, directed.from.trim().uppercase(), directed.to.trim().uppercase(), payload, snr, freq, submode)
                 return
             }
             if (isLastFrame(type) && initialPayload.isNotBlank()) {
@@ -3746,7 +3751,7 @@ class JS8EngineService : Service() {
             val buffer = MsgBuffer(
                 from = directed.from.trim().uppercase(),
                 to = directed.to.trim().uppercase(),
-                command = cmd!!,
+                command = cmd,
                 submode = submode,
                 snr = snr,
                 frequency = freq,

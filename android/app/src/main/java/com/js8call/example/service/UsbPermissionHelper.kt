@@ -9,6 +9,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 
 /**
  * Helper class for managing USB device permissions.
@@ -75,22 +76,16 @@ object UsbPermissionHelper {
 
         // Register the receiver
         val filter = IntentFilter(ACTION_USB_PERMISSION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(permissionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(permissionReceiver, filter)
-        }
+        // Not exported on every Android version (on Android 12 and older ContextCompat guards it with
+        // an app-private permission), so other apps can't fake a "permission granted" broadcast.
+        ContextCompat.registerReceiver(context, permissionReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
         // Create pending intent for the permission dialog
         val permissionIntent = PendingIntent.getBroadcast(
             context,
             0,
-            Intent(ACTION_USB_PERMISSION),
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            } else {
-                PendingIntent.FLAG_UPDATE_CURRENT
-            }
+            Intent(ACTION_USB_PERMISSION).setPackage(context.packageName),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         // Request permission

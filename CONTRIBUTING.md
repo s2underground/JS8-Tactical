@@ -27,7 +27,9 @@ Issues and pull requests are in English.
   pull request that adds a major feature without tests needs a reason in its description.
 - **Stays compatible with standard JS8:** everything the app transmits must remain ordinary JS8
   that any JS8Call station can decode.
-- **No new warnings:** don't add compiler or lint warnings.
+- **No new warnings:** the Kotlin build has no compiler warnings and must stay that way. Android lint
+  fails on any finding not already recorded in `android/app/lint-baseline.xml`; fix new findings rather
+  than adding them to the baseline.
 - **No secrets:** never commit keystores, passwords or API keys.
 - **Licence:** contributions are accepted under the GNU GPL v3, the project's licence.
 - **AI-assisted contributions** are welcome, as long as you say so in the pull request and you

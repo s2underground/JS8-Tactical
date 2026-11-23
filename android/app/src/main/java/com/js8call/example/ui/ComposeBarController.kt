@@ -23,7 +23,7 @@ import com.js8call.example.util.TxMessageClassifier
 class ComposeBarController(
     private val fragment: Fragment,
     root: View,
-    @MenuRes private val commandMenuRes: Int,
+    @param:MenuRes private val commandMenuRes: Int,
     private val onSend: (String) -> Boolean
 ) {
 
@@ -42,7 +42,7 @@ class ComposeBarController(
             // Hardware Enter arrives as IME_NULL, once for down and once for up.
             val enterKey = actionId == EditorInfo.IME_NULL &&
                 (event?.keyCode == KeyEvent.KEYCODE_ENTER || event?.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)
-            if (actionId == EditorInfo.IME_ACTION_SEND || enterKey && event?.action == KeyEvent.ACTION_DOWN) {
+            if (actionId == EditorInfo.IME_ACTION_SEND || enterKey && event.action == KeyEvent.ACTION_DOWN) {
                 send()
             }
             actionId == EditorInfo.IME_ACTION_SEND || enterKey

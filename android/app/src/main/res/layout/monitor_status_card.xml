@@ -24,7 +24,7 @@
             android:contentDescription="@null"
             android:scaleType="fitCenter"
             android:src="@drawable/status_dot"
-            android:tint="@color/message_pending" />
+            app:tint="@color/message_pending" />
 
         <TextView
             android:id="@+id/status_text"
