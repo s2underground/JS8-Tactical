@@ -93,8 +93,9 @@ class TrafficFragment : Fragment() {
     private fun applyRole() {
         val v = view ?: return
         val listener = com.js8call.example.ui.onboarding.RoleChooser.isListener(requireContext())
-        v.findViewById<View>(R.id.compose_container)?.isVisible = !listener
-        v.findViewById<View>(R.id.tpl_row)?.isVisible = !listener
+        // Also hidden while the Inbox is open: it's a read pane, and Send there would go to everyone.
+        v.findViewById<View>(R.id.compose_container)?.isVisible = !listener && !inboxOpen
+        v.findViewById<View>(R.id.tpl_row)?.isVisible = !listener && !inboxOpen
         val parent = v.findViewById<View>(R.id.compose_container)?.parent as? ViewGroup ?: return
         var banner = parent.findViewWithTag<TextView>("listener_banner")
         if (listener && banner == null) {
@@ -624,8 +625,11 @@ class TrafficFragment : Fragment() {
     private var relayFor: String? = null
 
     /** Shows the Inbox in place of the thread (tabs: For me / Holding / Posted), or the thread again. */
+    private var inboxOpen = false
+
     private fun showInbox(show: Boolean) {
         val v = view ?: return
+        if (show != inboxOpen) { inboxOpen = show; applyRole() }
         val box = v.findViewById<View>(R.id.inbox_container)
         box.isVisible = show
         v.findViewById<View>(R.id.thread_list).isVisible = !show
