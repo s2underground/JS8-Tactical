@@ -55,6 +55,8 @@ class MessagesFragment : Fragment() {
         emptyState = view.findViewById(R.id.empty_state)
         newMessageFab = view.findViewById(R.id.new_message_fab)
 
+        setUpStoreForward(view)
+
         view.findViewById<View>(R.id.everything_card).setOnClickListener {
             findNavController().navigate(R.id.action_messages_to_everything)
         }
@@ -94,6 +96,71 @@ class MessagesFragment : Fragment() {
                 recyclerView.visibility = View.VISIBLE
             }
         }
+    }
+
+    // ------------------------------------------------------------------ store and forward
+
+    private var sfTab = 0
+    private lateinit var waitingBox: LinearLayout
+    private lateinit var heldBox: LinearLayout
+    private lateinit var heldScroll: android.widget.ScrollView
+    private lateinit var forMeViews: List<View>
+    private lateinit var tabs: com.google.android.material.button.MaterialButtonToggleGroup
+
+    /** Tabs over the Inbox: For me (conversations), Holding (for other stations), Posted (our reports). */
+    private fun setUpStoreForward(view: View) {
+        val ctx = requireContext()
+        val column = (view as ViewGroup).getChildAt(0) as LinearLayout
+        val forMe = (0 until column.childCount).map { column.getChildAt(it) }
+        val dp = resources.displayMetrics.density
+        tabs = com.google.android.material.button.MaterialButtonToggleGroup(ctx).apply {
+            isSingleSelection = true; isSelectionRequired = true
+            setPadding((12 * dp).toInt(), (10 * dp).toInt(), (12 * dp).toInt(), (4 * dp).toInt())
+        }
+        val ids = listOf(R.string.sf_tab_for_me, R.string.sf_tab_holding, R.string.sf_tab_posted).map { label ->
+            com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                id = View.generateViewId(); text = getString(label); isAllCaps = false
+                // Selected tab: solid amber with dark text, so it reads at a glance.
+                val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+                fun csl(on: Int, off: Int) = android.content.res.ColorStateList(states, intArrayOf(
+                    androidx.core.content.ContextCompat.getColor(ctx, on), androidx.core.content.ContextCompat.getColor(ctx, off)))
+                backgroundTintList = csl(R.color.tac_accent, R.color.tac_card)
+                setTextColor(csl(R.color.tac_ground, R.color.tac_text_dim))
+                strokeColor = csl(R.color.tac_accent, R.color.tac_border)
+                tabs.addView(this, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }.id
+        }
+        tabs.check(ids[sfTab])
+        tabs.addOnButtonCheckedListener { _, id, checked -> if (checked) { sfTab = ids.indexOf(id); showSfTab() } }
+        column.addView(tabs, 0)
+        waitingBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        column.addView(waitingBox, 1)
+        heldBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        heldScroll = android.widget.ScrollView(ctx).apply { addView(heldBox); visibility = View.GONE }
+        column.addView(heldScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        forMeViews = listOf(waitingBox) + forMe
+        com.js8call.example.storeforward.HeldStore.of(ctx).changes.observe(viewLifecycleOwner) { showSfTab() }
+    }
+
+    private fun showSfTab() {
+        if (view == null) return
+        val store = com.js8call.example.storeforward.HeldStore.of(requireContext())
+        val all = store.all()
+        val counts = listOf(store.waiting().size, all.count { it.kind == com.js8call.example.storeforward.Held.Kind.RELAY },
+            all.count { it.kind == com.js8call.example.storeforward.Held.Kind.POSTED })
+        val labels = listOf(R.string.sf_tab_for_me, R.string.sf_tab_holding, R.string.sf_tab_posted)
+        for (i in 0 until tabs.childCount) {
+            (tabs.getChildAt(i) as com.google.android.material.button.MaterialButton).text =
+                getString(labels[i]) + if (counts[i] > 0) " (${counts[i]})" else ""
+        }
+        forMeViews.forEach { it.visibility = if (sfTab == 0) View.VISIBLE else View.GONE }
+        if (sfTab == 0) {
+            com.js8call.example.ui.StoreForwardUi.renderWaiting(this, waitingBox)
+        }
+        heldScroll.visibility = if (sfTab == 0) View.GONE else View.VISIBLE
+        newMessageFab.visibility = if (sfTab == 0) View.VISIBLE else View.GONE
+        if (sfTab != 0) com.js8call.example.ui.StoreForwardUi.renderHeld(this, heldBox,
+            if (sfTab == 1) com.js8call.example.storeforward.Held.Kind.RELAY else com.js8call.example.storeforward.Held.Kind.POSTED)
     }
 
     private fun showNewMessageDialog() {

@@ -41,7 +41,8 @@ class TransmitViewModel internal constructor(application: Application) : Android
                     val text = intent.getStringExtra(JS8EngineService.EXTRA_QUEUE_TX_TEXT) ?: return
                     val directed = intent.getStringExtra(JS8EngineService.EXTRA_QUEUE_TX_DIRECTED)
                     val priority = intent.getIntExtra(JS8EngineService.EXTRA_QUEUE_TX_PRIORITY, 0)
-                    queueMessage(text, directed, priority)
+                    val submode = if (intent.hasExtra(JS8EngineService.EXTRA_QUEUE_TX_SUBMODE)) intent.getIntExtra(JS8EngineService.EXTRA_QUEUE_TX_SUBMODE, 0) else null
+                    queueMessage(text, directed, priority, submode = submode)
                     processNext()
                 }
                 JS8EngineService.ACTION_TX_STATE -> onTxState(intent)

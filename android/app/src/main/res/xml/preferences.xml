@@ -388,6 +388,20 @@
             app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
+            app:key="sf_hold_enabled"
+            app:title="@string/settings_sf_hold"
+            app:summary="@string/settings_sf_hold_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            app:key="sf_serve_enabled"
+            app:title="@string/settings_sf_serve"
+            app:summary="@string/settings_sf_serve_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
             app:key="keep_screen_on"
             app:title="@string/settings_keep_screen_on"
             app:summary="@string/settings_keep_screen_on_summary"

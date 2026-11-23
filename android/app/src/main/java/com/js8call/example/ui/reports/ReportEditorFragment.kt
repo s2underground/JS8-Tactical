@@ -136,6 +136,20 @@ class ReportEditorFragment : Fragment() {
         lastSent = TextView(ctx).apply { textSize = 12.5f; setTextColor(color(R.color.tac_text_quiet)); setPadding(0, dp(8), 0, 0) }
         col.addView(lastSent)
 
+        // Store and forward: offer this report to stations that ask (QUERY MSGS / QUERY MSG)
+        col.addView(label(getString(R.string.sf_post_section)))
+        postStatus = TextView(ctx).apply { textSize = 12.5f; setTextColor(color(R.color.tac_text_dim)); setPadding(0, 0, 0, dp(4)) }
+        col.addView(postStatus)
+        postButton = MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            isAllCaps = false
+            setOnClickListener {
+                save()
+                com.js8call.example.ui.StoreForwardUi.postDialog(this@ReportEditorFragment, draft) { renderPosted() }
+            }
+        }
+        col.addView(postButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        renderPosted()
+
         // Actions
         val actions = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(16), 0, 0) }
         actions.addView(MaterialButton(ctx).apply {
@@ -186,6 +200,15 @@ class ReportEditorFragment : Fragment() {
     }
 
     private var deleted = false
+    private lateinit var postStatus: TextView
+    private lateinit var postButton: MaterialButton
+
+    private fun renderPosted() {
+        if (!::postStatus.isInitialized || context == null) return
+        val status = com.js8call.example.ui.StoreForwardUi.postedStatus(requireContext(), draft.id)
+        postStatus.text = status ?: getString(R.string.sf_post_none)
+        postButton.text = getString(if (status == null) R.string.sf_post_button else R.string.sf_post_change)
+    }
     private val embedded get() = arguments?.getBoolean(ARG_EMBEDDED, false) == true
 
     override fun onPause() {

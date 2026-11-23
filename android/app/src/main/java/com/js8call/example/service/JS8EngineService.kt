@@ -255,6 +255,9 @@ class JS8EngineService : Service() {
     private var lastTxSubmode: Int = SUBMODE_NORMAL
     private var lastTxFrequencyHz: Double = DEFAULT_AUDIO_FREQUENCY_HZ
     private var messageLogger: MessageLogWriter? = null
+    private val heldStore by lazy { com.js8call.example.storeforward.HeldStore.of(this) }
+    /** Where a directed YES / HEARTBEAT SNR to us started, so a following "MSG ID n" data frame can be tied to it. */
+    private val offerStarts = mutableMapOf<Int, Pair<String, Long>>()
     private val heartbeatRegex = Regex("^\\s*([^:]+):\\s+@HB\\s+HEARTBEAT\\b", RegexOption.IGNORE_CASE)
     private val heardCallsigns = mutableMapOf<String, Long>()
     private val heardLock = Any()
@@ -2196,6 +2199,7 @@ class JS8EngineService : Service() {
         broadcastDecode(utc, snr, dt, freq, text, type, quality, mode, driftMs)
         handleRelayFrame(text, snr, mode, freq, type)
         maybeHandleIncomingMessage(text, snr, freq, type, mode)
+        trackStoredMessageOffers(text, freq, type, mode)
         maybeHandleAutoReply(text, snr, mode)
     }
 
@@ -3384,11 +3388,12 @@ class JS8EngineService : Service() {
      * Broadcast a request to queue a TX message.
      * The UI layer (TransmitViewModel) will handle adding it to the TX queue.
      */
-    private fun broadcastQueueTx(text: String, directed: String?, priority: Int = 0) {
+    private fun broadcastQueueTx(text: String, directed: String?, priority: Int = 0, submode: Int? = null) {
         val intent = Intent(ACTION_QUEUE_TX).apply {
             putExtra(EXTRA_QUEUE_TX_TEXT, text)
             directed?.let { putExtra(EXTRA_QUEUE_TX_DIRECTED, it) }
             putExtra(EXTRA_QUEUE_TX_PRIORITY, priority)
+            submode?.let { putExtra(EXTRA_QUEUE_TX_SUBMODE, it) }
         }
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
         Log.d(TAG, "Broadcast queue TX: text='$text' directed=$directed priority=$priority")
@@ -3696,10 +3701,12 @@ class JS8EngineService : Service() {
         // Try parsing as a directed command (MSG header frame)
         val directed = parseDirectedCommand(text)
         
-        if (directed != null && (directed.command.uppercase() == Js8Commands.CMD_MSG || directed.command.uppercase() == Js8Commands.CMD_MSG_TO)) {
+        val cmd = directed?.command?.uppercase()
+        if (directed != null && (cmd == Js8Commands.CMD_MSG || cmd == Js8Commands.CMD_MSG_TO || cmd == Js8Commands.CMD_QUERY)) {
             // This is a MSG command frame
             val isForMe = isSelfCallsign(callsign, directed.to)
             val isForMyGroup = isSubscribedGroup(directed.to)
+            if (cmd == Js8Commands.CMD_QUERY && !isForMe) return
             
             if (!isForMe && !isForMyGroup) {
                 Log.d(TAG, "maybeHandleIncomingMessage: MSG not for me ($callsign) or my groups, skipping")
@@ -3711,6 +3718,11 @@ class JS8EngineService : Service() {
             Log.d(TAG, "maybeHandleIncomingMessage: MSG command from=${directed.from} to=${directed.to} initialPayload='$initialPayload' isLastFrame=${isLastFrame(type)}")
             
             // If this is the last frame and we have payload, deliver immediately
+            if (isLastFrame(type) && initialPayload.isNotBlank() && cmd != Js8Commands.CMD_MSG) {
+                val payload = initialPayload.trim().replace(Regex("\\s*[▪■]+\\s*$"), "").replace(Regex("\\s+[A-Z0-9]{3}$"), "").trim()
+                handleStoreForwardCommand(cmd!!, directed.from.trim().uppercase(), directed.to.trim().uppercase(), payload, snr, freq, submode)
+                return
+            }
             if (isLastFrame(type) && initialPayload.isNotBlank()) {
                 val conversationId = if (isForMyGroup) directed.to else directed.from
                 // Strip checksum (3 uppercase alphanumeric chars at end, preceded by space)
@@ -3719,7 +3731,7 @@ class JS8EngineService : Service() {
                     .replace(Regex("\\s+[A-Z0-9]{3}$"), "")
                     .trim()
                 Log.i(TAG, "MSG received (single frame): from=${directed.from} to=${directed.to} text='$cleanPayload' conversationId=$conversationId")
-                persistIncomingMessage(directed.from, cleanPayload, snr, freq, null, conversationId)
+                persistStoredAwareMessage(directed.from, cleanPayload, snr, freq, conversationId)
                 
                 // Queue auto-ACK now that full message is received (if autoreply enabled)
                 if (isAutoreplyEnabled()) {
@@ -3734,6 +3746,8 @@ class JS8EngineService : Service() {
             val buffer = MsgBuffer(
                 from = directed.from.trim().uppercase(),
                 to = directed.to.trim().uppercase(),
+                command = cmd!!,
+                submode = submode,
                 snr = snr,
                 frequency = freq,
                 lastUpdated = now,
@@ -3788,9 +3802,106 @@ class JS8EngineService : Service() {
         }
     }
     
+    // ------------------------------------------------------------------ store and forward
+
+    /** An incoming MSG to us: a stored message we asked for reads "text FROM AUTHOR [NEXT MSG ID n]". */
+    private fun persistStoredAwareMessage(from: String, text: String, snr: Int, freq: Float, conversationId: String) {
+        val sf = com.js8call.example.storeforward.SfParse.delivered(text)
+        val station = from.trim().uppercase()
+        val asked = heldStore.waiting().any { com.js8call.example.storeforward.Held.base(it.station) == com.js8call.example.storeforward.Held.base(station) && it.askedMs != null }
+        val shown = when {
+            asked && sf.author != null -> "${sf.author}: ${sf.text}"
+            sf.next != null -> sf.text + (sf.author?.let { " FROM $it" } ?: "")
+            else -> text
+        }
+        persistIncomingMessage(from, shown, snr, freq, null, conversationId)
+        if (asked || sf.next != null) heldStore.gotFrom(station, null)
+        sf.next?.let { heldStore.addWaiting(station, it, System.currentTimeMillis()) }
+    }
+
+    /** MSG TO: (hold this for someone) and QUERY MSG n (send me message n), once complete. */
+    private fun handleStoreForwardCommand(command: String, from: String, to: String, payload: String, snr: Int, freq: Float, submode: Int) {
+        val me = getConfiguredCallsign() ?: return
+        val now = System.currentTimeMillis()
+        when (command) {
+            Js8Commands.CMD_MSG_TO -> {
+                val (target, text) = com.js8call.example.storeforward.SfParse.msgTo(payload) ?: return
+                if (isSelfCallsign(me, target)) {
+                    // Addressed to us after all: straight to the Inbox.
+                    persistStoredAwareMessage(from, text, snr, freq, from)
+                } else {
+                    if (!heldStore.holdEnabled) { Log.i(TAG, "MSG TO:$target from $from not held (holding is off)"); return }
+                    val base = com.js8call.example.storeforward.Held.base(target)
+                    if (!heldStore.duplicate(base, from, text)) {
+                        val h = heldStore.add(com.js8call.example.storeforward.Held(
+                            id = 0, to = base, from = from, text = text, receivedMs = now,
+                            kind = com.js8call.example.storeforward.Held.Kind.RELAY,
+                        ))
+                        Log.i(TAG, "Holding message ${h.id} for $base from $from")
+                    }
+                }
+                if (isAutoreplyEnabled()) broadcastQueueTx("$me: $from ACK", null, priority = 2)
+            }
+            Js8Commands.CMD_QUERY -> {
+                val id = com.js8call.example.storeforward.SfParse.queryMsgId(payload) ?: return
+                if (!isAutoreplyEnabled() || !heldStore.serveEnabled) { Log.i(TAG, "QUERY MSG $id from $from not answered (auto-reply or serving off)"); return }
+                val (reply, h) = com.js8call.example.storeforward.HeldLogic.answerQueryMsg(heldStore.all(), id, from, now) ?: run {
+                    Log.i(TAG, "QUERY MSG $id from $from: nothing it may fetch"); return
+                }
+                Log.i(TAG, "Sending held message ${h.id} to $from")
+                broadcastQueueTx("$me: $reply", null, priority = 2, submode = h.submode)
+                heldStore.markSent(h.id, from, now)
+            }
+        }
+    }
+
+    /** QUERY MSGS to us, @ALLCALL or a group: say whether something is held for the asker. */
+    private fun answerQueryMsgs(me: String, d: DirectedCommand) {
+        if (!heldStore.serveEnabled) return
+        val from = d.from.trim().uppercase()
+        if (from.isBlank() || isSelfCallsign(me, from)) return
+        val to = d.to.trim().uppercase()
+        val toMe = isSelfCallsign(me, to)
+        val held = heldStore.all()
+        // A group we are in, or one we hold messages for (posted reports to @GHOSTNET answer @GHOSTNET).
+        val groupOk = to == "@ALLCALL" || isSubscribedGroup(to) || held.any { it.to.equals(to, true) }
+        if (!toMe && !(to.startsWith("@") && groupOk)) return
+        val reply = com.js8call.example.storeforward.HeldLogic.answerQueryMsgs(held, from, to, toMe, System.currentTimeMillis()) ?: return
+        Log.i(TAG, "QUERY MSGS from $from to $to: $reply")
+        broadcastQueueTx("$me: $reply", null, priority = 1)
+    }
+
+    /** Notes "MSG ID n" offers addressed to us, whole or split over a directed frame and a data frame. */
+    private fun trackStoredMessageOffers(text: String, freq: Float, type: Int, submode: Int) {
+        val me = getConfiguredCallsign() ?: return
+        val now = System.currentTimeMillis()
+        val key = Math.round(freq / 10f)
+        com.js8call.example.storeforward.SfParse.offer(text, me)?.let {
+            if (!isSelfCallsign(me, it.station)) heldStore.addWaiting(it.station.uppercase(), it.id, now)
+            return
+        }
+        val d = parseDirectedCommand(text)
+        if (d != null) {
+            val c = d.command.uppercase()
+            if (isSelfCallsign(me, d.to) && !isSelfCallsign(me, d.from) && (c == Js8Commands.CMD_YES || c.startsWith("HEARTBEAT SNR")) && !isLastFrame(type)) {
+                synchronized(offerStarts) { offerStarts[key] = d.from.trim().uppercase() to now }
+            }
+            return
+        }
+        if (!DecodedMessage.isDataFrame(type)) return
+        val start = synchronized(offerStarts) {
+            offerStarts.entries.removeIf { now - it.value.second > 3 * framePeriodMs(submode) }
+            offerStarts.keys.firstOrNull { kotlin.math.abs(it - key) <= 1 }?.let { offerStarts.remove(it) }
+        } ?: return
+        com.js8call.example.storeforward.SfParse.offerTail(text)?.let { heldStore.addWaiting(start.first, it, now) }
+    }
+
     private data class MsgBuffer(
         val from: String,
         val to: String,
+        /** MSG, MSG TO: or QUERY. */
+        val command: String,
+        val submode: Int,
         val snr: Int,
         val frequency: Float,
         var lastUpdated: Long,
@@ -3829,12 +3940,16 @@ class JS8EngineService : Service() {
             Log.d(TAG, "processMsgBuffer: empty message after joining parts, discarding")
             return
         }
+        if (buffer.command != Js8Commands.CMD_MSG) {
+            handleStoreForwardCommand(buffer.command, buffer.from, buffer.to, cleanText, buffer.snr, buffer.frequency, buffer.submode)
+            return
+        }
         
         val isForMyGroup = isSubscribedGroup(buffer.to)
         val conversationId = if (isForMyGroup) buffer.to else buffer.from
         
         Log.i(TAG, "MSG received (multi-frame): from=${buffer.from} to=${buffer.to} text='$cleanText' conversationId=$conversationId")
-        persistIncomingMessage(buffer.from, cleanText, buffer.snr, buffer.frequency, null, conversationId)
+        persistStoredAwareMessage(buffer.from, cleanText, buffer.snr, buffer.frequency, conversationId)
         
         // Queue auto-ACK now that full message is received (if autoreply enabled)
         if (isAutoreplyEnabled()) {
@@ -3868,13 +3983,20 @@ class JS8EngineService : Service() {
             val snrText = formatSNR(snr)
             if (snrText.isEmpty()) return
             val target = heartbeat.from.trim().uppercase()
-            val payload = "$callsign: $target HEARTBEAT SNR $snrText"
+            // Desktop JS8Call adds " MSG ID n" when it holds a message for the station heartbeating.
+            val extra = if (heldStore.serveEnabled)
+                com.js8call.example.storeforward.HeldLogic.heartbeatExtra(heldStore.all(), target, "@HB", System.currentTimeMillis()) else ""
+            val payload = "$callsign: $target HEARTBEAT SNR $snrText$extra"
             Log.i(TAG, "Auto HB ACK: from=$target snr=$snrText text='$payload'")
             broadcastQueueTx(payload, null, priority = 1)
             return
         }
 
         val directed = parseDirectedCommand(text) ?: return
+        if (directed.command.uppercase().startsWith(Js8Commands.CMD_QUERY_MSGS)) {
+            answerQueryMsgs(callsign, directed)
+            return
+        }
         if (!shouldReplyToDirected(callsign, directed)) return
         val cmdUpper = directed.command.uppercase()
         when {
@@ -4827,6 +4949,7 @@ class JS8EngineService : Service() {
         const val EXTRA_MESSAGE_CONVERSATION_ID = "message_conversation_id"
         const val EXTRA_QUEUE_TX_TEXT = "queue_tx_text"
         const val EXTRA_QUEUE_TX_DIRECTED = "queue_tx_directed"
+        const val EXTRA_QUEUE_TX_SUBMODE = "com.js8call.example.QUEUE_TX_SUBMODE"
         const val EXTRA_QUEUE_TX_PRIORITY = "queue_tx_priority"
         const val PREF_TRANSMIT_MODE = "transmit_mode"
         const val PREF_HEARTBEAT_INTERVAL = "heartbeat_interval"
