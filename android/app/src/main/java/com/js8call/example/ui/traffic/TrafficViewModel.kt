@@ -797,7 +797,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Where Send goes for the current selection: a callsign, a group, or null for an open broadcast. */
-    fun sendTarget(): String? = selectedKey.takeIf { it != ALL && !it.startsWith("#") }
+    fun sendTarget(): String? = selectedKey.takeIf { it != ALL && !it.startsWith("#") && !it.startsWith("§") }
 
     /**
      * Message assembly must never take the app down: a bad edge case loses one
@@ -965,7 +965,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val inboxRow = StationRow(
             key = INBOX, label = "Inbox", isGroup = true, color = ACCENT,
             detail = "Stored messages (MSG) sent to you or your groups",
-            lastHeardMs = 0L, unread = inboxUnread, selected = false, receiving = false,
+            lastHeardMs = 0L, unread = inboxUnread, selected = selectedKey == INBOX, receiving = false,
         )
         val watchRow = StationRow(
             key = WATCH, label = "+ Watch a group or #tag", isGroup = true, color = ACCENT,

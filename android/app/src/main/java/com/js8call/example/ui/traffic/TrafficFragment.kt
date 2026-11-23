@@ -259,7 +259,7 @@ class TrafficFragment : Fragment() {
                         Snackbar.make(requireView(), "Audio input: ${d.name}", Snackbar.LENGTH_SHORT).show()
                     }
                     4 -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_monitor)
-                    5 -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_messages)
+                    5 -> traffic.select(TrafficViewModel.INBOX)
                     6 -> com.js8call.example.ui.HeartbeatOffsetDialog.show(requireContext())
                     7 -> androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_reports)
                     8 -> (activity as? com.js8call.example.MainActivity)?.confirmExit()
@@ -414,8 +414,6 @@ class TrafficFragment : Fragment() {
             when {
                 row.key == TrafficViewModel.TEAM -> openTeam()
                 row.key == TrafficViewModel.WATCH -> askWatch()
-                row.key == TrafficViewModel.INBOX ->
-                    androidx.navigation.fragment.NavHostFragment.findNavController(this).navigate(R.id.navigation_messages)
                 // Tapping the selected station again goes back to everyone.
                 row.selected && row.key != TrafficViewModel.ALL -> traffic.select(TrafficViewModel.ALL)
                 else -> traffic.select(row.key)
@@ -524,10 +522,11 @@ class TrafficFragment : Fragment() {
                 }
                 renderLatest()
             }
-            empty.isVisible = items.isEmpty()
+            empty.isVisible = items.isEmpty() && traffic.selected.value != TrafficViewModel.INBOX
             if (items.isEmpty()) empty.text = emptyText()
         }
         traffic.selected.observe(viewLifecycleOwner) {
+            showInbox(it == TrafficViewModel.INBOX)
             // A newly opened thread starts at its newest message, following.
             followLatest = true
             newWhileAway = 0
@@ -623,6 +622,26 @@ class TrafficFragment : Fragment() {
     /** Relay chosen for the selected station ([relayFor]); sends go "RELAY>TARGET>text". */
     private var relayVia: String? = null
     private var relayFor: String? = null
+
+    /** Shows the Inbox in place of the thread (tabs: For me / Holding / Posted), or the thread again. */
+    private fun showInbox(show: Boolean) {
+        val v = view ?: return
+        val box = v.findViewById<View>(R.id.inbox_container)
+        box.isVisible = show
+        v.findViewById<View>(R.id.thread_list).isVisible = !show
+        if (show) {
+            v.findViewById<View>(R.id.thread_empty).isVisible = false
+            v.findViewById<View>(R.id.thread_latest).isVisible = false
+        }
+        val existing = childFragmentManager.findFragmentById(R.id.inbox_container)
+        if (show && existing == null) {
+            childFragmentManager.beginTransaction()
+                .replace(R.id.inbox_container, com.js8call.example.ui.MessagesFragment().apply {
+                    arguments = android.os.Bundle().apply { putBoolean(com.js8call.example.ui.MessagesFragment.ARG_EMBEDDED, true) }
+                })
+                .commitAllowingStateLoss()
+        }
+    }
 
     private fun selectedStation(): String? = traffic.selected.value?.takeIf {
         it != TrafficViewModel.ALL && !it.startsWith("@") && !it.startsWith("#") && !it.startsWith("§")

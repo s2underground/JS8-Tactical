@@ -107,6 +107,14 @@
             app:elevation="6dp"
             app:icon="@drawable/ic_arrow_drop_down"
             app:iconTint="@color/tac_ground" />
+
+        <!-- The Inbox opens here (Traffic → Inbox), keeping the waterfall and station list in view. -->
+        <androidx.fragment.app.FragmentContainerView
+            android:id="@+id/inbox_container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/tac_ground"
+            android:visibility="gone" />
     </FrameLayout>
 
     <LinearLayout

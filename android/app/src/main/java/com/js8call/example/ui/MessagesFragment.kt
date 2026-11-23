@@ -25,6 +25,11 @@ import java.util.Locale
  */
 class MessagesFragment : Fragment() {
 
+    companion object {
+        /** Shown inside the Traffic tab instead of as its own screen. */
+        const val ARG_EMBEDDED = "embedded"
+    }
+
     private lateinit var viewModel: MessagesViewModel
     private lateinit var decodeViewModel: DecodeViewModel
     private lateinit var adapter: ConversationListAdapter
@@ -56,6 +61,16 @@ class MessagesFragment : Fragment() {
         newMessageFab = view.findViewById(R.id.new_message_fab)
 
         setUpStoreForward(view)
+        if (arguments?.getBoolean(ARG_EMBEDDED, false) == true) {
+            // Inside Traffic the station list and waterfall are already in view: no "everything" row.
+            view.background = null
+            val card = view.findViewById<View>(R.id.everything_card)
+            val parent = card.parent as ViewGroup
+            val divider = parent.getChildAt(parent.indexOfChild(card) + 1)
+            forMeViews = forMeViews - card - divider
+            card.visibility = View.GONE
+            divider.visibility = View.GONE
+        }
 
         view.findViewById<View>(R.id.everything_card).setOnClickListener {
             findNavController().navigate(R.id.action_messages_to_everything)
@@ -198,7 +213,8 @@ class MessagesFragment : Fragment() {
         val bundle = Bundle().apply {
             putString("callsign", callsign)
         }
-        findNavController().navigate(R.id.action_messages_to_conversation, bundle)
+        // By destination, not the action: embedded in Traffic, the current screen is Traffic.
+        findNavController().navigate(R.id.navigation_conversation, bundle)
     }
 
     private fun showConversationOptions(callsign: String) {
