@@ -43,6 +43,8 @@ class MapHostFragment : Fragment() {
 
     companion object {
         const val PREF_MODE = "map_mode"
+        /** Map control panel folded down to just the Stations / Propagation toggle. */
+        const val PREF_COLLAPSED = "map_panel_collapsed"
         const val STATIONS = "stations"
         const val PROP = "prop"
 
@@ -70,7 +72,44 @@ class MapHostFragment : Fragment() {
             }
             button(R.string.map_mode_stations, STATIONS)
             button(R.string.map_mode_prop, PROP)
-            panel.addView(group, 0)
+
+            // The rest of the panel goes in a body that the minimise button folds away, leaving
+            // just the toggle row over the map. Views keep their ids, so the fragments still find them.
+            val body = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+            while (panel.childCount > 0) {
+                val v = panel.getChildAt(0)
+                val lp = v.layoutParams
+                panel.removeViewAt(0)
+                body.addView(v, lp)
+            }
+            val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
+            val fold = MaterialButton(ctx, null, com.google.android.material.R.attr.materialIconButtonStyle).apply {
+                setIconResource(R.drawable.ic_arrow_drop_down)
+                iconSize = (28 * dp).toInt()
+                minWidth = (40 * dp).toInt(); minHeight = (36 * dp).toInt()
+                insetTop = 0; insetBottom = 0
+                iconTint = android.content.res.ColorStateList.valueOf(androidx.core.content.ContextCompat.getColor(ctx, R.color.tac_text))
+            }
+            fun apply(collapsed: Boolean) {
+                body.visibility = if (collapsed) View.GONE else View.VISIBLE
+                fold.rotation = if (collapsed) 0f else 180f   // down = open me, up = fold away
+                fold.contentDescription = ctx.getString(if (collapsed) R.string.map_panel_expand else R.string.map_panel_collapse)
+                group.setPadding(0, 0, 0, if (collapsed) 0 else (4 * dp).toInt())
+            }
+            fold.setOnClickListener {
+                val collapsed = !prefs.getBoolean(PREF_COLLAPSED, false)
+                prefs.edit().putBoolean(PREF_COLLAPSED, collapsed).apply()
+                apply(collapsed)
+            }
+            val row = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                addView(group)
+                addView(fold, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = (4 * dp).toInt() })
+            }
+            panel.addView(row)
+            panel.addView(body)
+            apply(prefs.getBoolean(PREF_COLLAPSED, false))
         }
     }
 }

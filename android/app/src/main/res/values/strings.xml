@@ -826,4 +826,6 @@
     <string name="settings_sf_hold_summary">Keep messages left here with MSG TO: until the station they are for asks (Inbox → Holding)</string>
     <string name="settings_sf_serve">Answer message requests</string>
     <string name="settings_sf_serve_summary">With auto-reply on: answer QUERY MSGS and QUERY MSG, and mention waiting messages in heartbeat replies</string>
+    <string name="map_panel_collapse">Minimise map controls</string>
+    <string name="map_panel_expand">Show map controls</string>
 </resources>
