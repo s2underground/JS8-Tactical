@@ -184,10 +184,18 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
+        # Named JS8-Tactical-<version>-test.<build>.apk, e.g. JS8-Tactical-1.2.0-alpha.3-test.198.apk;
+        # <build> is the versionCode (100 + run number) shown in Settings → About.
+        VERSION=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
+        NAME="JS8-Tactical-${VERSION}-test.$((100 + GITHUB_RUN_NUMBER)).apk"
         APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
-        cp "$APK" JS8-Tactical-test.apk
+        cp "$APK" "$NAME"
         gh release view test-build >/dev/null 2>&1 || gh release create test-build --prerelease --title "Latest test build" --notes "Rolling test build from master."
-        gh release upload test-build JS8-Tactical-test.apk --clobber
+        # Only the newest test build is kept on the release.
+        for old in $(gh release view test-build --json assets --jq '.assets[].name' | grep '\.apk$'); do
+          gh release delete-asset test-build "$old" -y
+        done
+        gh release upload test-build "$NAME" --clobber
         gh release edit test-build --notes "Rolling test build from master. Commit ${GITHUB_SHA::8}, run #${GITHUB_RUN_NUMBER}, built $(date -u +%Y-%m-%dT%H:%MZ)."
 
     - name: Publish signed alpha/release build
@@ -196,12 +204,17 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |
         TAG="${GITHUB_REF_NAME}"
+        VERSION="${TAG#v}"
+        # The tag must match the app's versionName, so the file name, the release and Settings → About agree.
+        APP_VERSION=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
+        test "$VERSION" = "$APP_VERSION" || { echo "Tag $TAG does not match versionName $APP_VERSION in app/build.gradle.kts"; exit 1; }
+        NAME="JS8-Tactical-${VERSION}.apk"
         APK=$(ls android/app/build/outputs/apk/release/*.apk | grep -v unsigned | head -1)
         test -n "$APK" || { echo "No signed release APK (is release signing configured?)"; exit 1; }
-        cp "$APK" "JS8-Tactical-${TAG}.apk"
+        cp "$APK" "$NAME"
         PRE=""; case "$TAG" in *alpha*|*beta*|*rc*) PRE="--prerelease";; esac
         gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" $PRE --title "JS8-Tactical ${TAG}" --notes "Signed build of ${TAG} (commit ${GITHUB_SHA::8})."
-        gh release upload "$TAG" "JS8-Tactical-${TAG}.apk" --clobber
+        gh release upload "$TAG" "$NAME" --clobber
 
     - name: Upload AAR
       if: matrix.build-type == 'release'

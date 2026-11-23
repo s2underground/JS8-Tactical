@@ -50,6 +50,11 @@ every push to `master` and publishes it as the rolling `test-build` release. Pus
 tag (for example `v1.2.0-alpha.1`) builds a signed release APK and publishes it as a GitHub
 release; the signing key is created once with `scripts/make-release-key.sh`.
 
+APK names follow the app version: releases are `JS8-Tactical-<version>.apk` (for example
+`JS8-Tactical-1.2.0-alpha.3.apk`, from tag `v1.2.0-alpha.3`; the tag must match `versionName` in
+`android/app/build.gradle.kts`), and test builds are `JS8-Tactical-<version>-test.<build>.apk`
+(for example `JS8-Tactical-1.2.0-alpha.3-test.199.apk`), where `<build>` is the versionCode.
+
 ## Licence and credits
 
 JS8-Tactical is free software under the GNU General Public License v3 (see [LICENSE](LICENSE)).
