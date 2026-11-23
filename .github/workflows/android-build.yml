@@ -255,10 +255,11 @@ jobs:
         name: js8call-release-aab
         path: android/app/build/outputs/bundle/release/*.aab
 
-    - name: Fail if lint found new issues
+    - name: Fail if lint failed
       if: steps.lint.outcome == 'failure'
       run: |
-        echo "Android lint found new issues; see the lint-report artifact, fix them (or, if intended, run ./gradlew :app:updateLintBaseline)."
+        echo "The Android lint step failed: either it found new issues (see the lint-report artifact and fix"
+        echo "them), or lint itself could not run (see the step's log, e.g. a dependency download error)."
         exit 1
 
 #  lint:
