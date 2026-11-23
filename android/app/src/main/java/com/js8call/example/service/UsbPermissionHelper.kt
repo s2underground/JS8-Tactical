@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
-import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 
@@ -43,34 +42,22 @@ object UsbPermissionHelper {
         // Create a broadcast receiver to listen for the permission result
         val permissionReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                if (ACTION_USB_PERMISSION == intent.action) {
-                    synchronized(this) {
-                        val device: UsbDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                        }
-
-                        if (device != null) {
-                            val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
-                            if (granted) {
-                                Log.i(TAG, "USB permission granted for device ${device.deviceName}")
-                                callback(true)
-                            } else {
-                                Log.w(TAG, "USB permission denied for device ${device.deviceName}")
-                                callback(false)
-                            }
-                        }
-
-                        // Unregister the receiver
-                        try {
-                            context.unregisterReceiver(this)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Error unregistering receiver: ${e.message}")
-                        }
-                    }
+                if (ACTION_USB_PERMISSION != intent.action) return
+                // The PendingIntent below is immutable, so Android can't add EXTRA_DEVICE and
+                // EXTRA_PERMISSION_GRANTED to it: those extras arrive empty. Ask UsbManager about the
+                // device we requested instead, which is the authoritative answer either way.
+                val granted = usbManager.hasPermission(device)
+                if (granted) {
+                    Log.i(TAG, "USB permission granted for device ${device.deviceName}")
+                } else {
+                    Log.w(TAG, "USB permission denied for device ${device.deviceName}")
                 }
+                try {
+                    context.unregisterReceiver(this)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error unregistering receiver: ${e.message}")
+                }
+                callback(granted)
             }
         }
 
