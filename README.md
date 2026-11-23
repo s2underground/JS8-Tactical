@@ -7,15 +7,31 @@ net easier to follow and use. It is a fork of
 [JS8Call](https://github.com/js8call/js8call), and stays on the air compatible with
 standard JS8: everything it sends is ordinary JS8 that any JS8Call station can read.
 
-**Status: early alpha (1.2.0-alpha.3).** Expect rough edges. Please send a diagnostic report
-(Settings → Diagnostics → Share diagnostic report) after any crash, freeze or odd behaviour;
-it is pre-addressed to js8tactical@proton.me.
+**Status: early alpha (1.2.0-alpha.3).** Expect rough edges. Please report bugs (see below).
+
+## Install
+
+1. Download the APK from the latest release on the [Releases](../../releases) page: the file named
+   `JS8-Tactical-<version>.apk`. Releases marked *Latest test build* are untested daily builds.
+2. Open it on the phone or tablet (Android 8.0 or newer) and allow installs from that source
+   when Android asks.
+3. New versions install over the old one; settings and logs are kept.
+
+## Reporting bugs
+
+Open an [issue](../../issues/new/choose), or send a diagnostic report from the app
+(Settings → Diagnostics → Share diagnostic report), which is pre-addressed to
+js8tactical@proton.me. A diagnostic report helps most: it has the app version, your settings (without your callsign
+or grid) and the recent log, which includes traffic heard on the air.
 
 ## What it does
 
 - **Traffic**: all messages rolled up by station, group and #tag, with incomplete messages
   marked and one-tap resend requests; waterfall with station tags; heartbeats, auto-replies
   and a relay finder that suggests who can pass a message on.
+- **Store and forward**, compatible with desktop JS8Call: stations can leave messages with you
+  for others (`MSG TO:`) and collect what you hold (`QUERY MSGS`, `QUERY MSG n`); post your own
+  reports for pickup by a group or callsign. Traffic → Inbox shows For me / Holding / Posted.
 - **Digest**: a roll-up of what came in while you were away: needs and emergencies, messages
   for you, bulletins, nets and groups, who heard you. Export as text (reports only or the full
   raw log, optionally with every callsign removed).
@@ -25,7 +41,8 @@ it is pre-addressed to js8tactical@proton.me.
   with per-net speed and heartbeat settings (needs CAT rig control).
 - **Map**: stations, paths, links between other stations and located reports; a propagation
   view with predicted coverage and solar data.
-- **Team**: a roster of the stations you work with.
+- **Team**: a roster of the stations you work with: when each was last heard, their latest
+  check-in or SITREP, and a per-band estimate of whether you can reach them now.
 - **Optional on-device AI** (off by default): plain-English summaries of bulletins with
   citations back to the raw transmissions. The model is downloaded only if you choose to, runs
   entirely on the device, and can be deleted at any time.
@@ -38,6 +55,9 @@ QMX and truSDX over USB serial, RTS/DTR PTT, and the BTECH UV-Pro over Bluetooth
 - You are responsible for operating within your licence and local rules.
 - Set your radio's transmit time-out timer. If Android stops the app in the middle of a
   transmission, a radio keyed over CAT stays keyed until its own timer releases it.
+- With auto-reply on, the station answers by itself (heartbeat and SNR replies, message
+  requests for anything you hold or have posted). Make sure unattended operation is allowed
+  where and on the frequency you operate.
 - Only your 4-character grid square goes out over the air.
 - The app keeps receiving in the background when swiped away (Settings → General).
   Traffic ⋮ → Exit shuts everything down.

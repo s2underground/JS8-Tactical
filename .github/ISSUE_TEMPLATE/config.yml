@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Email a diagnostic report
+    url: mailto:js8tactical@proton.me
+    about: Prefer not to post publicly? Send the report from the app (Settings → Diagnostics) by email instead.

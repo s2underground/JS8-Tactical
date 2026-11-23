@@ -1,0 +1,38 @@
+name: Bug report
+description: Something doesn't work, crashes, or behaves oddly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing JS8-Tactical. The most useful thing you can attach is a diagnostic report:
+        in the app, Settings → Diagnostics → Share diagnostic report, save it, and drag the file into the box below.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Settings → About (for example 1.2.0-alpha.3, or 1.2.0-alpha.3-test with a build number)
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Phone or tablet, and Android version
+      placeholder: Galaxy S23, Android 14
+  - type: input
+    id: radio
+    attributes:
+      label: Radio and interface
+      placeholder: Xiegu G90 with a Digirig, USB CAT
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. The UTC time helps find it in the log.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostic report and screenshots
+      description: Drag files here. The report's log includes traffic heard on the air, with callsigns (yours too). If you'd rather not post that publicly, email it instead (link on the previous page).
