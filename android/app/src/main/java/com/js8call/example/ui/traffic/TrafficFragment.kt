@@ -659,7 +659,8 @@ class TrafficFragment : Fragment() {
             else -> relayVia?.let { getString(R.string.relay_via, it) } ?: getString(R.string.relay_find)
         }
         v.findViewById<EditText>(R.id.compose_input).hint = when {
-            sel == TrafficViewModel.ALL -> getString(R.string.traffic_hint_all)
+            // The Inbox (and other § rows) aren't an address: Send goes to everyone there.
+            sel == TrafficViewModel.ALL || sel.startsWith("§") -> getString(R.string.traffic_hint_all)
             relayVia != null && station != null -> getString(R.string.relay_hint, station, relayVia)
             else -> getString(R.string.traffic_hint_to, sel)
         }
