@@ -1,0 +1,53 @@
+name: Fuzz JS8 decoders
+
+# Feeds random and malformed frames to the JS8 frame decoders (the code that handles everything
+# received over the air) under AddressSanitizer and UndefinedBehaviorSanitizer. A crash fails the
+# run and its input is kept as an artifact so it can be reproduced.
+on:
+  schedule:
+    - cron: '23 5 * * 0'   # weekly, Sunday 05:23 UTC
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'core'
+      - 'tools/fuzz/**'
+      - 'scripts/fuzz-core.sh'
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: How long to fuzz (seconds)
+        required: false
+        default: '900'
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: libFuzzer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the JS8 core
+        run: git submodule update --init --depth 1 core
+
+      - name: Install clang and the libFuzzer runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-rt-dev
+
+      - name: Fuzz
+        run: scripts/fuzz-core.sh "${{ github.event.inputs.seconds || '900' }}"
+
+      - name: Keep crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-crashes
+          path: build/fuzz/crash-*
+          if-no-files-found: ignore

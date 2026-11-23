@@ -173,6 +173,22 @@ jobs:
       working-directory: android
       run: ./gradlew test
 
+    # Static analysis of the Kotlin/Android code (includes Android's security checks). Report only
+    # for now: existing findings are being worked through, so lint does not fail the build yet.
+    - name: Android lint (report only)
+      if: matrix.build-type == 'debug'
+      working-directory: android
+      continue-on-error: true
+      run: ./gradlew :app:lintDebug
+
+    - name: Upload lint report
+      if: always() && matrix.build-type == 'debug'
+      uses: actions/upload-artifact@v4
+      with:
+        name: lint-report
+        path: android/app/build/reports/lint-results-debug.*
+        if-no-files-found: ignore
+
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
@@ -212,9 +228,16 @@ jobs:
         APK=$(ls android/app/build/outputs/apk/release/*.apk | grep -v unsigned | head -1)
         test -n "$APK" || { echo "No signed release APK (is release signing configured?)"; exit 1; }
         cp "$APK" "$NAME"
+        # Checksum file: the APK's SHA-256 and the signer certificate, so users can verify the download.
+        APKSIGNER=$(ls "${ANDROID_HOME}"/build-tools/*/apksigner | sort -V | tail -1)
+        {
+          echo "$(sha256sum "$NAME")"
+          "$APKSIGNER" verify --print-certs "$NAME" | grep -E 'certificate (DN|SHA-256 digest)'
+        } > "${NAME}.sha256"
+        cat "${NAME}.sha256"
         PRE=""; case "$TAG" in *alpha*|*beta*|*rc*) PRE="--prerelease";; esac
         gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" $PRE --title "JS8-Tactical ${TAG}" --notes "Signed build of ${TAG} (commit ${GITHUB_SHA::8})."
-        gh release upload "$TAG" "$NAME" --clobber
+        gh release upload "$TAG" "$NAME" "${NAME}.sha256" --clobber
 
     - name: Upload AAR
       if: matrix.build-type == 'release'
