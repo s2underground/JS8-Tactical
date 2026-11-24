@@ -694,6 +694,7 @@
     <string name="ai_paused">waiting for network</string>
     <string name="ai_in_use">Downloaded · in use</string>
     <string name="ai_downloaded">Downloaded</string>
+    <string name="ai_verifying">Checking the download…</string>
     <string name="ai_use">Use</string>
     <string name="ai_delete">Delete</string>
     <string name="ai_delete_title">Delete %1$s?</string>

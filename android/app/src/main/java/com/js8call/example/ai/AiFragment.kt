@@ -141,6 +141,11 @@ class AiFragment : Fragment() {
                     row.addView(text("  $pct%  ${mb(state.done)}" + if (state.paused) " · " + getString(R.string.ai_paused) else "", 12.5f, color(R.color.tac_text_dim)))
                     row.addView(button(getString(android.R.string.cancel)) { AiModels.cancel(ctx, m); renderModels() })
                 }
+                is AiModels.State.Verifying -> {
+                    row.addView(ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true },
+                        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    row.addView(text("  " + getString(R.string.ai_verifying), 12.5f, color(R.color.tac_text_dim)))
+                }
                 is AiModels.State.Ready -> {
                     row.addView(text(if (m.id == selected) getString(R.string.ai_in_use) else getString(R.string.ai_downloaded), 13f, 0xFF5CC98B.toInt(), bold = true),
                         LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
