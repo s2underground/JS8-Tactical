@@ -180,6 +180,7 @@ object Reports {
 
     fun dtg(nowMs: Long = System.currentTimeMillis()): String {
         val c = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = nowMs }
-        return "%02d%02d%02dZ".format(c.get(java.util.Calendar.DAY_OF_MONTH), c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE))
+        // Locale.ROOT: sent on the air; some locales would write the digits in another script.
+        return "%02d%02d%02dZ".format(java.util.Locale.ROOT, c.get(java.util.Calendar.DAY_OF_MONTH), c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE))
     }
 }

@@ -4340,7 +4340,8 @@ class JS8EngineService : Service() {
         if (snr < -60 || snr > 60) return ""
         val sign = if (snr >= 0) "+" else ""
         val width = if (snr < 0) 3 else 2
-        return String.format("%s%0${width}d", sign, snr)
+        // Locale.ROOT: this goes on the air, and some locales (Arabic, Persian…) format digits in their own script.
+        return String.format(java.util.Locale.ROOT, "%s%0${width}d", sign, snr)
     }
 
     private fun cleanupRelayBuffers(now: Long) {
