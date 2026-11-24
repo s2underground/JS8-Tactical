@@ -167,7 +167,7 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
     }
 
     override fun onCleared() {
-        super.onCleared()
+        // ViewModel.onCleared is empty (@EmptySuper), so there's no super call.
         waterfallRenderer.release()
     }
 }
