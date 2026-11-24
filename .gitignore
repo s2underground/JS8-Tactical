@@ -31,3 +31,8 @@ js8tactical-release.jks.base64.txt
 
 # Local fuzzing output (scripts/fuzz-core.sh)
 /build/
+
+# Build outputs that must never be committed (OpenSSF Scorecard: Binary-Artifacts).
+__pycache__/
+*.pyc
+android/libs/fftw3/

@@ -12,15 +12,23 @@ on:
         default: "666720 68a114 6c7680 6db614 6da3e8 4e8bac"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   symbolize:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Symbolize
-        run: tools/symbolize/symbolize.sh "${{ inputs.tag }}" ${{ inputs.offsets }}
+        env:
+          TAG: ${{ inputs.tag }}
+          OFFSETS: ${{ inputs.offsets }}
+        # OFFSETS is split into separate arguments on purpose (space-separated list).
+        run: tools/symbolize/symbolize.sh "$TAG" $OFFSETS
       - name: Publish report
         env:
           GH_TOKEN: ${{ github.token }}
