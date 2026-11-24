@@ -13,14 +13,10 @@ on:
       - 'scripts/**'
       - 'tools/**'
       - '.github/workflows/android-build.yml'
+  # Every pull request builds and tests, whatever it touches, so the build and the native tests
+  # can be required status checks on master (a path filter would leave docs-only PRs waiting forever).
   pull_request:
     branches: [ master, develop ]
-    paths:
-      - 'android/**'
-      - 'core/**'
-      - 'adapters/android/**'
-      - 'scripts/**'
-      - 'tools/**'
   workflow_dispatch:
     inputs:
       build_type:
