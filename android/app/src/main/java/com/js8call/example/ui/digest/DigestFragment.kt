@@ -1,5 +1,6 @@
 package com.js8call.example.ui.digest
 
+import androidx.core.view.isNotEmpty
 import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -278,7 +279,7 @@ class DigestFragment : Fragment() {
                     text = getString(R.string.settings_ai_open)
                     setOnClickListener { findNavController().navigate(R.id.navigation_ai) }
                 })
-                if (row.childCount > 0) addView(row)
+                if (row.isNotEmpty()) addView(row)
             }
 
             // The stories themselves.

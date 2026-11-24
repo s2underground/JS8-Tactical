@@ -236,7 +236,7 @@ class MonitorFragment : Fragment() {
             offset
         }
         driftText.text = if (status.timeDriftMs != 0L) {
-            String.format("%+d ms", status.timeDriftMs)
+            String.format(java.util.Locale.US, "%+d ms", status.timeDriftMs)
         } else {
             "0 ms"
         }

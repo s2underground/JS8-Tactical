@@ -256,6 +256,13 @@ jobs:
       run: |
         echo "The Android lint step failed: either it found new issues (see the lint-report artifact and fix"
         echo "them), or lint itself could not run (see the step's log, e.g. a dependency download error)."
+        # The findings, in the log too, so they can be read without downloading the artifact.
+        REPORT=$(find android/app/build -name 'lint-results-debug.txt' 2>/dev/null | head -1)
+        if [ -n "$REPORT" ]; then
+          echo "::group::Lint findings (one line each)"
+          grep -E ': (Error|Warning): ' "$REPORT" || true
+          echo "::endgroup::"
+        fi
         exit 1
 
 #  lint:
