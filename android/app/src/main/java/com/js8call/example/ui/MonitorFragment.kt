@@ -11,8 +11,10 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
+import androidx.core.widget.ImageViewCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.preference.PreferenceManager
@@ -189,8 +191,9 @@ class MonitorFragment : Fragment() {
             if (engineState == EngineState.ERROR) R.drawable.ic_error_outline
             else R.drawable.status_dot
         )
-        stateDot.imageTintList =
-            ColorStateList.valueOf(ContextCompat.getColor(requireContext(), colorRes))
+        ImageViewCompat.setImageTintList(
+            stateDot, ColorStateList.valueOf(ContextCompat.getColor(requireContext(), colorRes))
+        )
     }
 
     /** Shown only when rig control is switched on in Settings. */
@@ -387,25 +390,11 @@ class MonitorFragment : Fragment() {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun requestAudioPermission() {
-        requestPermissions(
-            arrayOf(Manifest.permission.RECORD_AUDIO),
-            REQUEST_AUDIO_PERMISSION
-        )
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        if (requestCode == REQUEST_AUDIO_PERMISSION) {
-            if (grantResults.isNotEmpty() &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED
-            ) {
+    /** Registered with the fragment (before it starts), as the Activity Result API requires. */
+    private val audioPermissionRequest =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (view == null) return@registerForActivityResult
+            if (granted) {
                 // Permission granted, try starting again
                 startMonitoring()
             } else {
@@ -418,6 +407,9 @@ class MonitorFragment : Fragment() {
                 ).show()
             }
         }
+
+    private fun requestAudioPermission() {
+        audioPermissionRequest.launch(Manifest.permission.RECORD_AUDIO)
     }
 
     private fun showAudioDeviceDialog() {
@@ -569,7 +561,6 @@ class MonitorFragment : Fragment() {
     }
 
     companion object {
-        private const val REQUEST_AUDIO_PERMISSION = 1
 
         // The RX ring aligns to the UTC minute, so a larger offset wraps
         private const val DRIFT_LIMIT_MS = 30_000L

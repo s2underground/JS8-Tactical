@@ -283,7 +283,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         loadHistory()
         loadMapMemory()
         PreferenceManager.getDefaultSharedPreferences(application).registerOnSharedPreferenceChangeListener(dialPrefListener)
-        androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(application).registerReceiver(
+        com.js8call.example.AppBroadcasts.register(
+            application,
             serviceReceiver,
             android.content.IntentFilter().apply {
                 addAction(JS8EngineService.ACTION_DECODE)

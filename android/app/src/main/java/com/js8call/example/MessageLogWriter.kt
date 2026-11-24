@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import androidx.annotation.RequiresApi
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
@@ -97,6 +98,7 @@ class MessageLogWriter(private val context: Context) {
      * another), so fall back to a dated name, remembered for next time, and finally to the
      * app's own folder (Android/data/<app>/files/JS8CallLogs) so logging never stops.
      */
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun ensureMediaStoreTarget(): LogTarget? {
         val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
         val name = prefs.getString(PREF_LOG_NAME, null) ?: LOG_NAME
@@ -153,12 +155,9 @@ class MessageLogWriter(private val context: Context) {
     }
 
     private fun writeToMediaStore(uri: Uri, bytes: ByteArray) {
-        val stream = resolver.openOutputStream(uri, "wa") ?: resolver.openOutputStream(uri)
-        if (stream == null) {
-            Log.w(TAG, "Failed opening log stream")
-            return
-        }
-        stream.use { it.write(bytes) }
+        val written = (resolver.openOutputStream(uri, "wa") ?: resolver.openOutputStream(uri))
+            ?.use { it.write(bytes) }
+        if (written == null) Log.w(TAG, "Failed opening log stream")
     }
 
     private fun writeToFile(file: File, bytes: ByteArray) {
@@ -166,6 +165,8 @@ class MessageLogWriter(private val context: Context) {
     }
 
     private fun rotateMediaStore(uri: Uri) {
+        // MediaStore targets are only created on Android 10+ (see ensureLogTarget).
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         try {
             findMediaStoreEntry(LOG_BACKUP_NAME)?.let { resolver.delete(it, null, null) }
             val values = ContentValues().apply {
@@ -187,24 +188,21 @@ class MessageLogWriter(private val context: Context) {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun findMediaStoreEntry(displayName: String): Uri? {
         val selection = "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND ${MediaStore.MediaColumns.RELATIVE_PATH}=?"
         val args = arrayOf(displayName, RELATIVE_PATH)
-        resolver.query(
+        val id = resolver.query(
             MediaStore.Downloads.EXTERNAL_CONTENT_URI,
             arrayOf(MediaStore.MediaColumns._ID),
             selection,
             args,
             null
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val id = cursor.getLong(0)
-                return Uri.withAppendedPath(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id.toString())
-            }
-        }
-        return null
+        )?.use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else null } ?: return null
+        return Uri.withAppendedPath(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id.toString())
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun createMediaStoreEntry(displayName: String): Uri? {
         return try {
             val values = ContentValues().apply {
@@ -220,18 +218,13 @@ class MessageLogWriter(private val context: Context) {
     }
 
     private fun queryMediaStoreSize(uri: Uri): Long {
-        resolver.query(
+        return resolver.query(
             uri,
             arrayOf(MediaStore.MediaColumns.SIZE),
             null,
             null,
             null
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                return cursor.getLong(0)
-            }
-        }
-        return 0L
+        )?.use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else null } ?: 0L
     }
 
     private fun formatTimestamp(): String = timeFormatter.format(Date())

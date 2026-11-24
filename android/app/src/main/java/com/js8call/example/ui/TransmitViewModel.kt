@@ -8,19 +8,19 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.js8call.example.AppBroadcasts
 import com.js8call.example.MainActivity
 import com.js8call.example.data.MessageEntity
 import com.js8call.example.data.MessageRepository
 import com.js8call.example.model.TransmitMessage
-import com.js8call.example.service.JS8EngineService
 import com.js8call.example.model.TransmitState
+import com.js8call.example.service.JS8EngineService
 import com.js8call.example.util.CallsignValidator
 import com.js8call.example.util.Js8Commands
+import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.Locale
 
 /**
  * The send queue and transmit state, one for the whole app ([of]).
@@ -61,7 +61,8 @@ class TransmitViewModel internal constructor(application: Application) : Android
     }
 
     private fun listen(application: Application) {
-        LocalBroadcastManager.getInstance(application).registerReceiver(
+        AppBroadcasts.register(
+            application,
             serviceReceiver,
             android.content.IntentFilter().apply {
                 addAction(JS8EngineService.ACTION_QUEUE_TX)

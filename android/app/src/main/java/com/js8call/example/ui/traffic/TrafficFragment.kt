@@ -94,9 +94,10 @@ class TrafficFragment : Fragment() {
         val v = view ?: return
         val listener = com.js8call.example.ui.onboarding.RoleChooser.isListener(requireContext())
         // Also hidden while the Inbox is open: it's a read pane, and Send there would go to everyone.
-        v.findViewById<View>(R.id.compose_container)?.isVisible = !listener && !inboxOpen
+        val compose = v.findViewById<View>(R.id.compose_container)
+        compose?.isVisible = !listener && !inboxOpen
         v.findViewById<View>(R.id.tpl_row)?.isVisible = !listener && !inboxOpen
-        val parent = v.findViewById<View>(R.id.compose_container)?.parent as? ViewGroup ?: return
+        val parent = compose?.parent as? ViewGroup ?: return
         var banner = parent.findViewWithTag<TextView>("listener_banner")
         if (listener && banner == null) {
             banner = TextView(requireContext()).apply {
@@ -476,7 +477,7 @@ class TrafficFragment : Fragment() {
         val threadLm = threadList.layoutManager as LinearLayoutManager
         fun renderLatest() {
             // The list's diff can finish after this screen is gone (11-21 crash: getString on a detached fragment).
-            if (!isAdded || view == null) return
+            if (!isAdded || this@TrafficFragment.view == null) return
             latest.isVisible = !followLatest && thread.itemCount > 0
             latest.text = if (newWhileAway > 0) getString(R.string.traffic_latest_new, newWhileAway) else getString(R.string.traffic_latest)
         }
@@ -514,7 +515,7 @@ class TrafficFragment : Fragment() {
                 newWhileAway += items.count { threadKey(it) !in before }
             }
             thread.submitList(items) {
-                if (items.isEmpty() || view == null) return@submitList
+                if (items.isEmpty() || this@TrafficFragment.view == null) return@submitList
                 if (followLatest) {
                     threadList.scrollToPosition(items.size - 1)
                 } else {
@@ -531,7 +532,7 @@ class TrafficFragment : Fragment() {
             // A newly opened thread starts at its newest message, following.
             followLatest = true
             newWhileAway = 0
-            view.findViewById<View>(R.id.thread_latest).isVisible = false
+            latest.isVisible = false
             thread.notifyDataSetChanged()
             view.findViewById<View>(R.id.thread_clear).isVisible = it != TrafficViewModel.ALL
             if (relayFor != it) { relayVia = null; relayFor = null }

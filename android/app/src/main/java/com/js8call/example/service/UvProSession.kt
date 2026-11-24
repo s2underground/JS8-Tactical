@@ -378,9 +378,13 @@ class UvProSession(
         return false
     }
 
-    private fun isUvPro(device: BluetoothDevice): Boolean =
+    /** Needs BLUETOOTH_CONNECT on Android 12+; start() checks it, and a revoked permission reads as "not a UV-Pro". */
+    private fun isUvPro(device: BluetoothDevice): Boolean = try {
         device.uuids?.any { it.uuid == AUDIO_UUID } == true ||
             device.name?.contains("UV-PRO", ignoreCase = true) == true
+    } catch (_: SecurityException) {
+        false
+    }
 
     private fun hasBluetoothPermission(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true

@@ -1,5 +1,6 @@
 package com.js8call.example
 
+import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.ClipData
@@ -56,6 +57,7 @@ object CrashReporter {
     private const val KEY_CRASH_TIMES = "crash_times"
 
     /** Crash times are kept (last few) so the next start can tell it is in a crash loop. */
+    @SuppressLint("ApplySharedPref") // commit(): the process is about to die
     private fun noteCrashTime(ctx: Context) {
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val times = prefs.getString(KEY_CRASH_TIMES, "").orEmpty().split(',').mapNotNull { it.toLongOrNull() }

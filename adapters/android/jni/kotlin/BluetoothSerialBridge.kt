@@ -1,8 +1,8 @@
 package com.js8call.core
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.ParcelUuid
 import android.os.SystemClock
 import android.util.Log
+import androidx.core.content.IntentCompat
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
@@ -135,7 +136,7 @@ class BluetoothSerialBridge(private val context: Context) {
 
             closeLocked()
 
-            val adapter = BluetoothAdapter.getDefaultAdapter()
+            val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
             if (adapter == null) {
                 lastError = "Bluetooth adapter unavailable"
                 Log.w(TAG, lastError ?: "Bluetooth adapter unavailable")
@@ -431,9 +432,9 @@ class BluetoothSerialBridge(private val context: Context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action != BluetoothDevice.ACTION_UUID) return
-                val eventDevice = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                val eventDevice = IntentCompat.getParcelableExtra(intent, BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
                 if (eventDevice?.address != device.address) return
-                val uuidArray = intent.getParcelableArrayExtra(BluetoothDevice.EXTRA_UUID)
+                val uuidArray = IntentCompat.getParcelableArrayExtra(intent, BluetoothDevice.EXTRA_UUID, ParcelUuid::class.java)
                 fetched = uuidArray
                     ?.mapNotNull { (it as? ParcelUuid)?.uuid }
                     ?.distinct()

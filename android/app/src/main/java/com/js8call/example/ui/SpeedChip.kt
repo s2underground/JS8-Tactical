@@ -13,7 +13,7 @@ import com.js8call.example.service.JS8EngineService
  */
 object SpeedChip {
 
-    private class Speed(val submode: Int, @StringRes val label: Int)
+    private class Speed(val submode: Int, @param:StringRes val label: Int)
 
     private val speeds = listOf(
         Speed(JS8EngineService.SUBMODE_SLOW, R.string.tx_speed_slow),

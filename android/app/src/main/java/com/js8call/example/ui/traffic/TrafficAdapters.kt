@@ -176,7 +176,7 @@ class ThreadAdapter(
         val asFields = report != null && m.isComplete && report.values.isNotEmpty()
         h.reportFields.isVisible = asFields
         h.body.isVisible = !asFields
-        if (asFields) bindReportFields(h.reportFields, report!!)
+        if (asFields) bindReportFields(h.reportFields, report)
         val snr = m.bestSnr?.let { " · $it dB" } ?: ""
         h.meta.text = if (m.copies > 1)
             ctx.getString(R.string.traffic_meta_multi, zuluTime(m.firstHeardMs), zuluTime(m.lastHeardMs), m.laneHz.toInt(), snr)

@@ -19,7 +19,7 @@ Treat every received message as unverified, whatever callsign it shows.
 | Store-and-forward traffic (`MSG TO:`, `QUERY MSGS`) | Any station | Kotlin store-and-forward code | Stored text from strangers; replies sent automatically when auto-reply is on |
 | rigctld connection (TCP, local network) | Whoever runs or spoofs the rigctld server | `RigCtlClient.kt` | Plain TCP with no authentication: a device on the same network could impersonate the radio |
 | USB serial and Bluetooth radio links | Physical access / paired device | Hamlib (C), `UvProSession.kt` | Malformed replies from the radio or a rogue Bluetooth device |
-| Space-weather data (NOAA SWPC), map tiles (OpenFreeMap) | Those servers, over HTTPS | `SpaceWeatherRepository.kt`, MapLibre | Malformed data from a compromised server |
+| Space-weather data (NOAA SWPC), map tiles (OpenFreeMap) | Those servers, over HTTPS only (cleartext HTTP and user-installed certificate authorities are refused) | `SpaceWeatherRepository.kt`, MapLibre | Malformed data from a compromised server |
 | Optional AI model files (Hugging Face, over HTTPS) | The model publisher and host | `AiModels.kt`, llama.cpp GGUF loader (C++) | A tampered model file parsed by native code |
 
 ## What can make the radio transmit
@@ -43,7 +43,7 @@ multicast on the local network, readable by any device on that network).
   the same workflow and signed with the project's release key (fingerprint in
   [SECURITY.md](../SECURITY.md)).
 - Automated checks: Kotlin unit tests and native core tests on every push; CodeQL static analysis
-  of the native code; Android lint (report only for now); OpenSSF Scorecard; Dependabot for
+  of the native code; Android lint, which fails on any new finding; OpenSSF Scorecard; Dependabot for
   GitHub Actions and Gradle dependencies; weekly fuzzing of the JS8 frame decoders
   (`scripts/fuzz-core.sh`, libFuzzer with AddressSanitizer and UndefinedBehaviorSanitizer).
 - Third-party native code is pinned: JS8Core and llama.cpp as git submodules at fixed commits,
@@ -54,11 +54,10 @@ multicast on the local network, readable by any device on that network).
 1. **AI model downloads are not pinned to a checksum.** They come over HTTPS from Hugging Face's
    `main` branch, so a change upstream would be accepted. Planned: pin a revision and verify the
    SHA-256 before use.
-2. **Cleartext HTTP is allowed** by the network security config. The app makes no HTTP requests
-   (rigctld uses a raw TCP socket, which this setting does not affect), so this can be turned off.
-3. **Test builds are debuggable**, which lets anyone with USB debugging access to the device read
+2. **Test builds are debuggable**, which lets anyone with USB debugging access to the device read
    the app's data. Release builds are not.
-4. **Android backup is allowed** (`allowBackup`), so app data can be copied by device backup.
-5. **Compiler warnings**: about 57 Kotlin warnings, mostly deprecated Android APIs, are being worked
-   through.
-6. **No independent audit yet.** One is planned; the report will be published in this repository.
+3. **Android backup is allowed** (`allowBackup`), so app data can be copied by device backup.
+4. **Older lint findings**: about 240 style and performance findings (unused resources, Kotlin
+   extension suggestions and similar, none security-related) are recorded in
+   `android/app/lint-baseline.xml` and being worked off. New findings fail CI.
+5. **No independent audit yet.** One is planned; the report will be published in this repository.
