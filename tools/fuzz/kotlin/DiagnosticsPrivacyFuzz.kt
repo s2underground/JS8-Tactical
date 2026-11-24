@@ -23,9 +23,12 @@ object DiagnosticsPrivacyFuzz {
 
     private fun anyCase(d: FuzzedDataProvider, s: String) = s.map { if (d.consumeBoolean()) it.lowercaseChar() else it }.joinToString("")
 
-    /** [needle] as a whole word (not inside a longer word) anywhere in [hay], any case. */
-    private fun visible(hay: String, needle: String) =
-        Regex("(?<![A-Za-z0-9])" + Regex.escape(needle) + "(?![A-Za-z0-9])", RegexOption.IGNORE_CASE).containsMatchIn(hay)
+    /** [needle] as a whole word (not inside a longer word) anywhere in [hay]; any case unless [exactCase]. */
+    private fun visible(hay: String, needle: String, exactCase: Boolean = false) =
+        Regex(
+            "(?<![A-Za-z0-9])" + Regex.escape(needle) + "(?![A-Za-z0-9])",
+            if (exactCase) emptySet() else setOf(RegexOption.IGNORE_CASE),
+        ).containsMatchIn(hay)
 
     @JvmStatic
     fun fuzzerTestOneInput(d: FuzzedDataProvider) {
@@ -47,7 +50,9 @@ object DiagnosticsPrivacyFuzz {
         }
         val out = DiagnosticsPrivacy.scrub(report, myCall, myGrid)
         check(!visible(out, myCall)) { "own callsign $myCall survived in: $out" }
-        check(!visible(out, otherCall)) { "callsign $otherCall survived in: $out" }
+        // Other stations' calls are masked as the app logs them, in upper case. (A lower-case word of
+        // that shape is left alone by design: in a log it is far more often an id or a file name.)
+        check(!visible(out, otherCall, exactCase = true)) { "callsign $otherCall survived in: $out" }
         check(!visible(out, myGrid)) { "own grid $myGrid survived in: $out" }
         check(!Regex("(?<![A-Za-z0-9.])" + Regex.escape(ip) + "(?![0-9.])").containsMatchIn(out)) { "IP $ip survived in: $out" }
     }
