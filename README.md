@@ -9,7 +9,7 @@ net easier to follow and use. It is a fork of
 [JS8Call](https://github.com/js8call/js8call), and stays on the air compatible with
 standard JS8: everything it sends is ordinary JS8 that any JS8Call station can read.
 
-**Status: early alpha (1.2.0-alpha.3).** Expect rough edges. Please report bugs (see below).
+**Status: early alpha (1.2.0-alpha.4).** Expect rough edges. Please report bugs (see below).
 
 **Built with AI:** JS8-Tactical's own code is written by an AI model (Anthropic's Claude) under
 the maintainer's direction. See [How this software is made](#how-this-software-is-made) for what
