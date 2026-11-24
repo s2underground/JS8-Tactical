@@ -214,7 +214,7 @@ class ThreadAdapter(
                 text = value
                 textSize = 15f
                 setTextColor(ContextCompat.getColor(ctx, R.color.tac_text))
-                if (field.kind == Reports.Kind.LOCATION || field.kind == Reports.Kind.TIME) typeface = Typeface.MONOSPACE
+                if (field.kind == Reports.Kind.LOCATION || field.kind == Reports.Kind.TIME || field.kind == Reports.Kind.FREQUENCY) typeface = Typeface.MONOSPACE
             })
             grid.addView(cell, android.widget.GridLayout.LayoutParams(
                 android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED),

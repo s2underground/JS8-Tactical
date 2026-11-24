@@ -68,6 +68,7 @@ object Cot {
                 else -> CYAN
             }
             Reports.SPOT, Reports.SALUTE -> MAGENTA
+            Reports.JAM -> YELLOW
             else -> CYAN
         }
     }
