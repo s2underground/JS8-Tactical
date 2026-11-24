@@ -127,7 +127,7 @@
     <string name="settings_hamlib_model_none">None</string>
     <string name="settings_hamlib_usb_port">Hamlib Serial Port</string>
     <string name="settings_hamlib_usb_port_summary">Select a USB or Bluetooth serial port</string>
-    <string name="settings_hamlib_usb_port_auto">Auto (USB first available)</string>
+    <string name="settings_hamlib_usb_port_auto">Auto (tries each port of the first USB serial device)</string>
     <string name="settings_hamlib_usb_port_none">No serial devices found</string>
     <string name="settings_hamlib_usb_port_previous">Previous selection (%1$s)</string>
     <string name="settings_rts_ptt">Serial (RTS PTT)</string>
