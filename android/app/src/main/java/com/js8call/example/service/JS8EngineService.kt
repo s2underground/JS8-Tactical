@@ -22,6 +22,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import com.js8call.core.BluetoothSerialBridge
 import com.js8call.core.BluetoothSerialPortCatalog
@@ -1645,6 +1646,10 @@ class JS8EngineService : Service() {
 
         var deviceId = selection.usbDeviceId
         var portIndex = selection.portIndex
+        // Auto: the device's other ports, tried in turn if the radio doesn't answer on the first.
+        // Dual-port USB serial chips (the Xiegu X6100/X6200's WCH CH342, for one) carry CAT on
+        // just one of them, and not always the first.
+        var autoPorts: List<Int> = emptyList()
         if (deviceId == null) {
             val ports = try {
                 UsbSerialPortCatalog.listPorts(this)
@@ -1655,6 +1660,7 @@ class JS8EngineService : Service() {
             if (firstPort != null) {
                 deviceId = firstPort.deviceId
                 portIndex = firstPort.portIndex
+                autoPorts = ports.filter { it.deviceId == firstPort.deviceId }.map { it.portIndex }
                 Log.i(TAG, "Auto-selected USB serial port: ${firstPort.label}")
             }
         }
@@ -1692,6 +1698,15 @@ class JS8EngineService : Service() {
             return
         }
 
+        // Remembered from an earlier Auto connect: the port this radio answered on.
+        val rememberKey = if (autoPorts.size > 1) "rig_auto_port_%04x_%04x_%d".format(java.util.Locale.US, usbDevice.vendorId, usbDevice.productId, rigModel) else null
+        if (rememberKey != null) {
+            val remembered = PreferenceManager.getDefaultSharedPreferences(this).getInt(rememberKey, -1)
+            autoPorts = (listOf(remembered).filter { it in autoPorts } + autoPorts).distinct()
+            portIndex = autoPorts.first()
+        }
+        val alternates = autoPorts.drop(1)
+
         Log.i(TAG, "Hamlib USB device selected: ${usbDevice.deviceName} (id=${usbDevice.deviceId}) port=$portIndex")
 
         if (!UsbPermissionHelper.hasPermission(this, usbDevice)) {
@@ -1699,7 +1714,7 @@ class JS8EngineService : Service() {
             UsbPermissionHelper.requestPermission(this, usbDevice) { granted ->
                 if (granted) {
                     Log.i(TAG, "USB permission granted for Hamlib device")
-                    openHamlibSerialUsbInternal(rigModel, usbDevice.deviceId, portIndex, params)
+                    openHamlibSerialUsbInternal(rigModel, usbDevice.deviceId, portIndex, params, alternates, rememberKey)
                 } else {
                     Log.w(TAG, "USB permission denied for Hamlib device")
                     broadcastError("USB permission denied. Please grant USB access in Settings.")
@@ -1708,7 +1723,7 @@ class JS8EngineService : Service() {
             }
         } else {
             Log.i(TAG, "USB permission already granted for Hamlib device")
-            openHamlibSerialUsbInternal(rigModel, usbDevice.deviceId, portIndex, params)
+            openHamlibSerialUsbInternal(rigModel, usbDevice.deviceId, portIndex, params, alternates, rememberKey)
         }
     }
 
@@ -1716,22 +1731,52 @@ class JS8EngineService : Service() {
         rigModel: Int,
         deviceId: Int,
         portIndex: Int,
-        params: SerialParams
+        params: SerialParams,
+        /** Auto mode: other ports of the same device to try if the radio doesn't answer. */
+        alternates: List<Int> = emptyList(),
+        /** Auto mode: where to remember the port that answered. */
+        rememberKey: String? = null,
     ) {
         // Captured: a stop swaps these fields while this connects
         val bridge = usbSerialBridge
         val hamlib = hamlibRigControl
         Thread {
-            val preopenOk = bridge?.open(
-                deviceId,
-                portIndex,
-                params.baudRate,
-                params.dataBits,
-                params.stopBits,
-                params.parityValue
-            ) == true
+            var ok = false
+            var anyPreopen = false
+            var serialPath = ""
+            var answeredOn: Int? = null
+            for ((attempt, port) in (listOf(portIndex) + alternates).withIndex()) {
+                if (bridge !== usbSerialBridge) return@Thread // stopped meanwhile
+                if (attempt > 0) {
+                    bridge?.close()
+                    Log.i(TAG, "Radio didn't answer on the previous port; trying port $port")
+                }
+                val preopenOk = bridge?.open(
+                    deviceId,
+                    port,
+                    params.baudRate,
+                    params.dataBits,
+                    params.stopBits,
+                    params.parityValue
+                ) == true
+                if (!preopenOk) continue
+                anyPreopen = true
 
-            if (!preopenOk) {
+                val resolvedPortIndex = bridge?.getActivePortIndex() ?: port
+                serialPath = "android-usb:$deviceId:$resolvedPortIndex"
+                ok = hamlib?.openSerialPath(
+                    rigModel,
+                    serialPath,
+                    params.baudRate,
+                    params.dataBits,
+                    params.stopBits,
+                    params.parity
+                ) == true
+                if (ok) { answeredOn = port; break }
+            }
+
+            val answered = answeredOn
+            if (!anyPreopen) {
                 mainHandler.post {
                     // Stopped since this thread started
                     if (bridge !== usbSerialBridge) return@post
@@ -1743,24 +1788,15 @@ class JS8EngineService : Service() {
                 return@Thread
             }
 
-            val resolvedPortIndex = bridge.getActivePortIndex() ?: portIndex
-            val serialPath = "android-usb:$deviceId:$resolvedPortIndex"
-
-            val ok = hamlib?.openSerialPath(
-                rigModel,
-                serialPath,
-                params.baudRate,
-                params.dataBits,
-                params.stopBits,
-                params.parity
-            ) == true
-
             mainHandler.post {
                 if (bridge !== usbSerialBridge) return@post
                 hamlibRigConnected = ok
                 rigCtlErrorShown = false
                 if (ok) {
                     Log.i(TAG, "Hamlib rig opened (model=$rigModel path=$serialPath)")
+                    if (rememberKey != null && answered != null) {
+                        PreferenceManager.getDefaultSharedPreferences(this@JS8EngineService).edit { putInt(rememberKey, answered) }
+                    }
                 } else {
                     val detail = hamlib?.getLastError().orEmpty()
                     if (detail.isNotBlank()) {
