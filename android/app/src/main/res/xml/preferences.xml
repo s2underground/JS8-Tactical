@@ -474,7 +474,7 @@
         <Preference
             app:key="diagnostics_share"
             app:title="Share diagnostic report"
-            app:summary="Past crash and freeze reports, the app's recent log and radio setup (no callsign or grid). Nothing is sent unless you share it."
+            app:summary="Past crash and freeze reports, the app's recent log and radio setup. Callsigns, grid squares and Bluetooth, IP and email addresses are removed first. Nothing is sent unless you share it."
             app:iconSpaceReserved="false" />
 
     </PreferenceCategory>
