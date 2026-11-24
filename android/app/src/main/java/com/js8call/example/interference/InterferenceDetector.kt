@@ -121,6 +121,14 @@ class InterferenceDetector(
         val snrs: List<Int>,
     )
 
+    /**
+     * The last few 15 s windows, oldest first, for the diagnostics report: floor (dB), sweeps
+     * counted, pulsed, decodes. Lets a field report show what set a finding off.
+     */
+    fun recentWindows(n: Int = 8): String = recent.toList().takeLast(n).joinToString(" | ") {
+        "%.0f/s%d%s/d%d".format(java.util.Locale.ROOT, it.floorDb, it.sweeps, if (it.pulsed) "/P" else "", it.decodes)
+    }
+
     private var dialHz = 0L
     private var current: Window? = null
     private val recent = ArrayDeque<Summary>()
@@ -326,8 +334,12 @@ class InterferenceDetector(
             }
         }
         if (newCarriers.isNotEmpty()) kinds += Kind.CARRIER
-        if (last.takeLast(4).count { it.sweeps >= 2 } >= 2) kinds += Kind.SWEEP
-        if (last.takeLast(4).count { it.pulsed } >= 2) kinds += Kind.PULSE
+        // Sweeps and pulses have to keep coming back for most of a minute and a half. Tuning an
+        // antenna, keying the radio or switching something at the station lasts seconds: it can
+        // touch two windows (one either side of a boundary) but not three.
+        val lastSix = last.takeLast(PERSIST_OF)
+        if (lastSix.count { it.sweeps >= 2 } >= PERSIST_NEED) kinds += Kind.SWEEP
+        if (lastSix.count { it.pulsed } >= PERSIST_NEED) kinds += Kind.PULSE
 
         // Traffic: normally decoded stations silent, or decoded much weaker than usual.
         var quiet = false
@@ -400,6 +412,9 @@ class InterferenceDetector(
         const val SWEEP_MAX_STILL = 5
         const val QUIET_WINDOWS = 20 // 5 minutes
         const val HISTORY_WINDOWS = 24
+        /** Sweeps/pulses must show in [PERSIST_NEED] of the last [PERSIST_OF] windows (15 s each). */
+        const val PERSIST_OF = 6
+        const val PERSIST_NEED = 3
         const val MIN_FRAMES = 50 // 5 s of spectrum in a window
         const val MIN_BASELINE_WINDOWS = 40 // 10 minutes of normal reception at this hour
         const val BASELINE_MEMORY = 200
