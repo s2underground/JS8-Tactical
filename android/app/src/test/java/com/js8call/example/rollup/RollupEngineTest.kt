@@ -223,4 +223,14 @@ class RollupEngineTest {
         assertEquals("ARRIVED AT CP1, ALL GOOD", msgs.single { it.sender == "N0DEF" }.bodyText)
         assertEquals(4, msgs.size)
     }
+
+    // Found by the Kotlin fuzzer: a frame that decoded to empty text crashed the Traffic screen.
+    @Test
+    fun emptyFrameTextDoesNotCrash() {
+        val e = RollupEngine()
+        e.send(listOf("" to 1, "HELLO" to 4, "THERE" to 6), startSlot = 0)
+        e.settle(3)
+        val m = e.messages().single()
+        assertTrue(m.bodyText, m.bodyText.contains("HELLO") && m.bodyText.contains("THERE"))
+    }
 }

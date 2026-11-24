@@ -144,7 +144,11 @@ class RollupEngine(
                 (copy.sender == null || msg.sender == null || copy.sender == msg.sender)
         }
         for (msg in candidates) {
-            if (msg.alignmentFor(copy) != null) return msg
+            val offset = msg.alignmentFor(copy) ?: continue
+            // Merged copies obey the same length limit as one transmission, so a string of
+            // overlapping partial copies can't grow a message without end.
+            if (msg.mergedSize(copy, offset) > maxFramesPerTransmission) continue
+            return msg
         }
         return null
     }
@@ -348,11 +352,17 @@ class RolledMessage private constructor(
         return t.isNotEmpty() && !t.startsWith("@") && HeaderParser.parse(t) == null
     }
 
+    /** Length of this message after merging [copy] at [offset]. */
+    internal fun mergedSize(copy: RollupEngine.Copy, offset: Int): Int {
+        val shift = if (offset < 0) -offset else 0
+        return maxOf(frames.size + shift, offset + shift + copy.frames.size)
+    }
+
     internal fun absorb(copy: RollupEngine.Copy) {
         val offset = alignmentFor(copy) ?: return
         val shift = if (offset < 0) -offset else 0
         val start = offset + shift
-        val size = maxOf(frames.size + shift, start + copy.frames.size)
+        val size = mergedSize(copy, offset)
         val merged = MutableList<RollupEngine.Frame?>(size) { null }
         frames.forEachIndexed { i, f -> merged[i + shift] = f }
         copy.frames.forEachIndexed { i, f ->
@@ -424,7 +434,8 @@ internal object TextAssembler {
             }
             if (text.isNotEmpty()) {
                 val p = prev
-                if (p != null && !p.isData && !p.text.last().isWhitespace() && !text.first().isWhitespace()) {
+                // p.text can be empty (a frame that decoded to no text): lastOrNull, not last().
+                if (p != null && !p.isData && p.text.lastOrNull()?.isWhitespace() == false && !text.first().isWhitespace()) {
                     appendText(out, " ")
                 }
                 appendText(out, text)

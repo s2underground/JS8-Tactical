@@ -13,8 +13,11 @@ object DiagnosticsPrivacy {
 
     const val MY_LABEL = "MY-STATION"
 
-    /** Callsign-shaped words (prefix, digit, suffix; optional /P style suffix). Upper case only. */
-    private val CALL = Regex("(?<![A-Za-z0-9/])((?:[A-Z]{1,2}|[0-9][A-Z]|[A-Z][0-9])[0-9][A-Z]{1,4})(?:/[A-Z0-9]{1,4})?(?![A-Za-z0-9])")
+    /**
+     * Callsign-shaped words (prefix, digit, suffix; optional /P style suffix). Upper case only.
+     * A "/" before the call doesn't protect it: in VE3/K1ABC the K1ABC part is still masked.
+     */
+    private val CALL = Regex("(?<![A-Za-z0-9])((?:[A-Z]{1,2}|[0-9][A-Z]|[A-Z][0-9])[0-9][A-Z]{1,4})(?:/[A-Z0-9]{1,4})?(?![A-Za-z0-9])")
     /** Upper-case words of that shape that aren't callsigns. */
     private val NOT_CALLS = setOf("JS8CALL", "JS8CORE", "JS8LIB", "UTF8", "MP3", "H264")
     /** Maidenhead locators: 4 characters, optionally 6 (EM96, EM96ab). */
@@ -47,7 +50,7 @@ object DiagnosticsPrivacy {
         t = GRID.replace(t, "[GRID]")
         // The operator's own call in any case or with a suffix, then every other call-shaped word.
         if (me.isNotEmpty()) {
-            t = Regex("(?<![A-Za-z0-9/])(?:[A-Za-z0-9]{1,4}/)?" + Regex.escape(me) + "(?:/[A-Za-z0-9]{1,4})?(?![A-Za-z0-9])", RegexOption.IGNORE_CASE)
+            t = Regex("(?<![A-Za-z0-9])(?:[A-Za-z0-9]{1,4}/)?" + Regex.escape(me) + "(?:/[A-Za-z0-9]{1,4})?(?![A-Za-z0-9])", RegexOption.IGNORE_CASE)
                 .replace(t, MY_LABEL)
         }
         t = CALL.replace(t) { m -> if (m.groupValues[1] in NOT_CALLS) m.value else label(m.groupValues[1]) }

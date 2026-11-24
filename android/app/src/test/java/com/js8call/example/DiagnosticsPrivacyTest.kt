@@ -35,4 +35,12 @@ class DiagnosticsPrivacyTest {
         assertTrue(out.contains("127.0.0.1"))
         assertEquals("build E031.47.18.42", scrub("build E031.47.18.42"))
     }
+
+    // Found by the Kotlin fuzzer: a "/" right before a callsign used to protect it from the scrub.
+    @Test fun callsAfterSlashMasked() {
+        val out = scrub("via VE3/K9DGY, path 8.21./kq4br[6")
+        assertFalse(out.contains("K9DGY"))
+        assertFalse(out.contains("KQ4BR", ignoreCase = true))
+        assertEquals("via VE3/STATION-1, path 8.21./MY-STATION[6", out)
+    }
 }

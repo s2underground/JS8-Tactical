@@ -45,7 +45,11 @@ multicast on the local network, readable by any device on that network).
 - Automated checks: Kotlin unit tests and native core tests on every push; CodeQL static analysis
   of the native code; Android lint, which fails on any new finding; OpenSSF Scorecard; Dependabot for
   GitHub Actions and Gradle dependencies; weekly fuzzing of the JS8 frame decoders
-  (`scripts/fuzz-core.sh`, libFuzzer with AddressSanitizer and UndefinedBehaviorSanitizer).
+  (`scripts/fuzz-core.sh`, libFuzzer with AddressSanitizer and UndefinedBehaviorSanitizer);
+  weekly fuzzing of the Kotlin code that reads received text (`scripts/fuzz-kotlin.sh`, Jazzer),
+  with property checks: a message held for one station is only handed to that station, and the
+  diagnostics scrub leaves no callsign, grid or IP address behind; unit-test line coverage
+  (JaCoCo) reported on every build.
 - Third-party native code is pinned: JS8Core and llama.cpp as git submodules at fixed commits,
   Hamlib at a fixed commit in the build workflow.
 

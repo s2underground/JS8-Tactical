@@ -94,6 +94,9 @@ android {
             // release key when it's available, so they install over a release and vice versa.
             versionNameSuffix = "-test"
             if (releaseReady) signingConfig = signingConfigs.getByName("release")
+            // Line coverage of the unit tests: :app:createDebugUnitTestCoverageReport
+            // (report in app/build/reports/coverage/test/debug; CI posts the totals).
+            enableUnitTestCoverage = true
         }
         release {
             isMinifyEnabled = true
