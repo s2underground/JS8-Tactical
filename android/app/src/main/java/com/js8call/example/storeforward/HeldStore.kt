@@ -1,5 +1,6 @@
 package com.js8call.example.storeforward
 
+import android.annotation.SuppressLint
 import android.content.Context
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -167,6 +168,8 @@ class HeldStore private constructor(private val ctx: Context) {
         const val KEY_POST_NOTICE = "sf_post_notice_shown"
         private const val DAY_MS = 24 * 3600_000L
 
+        // Holds only the application context (see of()), which lives as long as the process.
+        @SuppressLint("StaticFieldLeak")
         @Volatile private var instance: HeldStore? = null
         fun of(ctx: Context): HeldStore =
             instance ?: synchronized(this) { instance ?: HeldStore(ctx.applicationContext).also { instance = it } }

@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
-import android.os.Build
 import androidx.preference.PreferenceManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.js8call.example.R
@@ -55,10 +54,6 @@ object AudioDevices {
                 Device(JS8EngineService.TRUSDX_AUDIO_SERIAL_ID, JS8EngineService.TRUSDX_AUDIO_SERIAL_NAME),
                 Device(JS8EngineService.TRUSDX_AUDIO_SPEAKER_ID, JS8EngineService.TRUSDX_AUDIO_SPEAKER_NAME)
             )
-        }
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return listOf(Device(DEFAULT_DEVICE_ID, "Default Microphone"))
         }
 
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager

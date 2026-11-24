@@ -1,8 +1,8 @@
 package com.js8call.core
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -21,7 +21,7 @@ object BluetoothSerialPortCatalog {
     data class SerialPort(val address: String, val portIndex: Int, val label: String)
 
     fun listPorts(context: Context): List<SerialPort> {
-        val adapter = BluetoothAdapter.getDefaultAdapter() ?: return emptyList()
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return emptyList()
         if (!hasBluetoothPermission(context)) {
             Log.w(TAG, "Bluetooth permissions not granted; Bluetooth ports unavailable")
             return emptyList()
@@ -52,7 +52,7 @@ object BluetoothSerialPortCatalog {
     }
 
     fun findBondedDevice(context: Context, addressNoColons: String): BluetoothDevice? {
-        val adapter = BluetoothAdapter.getDefaultAdapter() ?: return null
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return null
         if (!hasBluetoothPermission(context)) return null
         val target = normalizeAddress(addressNoColons) ?: return null
         return adapter.bondedDevices?.firstOrNull { device ->

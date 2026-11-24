@@ -9,6 +9,20 @@ plugins {
 
 android {
     namespace = "com.js8call.example"
+
+    lint {
+        // Known findings are recorded in lint-baseline.xml and worked off over time; anything new
+        // (including warnings) fails lint. Refresh after fixing some: ./gradlew :app:updateLintBaseline
+        baseline = file("lint-baseline.xml")
+        abortOnError = true
+        warningsAsErrors = true
+        // The app logs with android.util.Log on purpose (the crash reporter reads logcat);
+        // it does not use Timber, whose lint check would flag every log call.
+        disable += "LogNotTimber"
+        // Dependency and target-SDK freshness changes whenever upstream ships a release, which would
+        // fail unchanged code; Dependabot tracks dependency updates instead.
+        disable += setOf("GradleDependency", "AndroidGradlePluginVersion", "NewerVersionAvailable", "OldTargetApi")
+    }
     compileSdk = 36
     // NDK r28 builds 16 KB-page-compatible libraries (and ships a 16 KB libc++_shared). A machine
     // that only has an older NDK can build with -Pjs8.ndkVersion=<version>.
@@ -139,7 +153,8 @@ dependencies {
     // Preferences
     implementation("androidx.preference:preference-ktx:1.2.1")
 
-    // LocalBroadcastManager
+    // No longer used by the app (see AppBroadcasts); kept pinned because legacy-support-core-utils
+    // depends on it and would otherwise resolve the older 1.0.0.
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
 
     // Room Database

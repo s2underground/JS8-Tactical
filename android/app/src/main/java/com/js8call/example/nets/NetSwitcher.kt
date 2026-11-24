@@ -1,5 +1,6 @@
 package com.js8call.example.nets
 
+import android.annotation.SuppressLint
 import android.content.Context
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -143,6 +144,8 @@ class NetStore private constructor(private val ctx: Context) {
         const val KEY_LAST_DIAL = "net_switcher_last_dial"
         const val KEY_HOLD = "net_switcher_hold_min"
 
+        // Holds only the application context (see of()), which lives as long as the process.
+        @SuppressLint("StaticFieldLeak")
         @Volatile private var instance: NetStore? = null
         fun of(ctx: Context): NetStore =
             instance ?: synchronized(this) { instance ?: NetStore(ctx.applicationContext).also { instance = it } }

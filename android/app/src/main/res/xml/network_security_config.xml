@@ -1,19 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  HTTPS only, trusting only the system's certificate authorities. Every web request the app makes is
+  HTTPS (space-weather data, map tiles, optional AI model downloads). Radio connections such as
+  rigctld use plain TCP sockets, which this file does not affect.
+-->
 <network-security-config>
-    <!-- Allow cleartext traffic for rigctld connections -->
-    <base-config cleartextTrafficPermitted="true">
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="user" />
         </trust-anchors>
     </base-config>
-
-    <!-- Explicitly allow cleartext for local network addresses -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">127.0.0.1</domain>
-        <domain includeSubdomains="true">10.0.0.0/8</domain>
-        <domain includeSubdomains="true">172.16.0.0/12</domain>
-        <domain includeSubdomains="true">192.168.0.0/16</domain>
-    </domain-config>
 </network-security-config>

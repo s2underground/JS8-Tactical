@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.util.AttributeSet
+import android.util.TypedValue
 import android.view.View
 import com.js8call.example.service.JS8EngineService
 import com.js8call.example.service.TxOffsets
@@ -50,19 +51,19 @@ class WaterfallView @JvmOverloads constructor(
     private val onAirLabelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(220, 30, 30) }
     private val onAirText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textSize = 11f * resources.displayMetrics.scaledDensity
+        textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 11f, resources.displayMetrics)
         isFakeBoldText = true
     }
     private val scalePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(200, 230, 234, 240)
-        textSize = 11f * resources.displayMetrics.scaledDensity
+        textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 11f, resources.displayMetrics)
         setShadowLayer(3f, 0f, 0f, Color.BLACK)
     }
     private val tickPaint = Paint().apply { color = Color.argb(160, 230, 234, 240); strokeWidth = 1f * resources.displayMetrics.density }
     private val labelBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(230, 242, 163, 58) }
     private val labelText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(11, 14, 18)
-        textSize = 11f * resources.displayMetrics.scaledDensity
+        textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 11f, resources.displayMetrics)
         isFakeBoldText = true
     }
     /** Finger position while dragging, so the marker and its label follow it before it is set. */

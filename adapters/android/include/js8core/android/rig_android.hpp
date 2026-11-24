@@ -43,7 +43,8 @@ private:
   void worker_thread();
 
   std::string host_;
-  uint16_t port_;
+  // Kept for the network rig backend; worker_thread() is still a stub (rigctld is handled in Kotlin).
+  [[maybe_unused]] uint16_t port_;
   std::atomic<bool> running_{false};
   std::thread worker_;
   RigStateHandler on_state_;
