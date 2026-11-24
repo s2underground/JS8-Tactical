@@ -1,5 +1,7 @@
 # JS8-Tactical
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/17055/badge)](https://www.bestpractices.dev/projects/17055)
+
 JS8-Tactical is an Android app for JS8 digital radio messaging, built for field and
 emergency use: weak-signal HF traffic on a phone or tablet, with tools that make a busy
 net easier to follow and use. It is a fork of
