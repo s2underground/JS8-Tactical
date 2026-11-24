@@ -18,7 +18,7 @@ jobs:
   symbolize:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Symbolize
         run: tools/symbolize/symbolize.sh "${{ inputs.tag }}" ${{ inputs.offsets }}
       - name: Publish report
