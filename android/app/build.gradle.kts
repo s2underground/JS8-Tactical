@@ -41,7 +41,7 @@ android {
         // CI builds count up with the workflow run, so every build (rolling test build or tagged
         // release) installs over the one before it. Local builds stay at 5.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.let { 100 + it } ?: 5
-        versionName = "1.2.0-alpha.4"
+        versionName = "1.2.0-alpha.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Which commit a test build came from, shown in crash and diagnostic reports.
