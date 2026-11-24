@@ -164,12 +164,16 @@ object AiModels {
     }
 
     /**
-     * Finishes any download that has completed (renames the .part file into place). Only the
-     * Models screen used to do this, so a model downloaded in the background stayed invisible
-     * to the Digest until that screen was opened. Cheap when nothing is downloading.
+     * Finishes any download that has completed (checks it, then moves it into place), and starts
+     * the one-time check of a model downloaded before checking existed. Only the Models screen
+     * used to do this, so a model already on the phone stayed unusable for the Digest after an
+     * update until that screen was opened (found in alpha.5 diagnostics). Cheap otherwise.
      */
     fun settle(ctx: Context) {
-        ALL.forEach { m -> if (downloadId(ctx, m) != null) runCatching { state(ctx, m) } }
+        ALL.forEach { m ->
+            val unchecked = file(ctx, m).isFile && !ready(ctx, m)
+            if (downloadId(ctx, m) != null || unchecked) runCatching { state(ctx, m) }
+        }
     }
 
     fun download(ctx: Context, m: Model) {
