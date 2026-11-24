@@ -44,6 +44,7 @@ class ConversationFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        InterferenceUi.bindBanner(this, view)
 
         // Initialize ViewModels
         viewModel = ViewModelProvider(requireActivity())[MessagesViewModel::class.java]

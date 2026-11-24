@@ -829,6 +829,37 @@
     <string name="settings_sf_hold_summary">Keep messages left here with MSG TO: until the station they are for asks (Inbox → Holding)</string>
     <string name="settings_sf_serve">Answer message requests</string>
     <string name="settings_sf_serve_summary">With auto-reply on: answer QUERY MSGS and QUERY MSG, and mention waiting messages in heartbeat replies</string>
+    <string name="settings_interference_watch">Watch for interference</string>
+    <string name="settings_interference_watch_summary">Learns what each dial normally sounds like and flags raised noise, steady carriers, sweeps and pulsing. Receive only; nothing is sent</string>
+    <string name="settings_interference_warn">Warn before sending into interference</string>
+    <string name="settings_interference_warn_summary">Asks before transmitting when interference is hurting traffic on this dial, or a carrier sits on your transmit offset. Never blocks sending</string>
     <string name="map_panel_collapse">Minimise map controls</string>
     <string name="map_panel_expand">Show map controls</string>
+    <!-- Interference watch -->
+    <string name="interference_pill">INTERFERENCE</string>
+    <string name="interference_pill_possible">NOISE?</string>
+    <string name="interference_title">Interference on this dial</string>
+    <string name="interference_title_possible">Noise floor raised</string>
+    <string name="interference_on_dial">What the receiver measured on %1$s kHz:</string>
+    <string name="interference_short_noise">noise %1$s dB</string>
+    <string name="interference_short_carrier">carrier at %1$s Hz</string>
+    <string name="interference_short_sweep">sweeping signal</string>
+    <string name="interference_short_pulse">pulsing noise</string>
+    <string name="interference_short_quiet">usual stations silent</string>
+    <string name="interference_short_weaker">stations %1$s dB weaker</string>
+    <string name="interference_detail_noise">Noise floor %1$s dB above normal for this dial at this hour</string>
+    <string name="interference_detail_carrier">Steady carrier at %1$s Hz (audio offset), there for a minute or more</string>
+    <string name="interference_detail_sweep">A signal sweeping across the passband, again and again</string>
+    <string name="interference_detail_pulse">Noise across the passband switching on and off</string>
+    <string name="interference_detail_quiet">Stations normally decoded here have gone silent (last 5 minutes)</string>
+    <string name="interference_detail_weaker">Stations still decode, but %1$s dB weaker than usual</string>
+    <string name="interference_detail_resident">Steady tones normally present here, likely local (ignored): %1$s Hz</string>
+    <string name="interference_since">Since %1$s</string>
+    <string name="interference_possible_note">Stations are still decoding normally, so this could also be a change in audio or RF gain.</string>
+    <string name="interference_learning">Still learning what this dial normally sounds like at this hour (about 10 minutes of normal listening), so the noise floor isn\'t judged yet.</string>
+    <string name="interference_your_call">This is what the receiver measured. Whether it is deliberate jamming is your call. Sending is never blocked.</string>
+    <string name="interference_report">Report it (#JAM)</string>
+    <string name="interference_close">Close</string>
+    <string name="interference_warn_traffic">⚠ Interference here: %1$s. Your message may not get through. Tap for details.</string>
+    <string name="interference_warn_offset">⚠ A steady carrier sits on your transmit offset (%1$d Hz). Move your offset. Tap for details.</string>
 </resources>

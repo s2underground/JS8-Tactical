@@ -24,6 +24,7 @@ class EverythingFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        InterferenceUi.bindBanner(this, view)
 
         view.findViewById<MaterialToolbar>(R.id.thread_toolbar).setNavigationOnClickListener {
             findNavController().navigateUp()

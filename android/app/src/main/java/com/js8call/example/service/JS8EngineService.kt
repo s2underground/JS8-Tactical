@@ -928,6 +928,9 @@ class JS8EngineService : Service() {
                     // Broadcast on main thread
                     mainHandler.post {
                         maybeApplyTimeSync(driftMs)
+                        if (interferenceWatch()) {
+                            com.js8call.example.interference.Interference.onDecode(this@JS8EngineService, System.currentTimeMillis(), interferenceDialHz(), snr)
+                        }
                         handleDecode(utc, snr, dt, freq, text, type, quality, mode, driftMs)
                         maybeReportToPskReporter(utc, snr, freq, text)
                     }
@@ -938,6 +941,12 @@ class JS8EngineService : Service() {
                     powerDb: Float, peakDb: Float
                 ) {
                     spectrumEventCount += 1
+                    // Interference watch (receive only): the same spectrum the waterfall draws.
+                    if (interferenceWatch()) {
+                        val now = System.currentTimeMillis()
+                        if (engine?.isTransmitting() == true) com.js8call.example.interference.Interference.onTransmit(this@JS8EngineService, now)
+                        com.js8call.example.interference.Interference.onSpectrum(this@JS8EngineService, now, interferenceDialHz(), bins, binHz)
+                    }
                     if (rigControlMode == "trusdx_serial" && spectrumEventCount % 20L == 0L) {
                         Log.i(TAG, "Spectrum events: count=$spectrumEventCount bins=${bins.size} binHz=$binHz power=$powerDb peak=$peakDb")
                     }
@@ -1955,7 +1964,17 @@ class JS8EngineService : Service() {
         val portIndex: Int
     )
 
+    private fun interferenceWatch(): Boolean =
+        com.js8call.example.interference.Interference.enabled(this)
+
+    /** The dial for the interference watch: the radio's when rig control reports it, else the one picked in the app. */
+    private fun interferenceDialHz(): Long =
+        currentDialHz.takeIf { it > 0 }
+            ?: PreferenceManager.getDefaultSharedPreferences(this).getString("last_frequency", "")?.trim()?.toLongOrNull()
+            ?: 0L
+
     private fun stopEngine() {
+        com.js8call.example.interference.Interference.stop()
         try {
             engineStartGeneration++
             engineStartInProgress = false

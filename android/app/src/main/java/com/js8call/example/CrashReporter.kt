@@ -296,6 +296,7 @@ object CrashReporter {
         sb.append("== Radio USB dropouts\n").append(if (drops.isBlank()) "(none recorded)\n" else drops.takeLast(12_000)).append('\n')
         val echoes = com.js8call.example.ui.traffic.OwnEchoLog.text(ctx)
         sb.append("== Own transmissions heard back (sent vs heard offset)\n").append(if (echoes.isBlank()) "(none decoded)\n" else echoes.takeLast(8_000)).append('\n')
+        sb.append("== Interference watch\n").append(runCatching { com.js8call.example.interference.Interference.diagnostics() }.getOrElse { "(could not check: ${it.message})\n" }).append('\n')
         sb.append("== AI status\n").append(runCatching { com.js8call.example.ai.AiWork.diagnostics(ctx) }.getOrElse { "(could not check: ${it.message})\n" }).append('\n')
         val ai = com.js8call.example.ai.AiSpeedLog.text(ctx)
         if (ai.isNotBlank()) sb.append("== AI speed tests\n").append(ai.takeLast(12_000)).append('\n')
