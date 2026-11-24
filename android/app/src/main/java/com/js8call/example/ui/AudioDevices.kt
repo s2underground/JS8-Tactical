@@ -115,10 +115,19 @@ object AudioDevices {
 
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val devices = mutableListOf<Device>()
-        for (device in audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
-            if (!device.isSource) continue
-            val name = nameFor(device) ?: continue
-            devices.add(Device(device.id, name))
+        val inputs = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .filter { it.isSource }
+            .mapNotNull { d -> nameFor(d)?.let { d to it } }
+        // Phones often have two built-in mics with the same name; tell them apart by where Android
+        // says they are ("bottom", "back"), or number them when it doesn't say.
+        val counts = inputs.groupingBy { it.second }.eachCount()
+        val seen = mutableMapOf<String, Int>()
+        for ((device, name) in inputs) {
+            if ((counts[name] ?: 0) < 2) { devices.add(Device(device.id, name)); continue }
+            val n = (seen[name] ?: 0) + 1
+            seen[name] = n
+            val where = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) device.address.takeIf { it.isNotBlank() } else null
+            devices.add(Device(device.id, "$name (${where ?: n})"))
         }
 
         if (devices.isEmpty()) {
