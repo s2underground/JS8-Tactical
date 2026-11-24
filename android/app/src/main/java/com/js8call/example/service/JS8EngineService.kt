@@ -4034,72 +4034,38 @@ class JS8EngineService : Service() {
         }
         if (isTransmitActive()) return
 
-        val heartbeatFrom = RelayProtocol.heartbeatSender(text)
-        if (heartbeatFrom != null) {
-            if (isSelfCallsign(callsign, heartbeatFrom)) return
-            val snrText = formatSNR(snr)
-            if (snrText.isEmpty()) return
-            val target = heartbeatFrom.trim().uppercase()
+        val me = autoReplyStation(callsign, prefs)
+        val ack = AutoReply.heartbeatAck(text, snr, me) { target ->
             // Desktop JS8Call adds " MSG ID n" when it holds a message for the station heartbeating.
-            val extra = if (heldStore.serveEnabled)
+            if (heldStore.serveEnabled)
                 com.js8call.example.storeforward.HeldLogic.heartbeatExtra(heldStore.all(), target, "@HB", System.currentTimeMillis()) else ""
-            val payload = "$callsign: $target HEARTBEAT SNR $snrText$extra"
-            Log.i(TAG, "Auto HB ACK: from=$target snr=$snrText text='$payload'")
-            broadcastQueueTx(payload, null, priority = 1)
+        }
+        if (ack != null) {
+            Log.i(TAG, "Auto HB ACK: '$ack'")
+            broadcastQueueTx(ack, null, priority = 1)
             return
         }
+        if (RelayProtocol.heartbeatSender(text) != null) return
 
         val directed = RelayProtocol.parseDirectedCommand(text) ?: return
         if (directed.command.uppercase().startsWith(Js8Commands.CMD_QUERY_MSGS)) {
             answerQueryMsgs(callsign, directed)
             return
         }
-        if (!shouldReplyToDirected(callsign, directed)) return
-        val cmdUpper = directed.command.uppercase()
-        when {
-            cmdUpper == "SNR?" || cmdUpper == "?" -> {
-                val snrText = formatSNR(snr)
-                if (snrText.isEmpty()) return
-                Log.i(TAG, "Auto SNR reply: from=${directed.from} snr=$snrText")
-                broadcastQueueTx("$callsign: ${directed.from} SNR $snrText", null, priority = 1)
-            }
-            cmdUpper == "INFO?" -> {
-                val info = prefs.getString(PREF_MY_INFO, "")?.trim().orEmpty()
-                if (info.isBlank()) return
-                Log.i(TAG, "Auto INFO reply: from=${directed.from}")
-                broadcastQueueTx("$callsign: ${directed.from} INFO $info", null, priority = 1)
-            }
-            cmdUpper == "STATUS?" -> {
-                val status = prefs.getString(PREF_MY_STATUS, "")?.trim().orEmpty()
-                if (status.isBlank()) return
-                Log.i(TAG, "Auto STATUS reply: from=${directed.from}")
-                broadcastQueueTx("$callsign: ${directed.from} STATUS $status", null, priority = 1)
-            }
-            cmdUpper == "HEARING?" -> {
-                val heard = getRecentHeardCallsigns(
-                    exclude = setOf(directed.from.trim().uppercase(), callsign),
-                    limit = HEARD_LIMIT
-                )
-                if (heard.isEmpty()) return
-                Log.i(TAG, "Auto HEARING reply: from=${directed.from}, count=${heard.size}")
-                broadcastQueueTx("$callsign: ${directed.from} HEARING ${heard.joinToString(" ")}", null, priority = 1)
-            }
-            cmdUpper == "GRID?" -> {
-                val grid = prefs.getString("grid", "")?.trim().orEmpty().uppercase()
-                if (grid.isBlank()) return
-                Log.i(TAG, "Auto GRID reply: from=${directed.from}")
-                broadcastQueueTx("$callsign: ${directed.from} GRID $grid", null, priority = 1)
-            }
-            cmdUpper == "AGN?" -> {
-                val message = lastTxMessage.trimEnd()
-                if (message.isBlank()) return
-                Log.i(TAG, "Auto AGN reply: from=${directed.from}")
-                broadcastQueueTx(message, null, priority = 1)
-            }
-            // MSG auto-ACK is handled in maybeHandleIncomingMessage after full message is received
-            else -> return
-        }
+        // MSG auto-ACK is handled in maybeHandleIncomingMessage after the full message is received.
+        val reply = AutoReply.directedReply(directed, snr, me) { exclude -> getRecentHeardCallsigns(exclude, HEARD_LIMIT) } ?: return
+        Log.i(TAG, "Auto ${directed.command.uppercase()} reply to ${directed.from}")
+        broadcastQueueTx(reply, null, priority = 1)
     }
+
+    /** What auto-replies may say about this station, from Settings. */
+    private fun autoReplyStation(callsign: String, prefs: android.content.SharedPreferences) = AutoReply.Station(
+        callsign = callsign,
+        info = prefs.getString(PREF_MY_INFO, "").orEmpty(),
+        status = prefs.getString(PREF_MY_STATUS, "").orEmpty(),
+        grid = prefs.getString("grid", "").orEmpty(),
+        lastTx = lastTxMessage,
+    )
 
     private fun handleRelayFrame(text: String, snr: Int, mode: Int, freq: Float, type: Int) {
         if (!isRelayEnabled()) return
@@ -4176,13 +4142,6 @@ class JS8EngineService : Service() {
         val inlinePayload: Boolean,
         val parts: MutableList<String> = mutableListOf()
     )
-
-    private fun shouldReplyToDirected(myCall: String, command: DirectedCommand): Boolean {
-        if (command.to.startsWith("@")) return false
-        if (!isSelfCallsign(myCall, command.to)) return false
-        if (isSelfCallsign(myCall, command.from)) return false
-        return true
-    }
 
     private fun isAutoreplyEnabled(): Boolean {
         // Held for a few minutes after the Net Switcher changed band (setting), so an untuned antenna isn't keyed.
@@ -4336,14 +4295,6 @@ class JS8EngineService : Service() {
 
     private fun isLastFrame(type: Int): Boolean = (type and 0x2) != 0
 
-    private fun formatSNR(snr: Int): String {
-        if (snr < -60 || snr > 60) return ""
-        val sign = if (snr >= 0) "+" else ""
-        val width = if (snr < 0) 3 else 2
-        // Locale.ROOT: this goes on the air, and some locales (Arabic, Persian…) format digits in their own script.
-        return String.format(java.util.Locale.ROOT, "%s%0${width}d", sign, snr)
-    }
-
     private fun cleanupRelayBuffers(now: Long) {
         synchronized(relayLock) {
             val iterator = relayBuffers.iterator()
@@ -4443,49 +4394,11 @@ class JS8EngineService : Service() {
     ): Boolean {
         if (!isAutoreplyEnabled()) return false
         if (isTransmitActive()) return false
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-
-        val tokens = payload.trimStart().split(Regex("\\s+"), limit = 3)
-        if (tokens.isEmpty()) return false
-        val cmd = tokens[0].uppercase()
-
-        return when (cmd) {
-            "SNR?", "?" -> {
-                val snrText = formatSNR(snr)
-                if (snrText.isEmpty()) return false
-                sendRelayMessage("$relayPath SNR $snrText", submode)
-            }
-            "INFO?" -> {
-                val info = prefs.getString(PREF_MY_INFO, "")?.trim().orEmpty()
-                if (info.isBlank()) return false
-                sendRelayMessage("$relayPath INFO $info", submode)
-            }
-            "STATUS?" -> {
-                val status = prefs.getString(PREF_MY_STATUS, "")?.trim().orEmpty()
-                if (status.isBlank()) return false
-                sendRelayMessage("$relayPath STATUS $status", submode)
-            }
-            "HEARING?" -> {
-                val callsign = getConfiguredCallsign() ?: return false
-                val heard = getRecentHeardCallsigns(
-                    exclude = setOf(relayPath, callsign),
-                    limit = HEARD_LIMIT
-                )
-                if (heard.isEmpty()) return false
-                sendRelayMessage("$relayPath HEARING ${heard.joinToString(" ")}", submode)
-            }
-            "GRID?" -> {
-                val grid = prefs.getString("grid", "")?.trim().orEmpty().uppercase()
-                if (grid.isBlank()) return false
-                sendRelayMessage("$relayPath GRID $grid", submode)
-            }
-            "AGN?" -> {
-                val message = lastTxMessage.trimEnd()
-                if (message.isBlank()) return false
-                sendRelayMessage(message, submode)
-            }
-            else -> false
-        }
+        val callsign = getConfiguredCallsign() ?: return false
+        val me = autoReplyStation(callsign, PreferenceManager.getDefaultSharedPreferences(this))
+        val reply = AutoReply.relayedReply(payload, relayPath, snr, me) { exclude -> getRecentHeardCallsigns(exclude, HEARD_LIMIT) }
+            ?: return false
+        return sendRelayMessage(reply, submode)
     }
 
     private fun sendRelayMessage(text: String, submode: Int): Boolean {
