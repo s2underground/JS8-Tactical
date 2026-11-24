@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Fetch WSPR sample and solar indices
         run: python3 tools/propdata/fetch_wspr.py wspr-sample "${{ inputs.day_set }}"
       - name: Pack
