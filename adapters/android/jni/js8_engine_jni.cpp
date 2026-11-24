@@ -9,6 +9,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -215,9 +216,11 @@ class PumpAudioOutput final : public js8core::AudioOutput {
         buffer.playback_at = js8core::SteadyClock::now();
         try {
           std::size_t filled = fill_(buffer);
-          std::size_t max_bytes = pcm.size() * sizeof(std::int16_t);
-          if (filled < max_bytes) {
-            std::memset(reinterpret_cast<std::byte*>(pcm.data()) + filled, 0, max_bytes - filled);
+          // Zero whatever the callback didn't fill. Done on a byte view of the buffer so the offset
+          // is plainly in bytes and bounds-checked (CodeQL flagged the earlier raw pointer arithmetic).
+          auto bytes = std::as_writable_bytes(std::span<std::int16_t>(pcm));
+          if (filled < bytes.size()) {
+            std::fill(bytes.begin() + static_cast<std::ptrdiff_t>(filled), bytes.end(), std::byte{0});
           }
         } catch (...) {
           if (on_error_) on_error_("TX pump fill callback failed");
