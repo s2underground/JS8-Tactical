@@ -261,13 +261,10 @@ class JS8EngineService : Service() {
     private val heldStore by lazy { com.js8call.example.storeforward.HeldStore.of(this) }
     /** Where a directed YES / HEARTBEAT SNR to us started, so a following "MSG ID n" data frame can be tied to it. */
     private val offerStarts = mutableMapOf<Int, Pair<String, Long>>()
-    private val heartbeatRegex = Regex("^\\s*([^:]+):\\s+@HB\\s+HEARTBEAT\\b", RegexOption.IGNORE_CASE)
     private val heardCallsigns = mutableMapOf<String, Long>()
     private val heardLock = Any()
     private val relayBuffers = mutableMapOf<Int, RelayBuffer>()
     private val relayLock = Any()
-    private val relayTargetRegex = Regex("^\\s*([A-Z0-9/]+)([> ])", RegexOption.IGNORE_CASE)
-    private val relayPathRegex = Regex("\\s(?:\\*DE\\*|VIA)\\s([A-Z0-9/]+)", RegexOption.IGNORE_CASE)
     private val gridRegex = Regex("\\b[A-R]{2}[0-9]{2}([A-X]{2})?\\b", RegexOption.IGNORE_CASE)
     private val txMonitorRunnable = object : Runnable {
         override fun run() {
@@ -3759,7 +3756,7 @@ class JS8EngineService : Service() {
         cleanupMsgBuffers(now)
         
         // Try parsing as a directed command (MSG header frame)
-        val directed = parseDirectedCommand(text)
+        val directed = RelayProtocol.parseDirectedCommand(text)
         
         val cmd = directed?.command?.uppercase()
         if (directed != null && (cmd == Js8Commands.CMD_MSG || cmd == Js8Commands.CMD_MSG_TO || cmd == Js8Commands.CMD_QUERY)) {
@@ -3940,7 +3937,7 @@ class JS8EngineService : Service() {
             if (!isSelfCallsign(me, it.station)) heldStore.addWaiting(it.station.uppercase(), it.id, now)
             return
         }
-        val d = parseDirectedCommand(text)
+        val d = RelayProtocol.parseDirectedCommand(text)
         if (d != null) {
             val c = d.command.uppercase()
             if (isSelfCallsign(me, d.to) && !isSelfCallsign(me, d.from) && (c == Js8Commands.CMD_YES || c.startsWith("HEARTBEAT SNR")) && !isLastFrame(type)) {
@@ -4037,12 +4034,12 @@ class JS8EngineService : Service() {
         }
         if (isTransmitActive()) return
 
-        val heartbeat = parseHeartbeat(text)
-        if (heartbeat != null) {
-            if (isSelfCallsign(callsign, heartbeat.from)) return
+        val heartbeatFrom = RelayProtocol.heartbeatSender(text)
+        if (heartbeatFrom != null) {
+            if (isSelfCallsign(callsign, heartbeatFrom)) return
             val snrText = formatSNR(snr)
             if (snrText.isEmpty()) return
-            val target = heartbeat.from.trim().uppercase()
+            val target = heartbeatFrom.trim().uppercase()
             // Desktop JS8Call adds " MSG ID n" when it holds a message for the station heartbeating.
             val extra = if (heldStore.serveEnabled)
                 com.js8call.example.storeforward.HeldLogic.heartbeatExtra(heldStore.all(), target, "@HB", System.currentTimeMillis()) else ""
@@ -4052,7 +4049,7 @@ class JS8EngineService : Service() {
             return
         }
 
-        val directed = parseDirectedCommand(text) ?: return
+        val directed = RelayProtocol.parseDirectedCommand(text) ?: return
         if (directed.command.uppercase().startsWith(Js8Commands.CMD_QUERY_MSGS)) {
             answerQueryMsgs(callsign, directed)
             return
@@ -4110,7 +4107,7 @@ class JS8EngineService : Service() {
         val now = System.currentTimeMillis()
         cleanupRelayBuffers(now)
 
-        val directed = parseDirectedCommand(text)
+        val directed = RelayProtocol.parseDirectedCommand(text)
         if (directed != null && directed.command == ">") {
             val target = directed.to.trim().uppercase()
             if (isGroupTarget(target)) return
@@ -4132,7 +4129,7 @@ class JS8EngineService : Service() {
             Log.i(TAG, "Relay command buffered from=${directed.from} to=${directed.to} freq=$freq")
 
             if (directed.payload.isNotBlank()) {
-                val (payload, hasEom) = normalizeRelayPayload(directed.payload)
+                val (payload, hasEom) = RelayProtocol.normalizePayload(directed.payload)
                 if (payload.isNotBlank()) {
                     buffer.parts.add(payload)
                     buffer.lastUpdated = now
@@ -4168,68 +4165,6 @@ class JS8EngineService : Service() {
             processRelayBuffer(result)
         }
     }
-
-    private fun parseHeartbeat(text: String): Heartbeat? {
-        val match = heartbeatRegex.find(text) ?: return null
-        val from = match.groupValues.getOrNull(1)?.trim().orEmpty()
-        if (from.isBlank()) return null
-        return Heartbeat(from)
-    }
-
-    private data class Heartbeat(val from: String)
-
-    private fun parseDirectedCommand(text: String): DirectedCommand? {
-        val trimmed = text.trim()
-        if (trimmed.isBlank()) return null
-
-        val tokens = trimmed.split(Regex("\\s+"))
-        if (tokens.size < 2) return null
-
-        var index = 0
-        var from = ""
-        var toToken = tokens[index]
-
-        if (toToken.endsWith(":")) {
-            from = toToken.trimEnd(':')
-            index++
-            if (index >= tokens.size) return null
-            toToken = tokens[index]
-        }
-
-        var to = toToken
-        val command: String
-        val payload: String
-
-        if (toToken.endsWith(">")) {
-            to = toToken.trimEnd('>')
-            command = ">"
-            payload = tokens.drop(index + 1).joinToString(" ")
-        } else {
-            if (index + 1 >= tokens.size) return null
-            val remainder = tokens.drop(index + 1).joinToString(" ")
-            val match = Js8Commands.matchAt(remainder)
-            if (match != null) {
-                command = match.command
-                payload = match.payload
-            } else {
-                // Unknown text keeps the single-token shape, so freetext frames
-                // reach callers unchanged.
-                command = tokens[index + 1]
-                payload = tokens.drop(index + 2).joinToString(" ")
-            }
-        }
-
-        if (to.isBlank() || command.isBlank()) return null
-        if (from.isBlank() && command != ">") return null
-        return DirectedCommand(from, to, command, payload)
-    }
-
-    private data class DirectedCommand(
-        val from: String,
-        val to: String,
-        val command: String,
-        val payload: String
-    )
 
     private data class RelayBuffer(
         val from: String,
@@ -4452,7 +4387,7 @@ class JS8EngineService : Service() {
 
     private fun processRelayBuffer(buffer: RelayBuffer) {
         if (buffer.parts.isEmpty()) return
-        val combined = stripRelayEom(buffer.parts.joinToString(separator = "").trimEnd())
+        val combined = RelayProtocol.stripEom(buffer.parts.joinToString(separator = "").trimEnd())
         if (combined.isBlank()) return
 
         if (combined.trimStart().startsWith("@")) {
@@ -4460,12 +4395,12 @@ class JS8EngineService : Service() {
             return
         }
 
-        val (valid, message) = validateRelayChecksum(combined)
+        val (valid, message) = RelayProtocol.validateChecksum(combined)
         val payload = if (valid) {
             message
         } else if (buffer.inlinePayload) {
             Log.w(TAG, "Relay payload checksum invalid, forwarding inline payload without validation")
-            stripOptionalRelayChecksum(combined)
+            RelayProtocol.stripOptionalChecksum(combined)
         } else {
             Log.w(TAG, "Relay payload failed checksum validation")
             return
@@ -4473,7 +4408,7 @@ class JS8EngineService : Service() {
 
         if (payload.isBlank()) return
 
-        val forwardPayload = buildRelayForwardPayload(payload)
+        val forwardPayload = RelayProtocol.forwardPayload(payload)
         if (forwardPayload != null) {
             val forwardText = if (buffer.from.isNotBlank()) {
                 "$forwardPayload *DE* ${buffer.from}"
@@ -4489,7 +4424,7 @@ class JS8EngineService : Service() {
             return
         }
 
-        val relayPath = parseRelayPathCallsigns(buffer.from, payload).joinToString(">")
+        val relayPath = RelayProtocol.pathCallsigns(buffer.from, payload).joinToString(">")
         if (relayPath.isBlank()) return
 
         val handled = maybeHandleRelayedAutoreply(payload, relayPath, buffer.snr, buffer.submode)
@@ -4498,40 +4433,6 @@ class JS8EngineService : Service() {
         }
     }
 
-    private fun buildRelayForwardPayload(message: String): String? {
-        val trimmed = message.trimStart()
-        val match = relayTargetRegex.find(trimmed) ?: return null
-        val target = match.groupValues[1].trim().uppercase()
-        if (!isCallsignLike(target) || isGroupTarget(target)) return null
-
-        val separator = match.groupValues[2]
-        if (separator == ">") return trimmed
-
-        val replaceIndex = match.groupValues[1].length
-        if (replaceIndex >= trimmed.length) return null
-        val builder = StringBuilder(trimmed)
-        builder.setCharAt(replaceIndex, '>')
-        return builder.toString()
-    }
-
-    private fun isCallsignLike(token: String): Boolean {
-        return CallsignValidator.isAmateurCallsign(token)
-    }
-
-    private fun parseRelayPathCallsigns(from: String, text: String): List<String> {
-        val calls = mutableListOf<String>()
-        for (match in relayPathRegex.findAll(text.uppercase())) {
-            val call = match.groupValues.getOrNull(1)?.trim().orEmpty()
-            if (call.isNotEmpty()) {
-                calls.add(0, call)
-            }
-        }
-        val base = from.trim().uppercase()
-        if (base.isNotEmpty()) {
-            calls.add(0, base)
-        }
-        return calls
-    }
 
     private fun maybeHandleRelayedAutoreply(
         payload: String,
@@ -4584,73 +4485,6 @@ class JS8EngineService : Service() {
             }
             else -> false
         }
-    }
-
-    private fun validateRelayChecksum(message: String): Pair<Boolean, String> {
-        val trimmed = message.trimStart()
-        if (trimmed.length < 4) return false to trimmed
-        val checksum = trimmed.takeLast(3).uppercase()
-        val body = trimmed.dropLast(4)
-        return checksum16Valid(checksum, body) to body
-    }
-
-    private fun normalizeRelayPayload(payload: String): Pair<String, Boolean> {
-        var trimmed = payload.trimEnd()
-        val hasEom = trimmed.endsWith(RELAY_EOM_MARKER)
-        if (hasEom) {
-            trimmed = trimmed.dropLast(1).trimEnd()
-        }
-        return trimmed to hasEom
-    }
-
-    private fun stripRelayEom(payload: String): String {
-        var trimmed = payload.trimEnd()
-        if (trimmed.endsWith(RELAY_EOM_MARKER)) {
-            trimmed = trimmed.dropLast(1).trimEnd()
-        }
-        return trimmed
-    }
-
-    private fun stripOptionalRelayChecksum(message: String): String {
-        val trimmed = message.trimEnd()
-        val lastSpace = trimmed.lastIndexOf(' ')
-        if (lastSpace <= 0 || trimmed.length - lastSpace != 4) {
-            return trimmed
-        }
-        val checksum = trimmed.substring(lastSpace + 1)
-        if (checksum.length != 3) return trimmed
-        val isChecksumToken = checksum.all { CHECKSUM_ALPHABET.contains(it.uppercaseChar()) }
-        return if (isChecksumToken) trimmed.substring(0, lastSpace) else trimmed
-    }
-
-    private fun checksum16Valid(checksum: String, input: String): Boolean {
-        val crc = crc16Kermit(input.toByteArray(Charsets.US_ASCII))
-        return pack16Bits(crc) == checksum
-    }
-
-    private fun crc16Kermit(data: ByteArray): Int {
-        var crc = 0x0000
-        for (byte in data) {
-            var cur = byte.toInt() and 0xFF
-            for (i in 0 until 8) {
-                val mix = (crc xor cur) and 0x01
-                crc = crc ushr 1
-                if (mix != 0) {
-                    crc = crc xor 0x8408
-                }
-                cur = cur ushr 1
-            }
-        }
-        return crc and 0xFFFF
-    }
-
-    private fun pack16Bits(value: Int): String {
-        val alphabet = CHECKSUM_ALPHABET
-        val base = CHECKSUM_BASE
-        val tmp1 = value / (base * base)
-        val tmp2 = (value - (tmp1 * base * base)) / base
-        val tmp3 = value % base
-        return "${alphabet[tmp1]}${alphabet[tmp2]}${alphabet[tmp3]}"
     }
 
     private fun sendRelayMessage(text: String, submode: Int): Boolean {
@@ -4907,7 +4741,6 @@ class JS8EngineService : Service() {
         private val HEARD_EXCLUDE_TOKENS = setOf("CQ", "HB", "HEARTBEAT", "ALLCALL", "@ALLCALL")
         private const val RELAY_BUFFER_TIMEOUT_MS = 90_000L
         private const val RELAY_FREQUENCY_TOLERANCE_HZ = 10.0f
-        private const val RELAY_EOM_MARKER = "\u2662"
         const val SUBMODE_NORMAL = 0
         const val SUBMODE_FAST = 1
         const val SUBMODE_TURBO = 2
@@ -4920,8 +4753,6 @@ class JS8EngineService : Service() {
         // Outgoing HB ACK: "MYCALL: TARGET HEARTBEAT SNR +NN"
         private val heartbeatAckTxRegex =
             Regex("^\\s*[A-Z0-9/]+:\\s+\\S+\\s+HEARTBEAT\\s+SNR\\b", RegexOption.IGNORE_CASE)
-        private const val CHECKSUM_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ+-./?"
-        private const val CHECKSUM_BASE = 41
 
         // Actions
         const val ACTION_START = "com.js8call.example.ACTION_START"

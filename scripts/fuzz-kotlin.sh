@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 
 PER_TARGET="${1:-120}"
 [ $# -gt 0 ] && shift
-ALL_TARGETS=(StoreForwardFuzz ReportsFuzz RollupFuzz DiagnosticsPrivacyFuzz)
+ALL_TARGETS=(StoreForwardFuzz ReportsFuzz RollupFuzz DiagnosticsPrivacyFuzz RelayProtocolFuzz)
 TARGETS=("$@")
 [ ${#TARGETS[@]} -eq 0 ] && TARGETS=("${ALL_TARGETS[@]}")
 
@@ -59,6 +59,9 @@ SOURCES=(
   "$APP/reports/Geo.kt"
   "$APP/rollup/RollupEngine.kt"
   "$APP/DiagnosticsPrivacy.kt"
+  "$APP/service/RelayProtocol.kt"
+  "$APP/util/Js8Commands.kt"
+  "$APP/util/CallsignValidator.kt"
 )
 echo "Compiling the fuzz targets…"
 "$TOOLS/kotlinc/bin/kotlinc" -nowarn -cp "$TOOLS/jazzer-api.jar" -d "$OUT/targets.jar" \
