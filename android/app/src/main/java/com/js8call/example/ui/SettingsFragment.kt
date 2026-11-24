@@ -367,7 +367,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             view?.let { v -> Snackbar.make(v, "Collecting diagnostics…", Snackbar.LENGTH_SHORT).show() }
             Thread {
                 val text = runCatching { com.js8call.example.CrashReporter.diagnosticReport(ctx) }
-                    .getOrElse { "Could not build the report: ${it.message}" }
+                    .getOrElse { "Could not build the report: ${com.js8call.example.CrashReporter.failure(it)}" }
                 val file = java.io.File(ctx.cacheDir, "diagnostics").apply { mkdirs() }.resolve("js8-tactical-diagnostics.txt")
                 runCatching { file.writeText(text) }
                 Handler(Looper.getMainLooper()).post {
