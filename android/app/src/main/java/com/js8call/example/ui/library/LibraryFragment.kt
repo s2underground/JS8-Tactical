@@ -50,7 +50,7 @@ class LibraryFragment : Fragment() {
             textSize = 17f
             setTypeface(typeface, Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        header.addView(MaterialButton(ctx, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
             text = "I am a…"
             setOnClickListener { RoleChooser.show(this@LibraryFragment) }
         })

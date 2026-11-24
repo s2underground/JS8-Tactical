@@ -43,7 +43,7 @@ class GuideFragment : Fragment() {
             setBackgroundColor(color(R.color.tac_panel))
             setPadding(dp(4), dp(4), dp(16), dp(4))
         }
-        header.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        header.addView(MaterialButton(ctx, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
             text = "‹ Library"
             setOnClickListener { findNavController().popBackStack() }
         })

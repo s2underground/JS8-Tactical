@@ -87,7 +87,7 @@ class NetFragment : Fragment() {
             isHorizontalScrollBarEnabled = false
             addView(chips)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(12) })
-        header.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        header.addView(MaterialButton(ctx, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
             text = getString(R.string.net_share)
             setOnClickListener { share() }
         })

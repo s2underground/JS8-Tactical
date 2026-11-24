@@ -155,7 +155,7 @@ class NetsFragment : Fragment() {
         store.waiting?.let { line(getString(R.string.nets_waiting, it), 13f, R.color.tac_warn_text) }
         if (now < override) {
             line(getString(R.string.nets_paused, zulu(override)), 13f, R.color.tac_warn_text)
-            c.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+            c.addView(MaterialButton(ctx, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
                 text = getString(R.string.nets_resume)
                 setOnClickListener {
                     store.overrideUntilMs = 0L

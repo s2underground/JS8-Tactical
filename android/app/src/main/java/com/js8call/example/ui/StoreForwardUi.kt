@@ -54,7 +54,7 @@ object StoreForwardUi {
     }
 
     private fun button(ctx: Context, label: String, outlined: Boolean = true, onClick: () -> Unit) =
-        MaterialButton(ctx, null, if (outlined) com.google.android.material.R.attr.materialButtonOutlinedStyle else com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        MaterialButton(ctx, null, if (outlined) com.google.android.material.R.attr.materialButtonOutlinedStyle else androidx.appcompat.R.attr.borderlessButtonStyle).apply {
             text = label; isAllCaps = false; setOnClickListener { onClick() }
         }
 

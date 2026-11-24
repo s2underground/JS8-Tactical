@@ -244,7 +244,7 @@ class ReportsFragment : Fragment() {
         }
         ReportUi.lastLine(d)?.let { card.addView(text(it, 12f, if (d.lastResult == "missed") 0xFFF2A33A.toInt() else color(R.color.tac_text_quiet))) }
         val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END; setPadding(0, dp(6), 0, 0) }
-        row.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        row.addView(MaterialButton(ctx, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
             text = getString(R.string.reports_edit)
             setOnClickListener { open(d.id) }
         })

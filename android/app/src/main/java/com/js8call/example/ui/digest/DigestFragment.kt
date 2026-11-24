@@ -78,15 +78,15 @@ class DigestFragment : Fragment() {
             isHorizontalScrollBarEnabled = false
             addView(chips)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(12) })
-        if (com.js8call.example.ai.AiModels.enabled(ctx)) header.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        if (com.js8call.example.ai.AiModels.enabled(ctx)) header.addView(MaterialButton(ctx, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
             text = getString(R.string.ai_button)
             setOnClickListener { androidx.navigation.fragment.NavHostFragment.findNavController(this@DigestFragment).navigate(R.id.navigation_ai) }
         })
-        header.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        header.addView(MaterialButton(ctx, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
             text = getString(R.string.export_button)
             setOnClickListener { showExport() }
         })
-        header.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        header.addView(MaterialButton(ctx, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
             text = "Share"
             setOnClickListener { share() }
         })
@@ -270,7 +270,7 @@ class DigestFragment : Fragment() {
                     text = getString(if (overviewText.isBlank()) R.string.ai_overview_write else R.string.ai_overview_update)
                     setOnClickListener { writeOverview(d) }
                 })
-                if (leadInput.isNotBlank() && !overviewBusy) row.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+                if (leadInput.isNotBlank() && !overviewBusy) row.addView(MaterialButton(ctx, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
                     text = getString(R.string.ai_notes)
                     setOnClickListener { showNotes() }
                 })
@@ -438,7 +438,7 @@ class DigestFragment : Fragment() {
                 setTextIsSelectable(true)
             })
             m.sender?.let { call ->
-                box.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+                box.addView(MaterialButton(ctx, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
                     text = getString(R.string.ai_open_in_traffic, call)
                     setOnClickListener {
                         sourcesDialog?.dismiss()
