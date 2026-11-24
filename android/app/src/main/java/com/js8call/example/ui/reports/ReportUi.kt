@@ -176,6 +176,9 @@ object ReportUi {
                 append(ctx.getString(R.string.reports_send_to, to)).append("\n")
                 append(if (isCounted(ctx, d)) cachedAirtime(ctx, d)?.label().orEmpty() else ctx.getString(R.string.reports_counting))
                 if (!JS8EngineService.engineRunning) append("\n\n").append(ctx.getString(R.string.reports_send_waits))
+                // Interference watch: say so before keying up (never blocks).
+                com.js8call.example.ui.InterferenceUi.warning(ctx, com.js8call.example.interference.Interference.current())
+                    ?.let { append("\n\n").append(it.removeSuffix(" Tap for details.")) }
             }
             note.text = speedNote(ctx, pick)
             if (!isCounted(ctx, d)) airtimeAsync(ctx, d) { if (pick == d.speed) render() }

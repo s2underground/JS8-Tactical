@@ -402,6 +402,21 @@
             app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
+            app:key="interference_watch"
+            app:title="@string/settings_interference_watch"
+            app:summary="@string/settings_interference_watch_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            app:key="interference_warn_tx"
+            app:title="@string/settings_interference_warn"
+            app:summary="@string/settings_interference_warn_summary"
+            app:defaultValue="true"
+            app:dependency="interference_watch"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
             app:key="keep_screen_on"
             app:title="@string/settings_keep_screen_on"
             app:summary="@string/settings_keep_screen_on_summary"

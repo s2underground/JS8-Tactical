@@ -238,6 +238,9 @@ class TrafficFragment : Fragment() {
         renderNets()
         netStore.changes.observe(viewLifecycleOwner) { renderNets() }
         netsPill.setOnClickListener { com.js8call.example.ui.library.AppLinks.open(this, "nets") }
+        // Interference watch: a pill while something is flagged, and a warning over the compose bar.
+        com.js8call.example.ui.InterferenceUi.bindPill(this, view.findViewById(R.id.toggle_interference)) { openJamReport() }
+        com.js8call.example.ui.InterferenceUi.bindBanner(this, view) { openJamReport() }
         autoPill.setOnClickListener { setAutoReply(!prefs.getBoolean(KEY_AUTOREPLY, false)); renderToggles() }
         screenPill.setOnClickListener { setScreenOn(!prefs.getBoolean(KEY_SCREEN_ON, false)); renderToggles() }
         view.findViewById<View>(R.id.status_more).setOnClickListener { anchor ->
@@ -547,6 +550,13 @@ class TrafficFragment : Fragment() {
                 liveText.text = getString(R.string.traffic_live_text, live.frames, live.text)
             }
         }
+    }
+
+    /** A #JAM report filled in from the interference watch, to review and send to the selected station or group. */
+    private fun openJamReport() {
+        val a = com.js8call.example.interference.Interference.current() ?: return
+        ReportWriterSheet.newInstance("JAM", traffic.sendTarget(), com.js8call.example.ui.InterferenceUi.jamPrefill(a))
+            .show(childFragmentManager, ReportWriterSheet.TAG)
     }
 
     private fun requestResend(sender: String) {

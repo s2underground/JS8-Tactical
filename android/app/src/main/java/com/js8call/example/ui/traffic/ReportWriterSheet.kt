@@ -48,6 +48,7 @@ class ReportWriterSheet : BottomSheetDialogFragment() {
     private var target: String? = null
     private val values = linkedMapOf<String, String>()
     private val inputs = mutableMapOf<String, EditText>()
+    private val choiceGroups = mutableMapOf<String, ChipGroup>()
     private var preview: TextView? = null
     private var airtime: TextView? = null
 
@@ -77,6 +78,16 @@ class ReportWriterSheet : BottomSheetDialogFragment() {
 
         val container: LinearLayout = view.findViewById(R.id.report_fields)
         type.fields.forEach { container.addView(buildField(it)) }
+        // Values handed in by the caller (e.g. a #JAM report filled from the interference watch).
+        requireArguments().getBundle(ARG_PREFILL)?.let { pre ->
+            for (key in pre.keySet()) {
+                val v = pre.getString(key) ?: continue
+                inputs[key]?.setText(v)
+                choiceGroups[key]?.let { g ->
+                    for (i in 0 until g.childCount) (g.getChildAt(i) as? Chip)?.let { if (it.text.toString() == v) it.isChecked = true }
+                }
+            }
+        }
 
         view.findViewById<MaterialButton>(R.id.report_send).setOnClickListener { finish(send = true) }
         view.findViewById<MaterialButton>(R.id.report_edit).setOnClickListener { finish(send = false) }
@@ -126,6 +137,7 @@ class ReportWriterSheet : BottomSheetDialogFragment() {
                         }
                     })
                 }
+                choiceGroups[field.key] = group
                 column.addView(group)
             }
             Reports.Kind.LOCATION -> {
@@ -287,10 +299,11 @@ class ReportWriterSheet : BottomSheetDialogFragment() {
         const val ARG_SEND = "send"
         private const val ARG_TYPE = "type"
         private const val ARG_TARGET = "target"
+        private const val ARG_PREFILL = "prefill"
         private const val PREF_PRECISION = "report_location_precision"
 
-        fun newInstance(typeTag: String, target: String?) = ReportWriterSheet().apply {
-            arguments = bundleOf(ARG_TYPE to typeTag, ARG_TARGET to target)
+        fun newInstance(typeTag: String, target: String?, prefill: Map<String, String> = emptyMap()) = ReportWriterSheet().apply {
+            arguments = bundleOf(ARG_TYPE to typeTag, ARG_TARGET to target, ARG_PREFILL to bundleOf(*prefill.toList().toTypedArray()))
         }
     }
 }

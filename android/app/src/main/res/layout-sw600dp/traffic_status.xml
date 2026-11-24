@@ -78,6 +78,20 @@
         android:layout_weight="1" />
 
     <TextView
+        android:id="@+id/toggle_interference"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/bg_pill_warn"
+        android:gravity="center"
+        android:paddingHorizontal="10dp"
+        android:text="@string/interference_pill"
+        android:textColor="@color/tac_ground"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <TextView
         android:id="@+id/toggle_nets"
         android:layout_width="wrap_content"
         android:layout_height="32dp"
