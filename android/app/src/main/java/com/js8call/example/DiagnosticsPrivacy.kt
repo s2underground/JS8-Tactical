@@ -22,7 +22,10 @@ object DiagnosticsPrivacy {
     private val NOT_CALLS = setOf("JS8CALL", "JS8CORE", "JS8LIB", "UTF8", "MP3", "H264")
     /** Maidenhead locators: 4 characters, optionally 6 (EM96, EM96ab). */
     private val GRID = Regex("(?<![A-Za-z0-9])[A-Ra-r]{2}[0-9]{2}(?:[A-Xa-x]{2})?(?![A-Za-z0-9])")
-    private val MAC = Regex("(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})(?![0-9A-Fa-f:])")
+    // No "[:" anywhere in these patterns: Android's regex engine (ICU) reads "[:" as the start of a
+    // POSIX class like [:alpha:], so "[:-]" made this object fail to load on phones (but not in JVM
+    // tests) and took the whole diagnostics report down. RegexPortabilityTest guards it.
+    private val MAC = Regex("(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{2}(?::|-)){5}([0-9A-Fa-f]{2})(?![0-9A-Fa-f:])")
     private val MAC_PLAIN = Regex("(?<![0-9A-Fa-f])[0-9A-F]{12}(?![0-9A-Fa-f])")
     private val IPV4 = Regex("(?<![0-9A-Za-z.])(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?![0-9.])")
     private val EMAIL = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")

@@ -128,7 +128,7 @@ object Reports {
 
     /** Clean a value for the air: upper case, no field separators, single spaces. */
     fun clean(value: String): String =
-        value.uppercase().replace(Regex("[:#]"), " ").replace(Regex("[^ -~]"), "").replace(Regex("\\s+"), " ").trim()
+        value.uppercase().replace(Regex("[#:]"), " ").replace(Regex("[^ -~]"), "").replace(Regex("\\s+"), " ").trim()
 
     fun encode(type: Type, values: Map<String, String>): String {
         val parts = type.fields.mapNotNull { f ->
