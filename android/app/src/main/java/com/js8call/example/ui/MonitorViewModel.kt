@@ -152,12 +152,15 @@ class MonitorViewModel(application: Application) : AndroidViewModel(application)
      * Handle error.
      */
     fun onError(message: String) {
+        // Not every error stops the receiver ("Rig control is not connected" doesn't): show it as
+        // stopped only when the engine really is, or Traffic says OFF while it is still decoding.
+        val stillRunning = com.js8call.example.service.JS8EngineService.engineRunning
         _status.value = _status.value?.copy(
-            state = EngineState.ERROR,
+            state = if (stillRunning) EngineState.RUNNING else EngineState.ERROR,
             errorMessage = message
         )
-        _isRunning.value = false
-        waterfallRenderer.clear()
+        _isRunning.value = stillRunning
+        if (!stillRunning) waterfallRenderer.clear()
     }
 
     fun clearError() {

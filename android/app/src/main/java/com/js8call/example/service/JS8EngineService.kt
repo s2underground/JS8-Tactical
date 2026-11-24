@@ -380,6 +380,33 @@ class JS8EngineService : Service() {
         if (key == PREF_LOG_MESSAGES) {
             updateMessageLogging()
         }
+        if (key in RIG_SETTING_KEYS) {
+            // Rig control is only set up when the receiver starts: restart it so the change is used
+            // (after a short pause, so several changes in a row restart once).
+            mainHandler.removeCallbacks(rigSettingsRestart)
+            mainHandler.postDelayed(rigSettingsRestart, RIG_SETTINGS_SETTLE_MS)
+        }
+    }
+
+    /** Radio settings changed while receiving: restart the receiver so they take effect. Never mid-send. */
+    private val rigSettingsRestart: Runnable = object : Runnable {
+        override fun run() {
+            if (engine == null && !engineStartInProgress) return // not running: the next start reads them
+            if (engineStartInProgress || isTransmitActive()) { mainHandler.postDelayed(this, 5_000L); return }
+            Log.i(TAG, "Radio settings changed; restarting the receiver to use them")
+            broadcastWarning("Radio settings changed: restarting the receiver to use them.", quiet = true)
+            stopEngine()
+            mainHandler.postDelayed(rigSettingsStart, 1_000L)
+        }
+    }
+
+    private val rigSettingsStart: Runnable = object : Runnable {
+        override fun run() {
+            if (engine != null || engineStartInProgress) return
+            // The old rig link may still be closing on the TX thread.
+            if (engineStoppingSinceMs > 0) { mainHandler.postDelayed(this, 1_000L); return }
+            startEngine()
+        }
     }
 
     /** Scheduled reports (Reports tab): queued when their time comes while the receiver runs. */
@@ -1214,6 +1241,8 @@ class JS8EngineService : Service() {
     private fun openTruSdxSerialUsb(selection: SerialSelection, generation: Int) {
         var deviceId = selection.usbDeviceId
         var portIndex = selection.portIndex
+        // A hand-picked port goes stale when the radio is unplugged (Android renumbers devices).
+        if (deviceId != null && UsbPermissionHelper.findUsbDeviceById(this, deviceId) == null) deviceId = null
         if (deviceId == null) {
             val ports = try {
                 UsbSerialPortCatalog.listPorts(this)
@@ -1332,6 +1361,8 @@ class JS8EngineService : Service() {
 
         var deviceId = selection.usbDeviceId
         var portIndex = selection.portIndex
+        // A hand-picked port goes stale when the radio is unplugged (Android renumbers devices).
+        if (deviceId != null && UsbPermissionHelper.findUsbDeviceById(this, deviceId) == null) deviceId = null
         if (deviceId == null) {
             val firstPort = try { UsbSerialPortCatalog.listPorts(this).firstOrNull() } catch (_: Throwable) { null }
             deviceId = firstPort?.deviceId
@@ -1647,6 +1678,12 @@ class JS8EngineService : Service() {
         // Dual-port USB serial chips (the Xiegu X6100/X6200's WCH CH342, for one) carry CAT on
         // just one of them, and not always the first.
         var autoPorts: List<Int> = emptyList()
+        // Android gives a USB device a new id every time it is plugged in, so a port picked by hand
+        // goes stale after an unplug. Then do what Auto does rather than give up.
+        if (deviceId != null && UsbPermissionHelper.findUsbDeviceById(this, deviceId) == null) {
+            Log.w(TAG, "The USB serial device picked in Settings (id=$deviceId) isn't plugged in; looking for another")
+            deviceId = null
+        }
         if (deviceId == null) {
             val ports = try {
                 UsbSerialPortCatalog.listPorts(this)
@@ -1690,7 +1727,7 @@ class JS8EngineService : Service() {
                 }
             }
             Log.w(TAG, "No USB serial device found for Hamlib")
-            broadcastError("No USB serial device found for Hamlib control.")
+            broadcastError("No USB serial device found for rig control. Check the radio's USB cable, then Settings → Radio.")
             rigCtlErrorShown = true
             return
         }
@@ -4669,6 +4706,13 @@ class JS8EngineService : Service() {
             Regex("^\\s*[A-Z0-9/]+:\\s+\\S+\\s+HEARTBEAT\\s+SNR\\b", RegexOption.IGNORE_CASE)
 
         // Actions
+        /** Settings that decide how the radio is reached; changing one restarts the receiver. */
+        private val RIG_SETTING_KEYS = setOf(
+            "rig_control_enabled", "rig_type", "rig_hamlib_model", "rig_hamlib_usb_port",
+            "rig_serial_baud", "rig_serial_data_bits", "rig_serial_stop_bits", "rig_serial_parity",
+            "rigctld_host", "rigctld_port", "qmx_cat_baud",
+        )
+        private const val RIG_SETTINGS_SETTLE_MS = 3_000L
         const val ACTION_START = "com.js8call.example.ACTION_START"
         const val ACTION_STOP = "com.js8call.example.ACTION_STOP"
         /** Stop everything and close the app (notification Exit). */

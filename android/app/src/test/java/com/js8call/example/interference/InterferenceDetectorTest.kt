@@ -108,10 +108,90 @@ class InterferenceDetectorTest {
     }
 
     @Test
+    fun carrierFrequencyIsMeasuredNotRoundedToItsCell() {
+        val d = InterferenceDetector()
+        d.learnNormal()
+        d.run(2 * 60, decodeEvery = 15) { b, _ -> addTone(b, 1612f, 200f) }
+        // The 25 Hz cell is 1600–1625; the reading comes from the bins themselves.
+        assertTrue(d.assessment().carriersHz.toString(), d.assessment().carriersHz.any { abs(it - 1612) <= 2 })
+    }
+
+    @Test
+    fun aToneOnAPowerLineHarmonicIsHumNotInterference() {
+        listOf(300f, 360f, 400f).forEach { hz ->
+            val d = InterferenceDetector()
+            d.learnNormal()
+            d.run(2 * 60, decodeEvery = 15) { b, _ -> addTone(b, hz, 200f) }
+            val a = d.assessment()
+            assertTrue("$hz: ${a.humHz}", a.humHz.any { abs(it - hz) <= 2 })
+            assertTrue("$hz: ${a.carriersHz}", a.carriersHz.isEmpty())
+            assertEquals("$hz", Level.NONE, a.level)
+        }
+    }
+
+    @Test
+    fun aToneBetweenHarmonicsIsStillACarrier() {
+        val d = InterferenceDetector()
+        d.learnNormal()
+        d.run(2 * 60, decodeEvery = 15) { b, _ -> addTone(b, 333f, 200f) }
+        val a = d.assessment()
+        assertTrue(a.carriersHz.toString(), a.carriersHz.any { abs(it - 333) <= 2 })
+        assertTrue(a.humHz.toString(), a.humHz.isEmpty())
+        assertEquals(Level.LIKELY, a.level)
+    }
+
+    @Test
+    fun powerLineHarmonics() {
+        assertTrue(InterferenceDetector.isPowerLineHarmonic(300.0))
+        assertTrue(InterferenceDetector.isPowerLineHarmonic(299.2))
+        assertTrue(InterferenceDetector.isPowerLineHarmonic(450.0))
+        assertTrue(InterferenceDetector.isPowerLineHarmonic(720.5))
+        assertFalse(InterferenceDetector.isPowerLineHarmonic(312.0))
+        assertFalse(InterferenceDetector.isPowerLineHarmonic(1500.0)) // past the 12th harmonic
+        assertFalse(InterferenceDetector.isPowerLineHarmonic(25.0))
+    }
+
+    @Test
     fun busyJs8TrafficIsNotACarrier() {
         val d = InterferenceDetector()
         d.run(10 * 60, decodeEvery = 15) { b, t -> js8(900f, 400f)(b, t); js8(1500f, 400f)(b, t); js8(2100f, 80f)(b, t) }
         assertEquals(Level.NONE, d.assessment().level)
+    }
+
+    @Test
+    fun aBusyNetIsNotASweep() {
+        // A busy net (maintainer's report, Nov 24): many stations across the passband, a
+        // different few in each slot, their strengths varying. The strongest spot hops between
+        // them; by chance it sometimes hops upward station after station, which must not read
+        // as a signal sliding across the band.
+        val offsets = floatArrayOf(540f, 640f, 690f, 790f, 890f, 935f, 1080f, 1190f, 1240f, 1295f, 1657f, 2090f, 2300f)
+        for (seed in 1L..4L) {
+        val slotRnd = Random(seed)
+        var slot = -1L
+        var active = emptyList<Pair<Float, Float>>()
+        val d = InterferenceDetector()
+        d.run(15 * 60, decodeEvery = 5) { b, t ->
+            val s = t / 15_000
+            if (s != slot) {
+                slot = s
+                active = offsets.filter { slotRnd.nextInt(3) == 0 }.map { it to (200f + slotRnd.nextInt(800)) }
+            }
+            active.forEach { (hz, p) -> js8(hz, p * (0.5f + rnd.nextFloat()))(b, t) }
+        }
+        val a = d.assessment()
+        assertFalse("seed $seed: ${a.kinds}", Kind.SWEEP in a.kinds)
+        assertEquals("seed $seed", Level.NONE, a.level)
+        }
+    }
+
+    @Test
+    fun fastAndSlowSweepsAreFound() {
+        listOf(800L, 6_000L).forEach { periodMs ->
+            val d = InterferenceDetector()
+            d.learnNormal()
+            d.run(2 * 60) { b, t -> addTone(b, 400f + 2200f * ((t % periodMs) / periodMs.toFloat()), 300f) }
+            assertTrue("$periodMs ms: ${d.assessment().kinds}", Kind.SWEEP in d.assessment().kinds)
+        }
     }
 
     @Test
