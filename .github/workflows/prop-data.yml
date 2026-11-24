@@ -10,23 +10,32 @@ on:
         default: recent
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Fetch WSPR sample and solar indices
-        run: python3 tools/propdata/fetch_wspr.py wspr-sample "${{ inputs.day_set }}"
+        env:
+          DAY_SET: ${{ inputs.day_set }}
+        run: python3 tools/propdata/fetch_wspr.py wspr-sample "$DAY_SET"
       - name: Pack
-        run: tar -cf - wspr-sample | zstd -19 -T0 -o "wspr-sample-${{ inputs.day_set }}.tar.zst" && ls -lh wspr-sample-*.tar.zst
+        env:
+          DAY_SET: ${{ inputs.day_set }}
+        run: tar -cf - wspr-sample | zstd -19 -T0 -o "wspr-sample-${DAY_SET}.tar.zst" && ls -lh wspr-sample-*.tar.zst
       - name: Publish to prop-data release
         env:
           GH_TOKEN: ${{ github.token }}
+          DAY_SET: ${{ inputs.day_set }}
         run: |
           gh release view prop-data >/dev/null 2>&1 || \
             gh release create prop-data --prerelease --title "Propagation calibration data" \
               --notes "WSPR reception sample (wspr.live, non-commercial research use) and GFZ solar indices (CC BY 4.0) used to tune the propagation model. Not part of the app."
-          gh release upload prop-data "wspr-sample-${{ inputs.day_set }}.tar.zst" --clobber
+          gh release upload prop-data "wspr-sample-${DAY_SET}.tar.zst" --clobber

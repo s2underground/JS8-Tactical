@@ -29,8 +29,10 @@ on:
           - release
           - both
 
+# Read-only by default. Only the two publish jobs at the end get write access, and they run no
+# build code: they upload files the build job already made.
 permissions:
-  contents: write
+  contents: read
 
 env:
   HAMLIB_VERSION: 1b2461aba99f0dde0531e1732c00e60aeee40657
@@ -43,9 +45,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
+          persist-credentials: false
 
       - name: Install build dependencies
         run: |
@@ -58,6 +61,10 @@ jobs:
   build:
     name: Build Android
     runs-on: ubuntu-latest
+    outputs:
+      # Set only when this run made a file to publish (see the publish jobs below).
+      test_apk: ${{ steps.test_file.outputs.name }}
+      release_apk: ${{ steps.release_files.outputs.name }}
 
     strategy:
       matrix:
@@ -65,12 +72,18 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v7
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         submodules: recursive
+        persist-credentials: false
+
+    # The committed gradle-wrapper.jar must be an official Gradle release (checked against
+    # Gradle's published checksums), since every build runs it.
+    - name: Validate Gradle wrapper
+      uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v6
+      uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -106,7 +119,7 @@ jobs:
 
     - name: Cache Hamlib build
       id: cache-hamlib
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
           android/hamlib/hamlib-src
@@ -122,7 +135,7 @@ jobs:
         ./android/hamlib/build-hamlib-android.sh
 
     - name: Cache Gradle dependencies
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
           ~/.gradle/caches
@@ -137,29 +150,41 @@ jobs:
     # Release builds must have the key. Test builds use it too when it's available (so they install
     # over releases); without it (e.g. a pull request from a fork) they fall back to the debug key.
     - name: Prepare release keystore
+      env:
+        KEYSTORE_BASE64: ${{ secrets.JS8_KEYSTORE_BASE64 }}
+        BUILD_TYPE: ${{ matrix.build-type }}
       run: |
-        if [ -z "${{ secrets.JS8_KEYSTORE_BASE64 }}" ]; then
-          if [ "${{ matrix.build-type }}" = "release" ]; then
+        if [ -z "$KEYSTORE_BASE64" ]; then
+          if [ "$BUILD_TYPE" = "release" ]; then
             echo "Missing JS8_KEYSTORE_BASE64 secret"
             exit 1
           fi
           echo "No release key available: this test build is signed with the debug key."
           exit 0
         fi
-        echo "${{ secrets.JS8_KEYSTORE_BASE64 }}" | base64 -d > android/release.jks
+        printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/release.jks
 
+    # Secrets reach the scripts as environment variables, never pasted into the script text.
     - name: Configure release signing env
+      env:
+        STORE_PASSWORD: ${{ secrets.JS8_KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.JS8_KEY_ALIAS }}
+        KEY_PASSWORD: ${{ secrets.JS8_KEY_PASSWORD }}
       run: |
         [ -f android/release.jks ] || exit 0
-        echo "JS8_KEYSTORE_FILE=release.jks" >> "$GITHUB_ENV"
-        echo "JS8_KEYSTORE_PASSWORD=${{ secrets.JS8_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
-        echo "JS8_KEY_ALIAS=${{ secrets.JS8_KEY_ALIAS }}" >> "$GITHUB_ENV"
-        echo "JS8_KEY_PASSWORD=${{ secrets.JS8_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+        {
+          echo "JS8_KEYSTORE_FILE=release.jks"
+          echo "JS8_KEYSTORE_PASSWORD=$STORE_PASSWORD"
+          echo "JS8_KEY_ALIAS=$KEY_ALIAS"
+          echo "JS8_KEY_PASSWORD=$KEY_PASSWORD"
+        } >> "$GITHUB_ENV"
 
     - name: Build with Gradle
       working-directory: android
+      env:
+        BUILD_TYPE: ${{ matrix.build-type }}
       run: |
-        if [ "${{ matrix.build-type }}" == "release" ]; then
+        if [ "$BUILD_TYPE" == "release" ]; then
           ./gradlew assembleRelease bundleRelease
         else
           ./gradlew assembleDebug
@@ -181,41 +206,44 @@ jobs:
 
     - name: Upload lint report
       if: always() && matrix.build-type == 'debug'
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: lint-report
         path: android/app/build/reports/lint-results-debug.*
         if-no-files-found: ignore
 
     - name: Upload APK
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: js8-baseline-${{ matrix.build-type }}-apk
         path: android/app/build/outputs/apk/${{ matrix.build-type }}/*.apk
 
-    - name: Publish rolling test build
+    # The files to publish are prepared here (this job has the Android tools) and uploaded as
+    # artifacts; the publish jobs below put them on the GitHub release.
+    - name: Prepare rolling test build
+      id: test_file
       if: matrix.build-type == 'debug' && github.event_name == 'push' && github.ref == 'refs/heads/master'
-      env:
-        GH_TOKEN: ${{ github.token }}
       run: |
         # Named JS8-Tactical-<version>-test.<build>.apk, e.g. JS8-Tactical-1.2.0-alpha.3-test.198.apk;
         # <build> is the versionCode (100 + run number) shown in Settings → About.
         VERSION=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
         NAME="JS8-Tactical-${VERSION}-test.$((100 + GITHUB_RUN_NUMBER)).apk"
         APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
-        cp "$APK" "$NAME"
-        gh release view test-build >/dev/null 2>&1 || gh release create test-build --prerelease --title "Latest test build" --notes "Rolling test build from master."
-        # Only the newest test build is kept on the release.
-        for old in $(gh release view test-build --json assets --jq '.assets[].name' | grep '\.apk$'); do
-          gh release delete-asset test-build "$old" -y
-        done
-        gh release upload test-build "$NAME" --clobber
-        gh release edit test-build --notes "Rolling test build from master. Commit ${GITHUB_SHA::8}, run #${GITHUB_RUN_NUMBER}, built $(date -u +%Y-%m-%dT%H:%MZ)."
+        mkdir -p publish
+        cp "$APK" "publish/$NAME"
+        echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
-    - name: Publish signed alpha/release build
+    - name: Upload rolling test build
+      if: steps.test_file.outputs.name != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: publish-test-build
+        path: publish/
+        if-no-files-found: error
+
+    - name: Prepare signed alpha/release files
+      id: release_files
       if: matrix.build-type == 'release' && startsWith(github.ref, 'refs/tags/v')
-      env:
-        GH_TOKEN: ${{ github.token }}
       run: |
         TAG="${GITHUB_REF_NAME}"
         VERSION="${TAG#v}"
@@ -225,28 +253,36 @@ jobs:
         NAME="JS8-Tactical-${VERSION}.apk"
         APK=$(ls android/app/build/outputs/apk/release/*.apk | grep -v unsigned | head -1)
         test -n "$APK" || { echo "No signed release APK (is release signing configured?)"; exit 1; }
-        cp "$APK" "$NAME"
+        mkdir -p publish
+        cp "$APK" "publish/$NAME"
         # Checksum file: the APK's SHA-256 and the signer certificate, so users can verify the download.
         APKSIGNER=$(ls "${ANDROID_HOME}"/build-tools/*/apksigner | sort -V | tail -1)
-        {
+        (
+          cd publish
           echo "$(sha256sum "$NAME")"
           "$APKSIGNER" verify --print-certs "$NAME" | grep -E 'certificate (DN|SHA-256 digest)'
-        } > "${NAME}.sha256"
-        cat "${NAME}.sha256"
-        PRE=""; case "$TAG" in *alpha*|*beta*|*rc*) PRE="--prerelease";; esac
-        gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" $PRE --title "JS8-Tactical ${TAG}" --notes "Signed build of ${TAG} (commit ${GITHUB_SHA::8})."
-        gh release upload "$TAG" "$NAME" "${NAME}.sha256" --clobber
+        ) > "publish/${NAME}.sha256"
+        cat "publish/${NAME}.sha256"
+        echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+    - name: Upload signed alpha/release files
+      if: steps.release_files.outputs.name != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: publish-release
+        path: publish/
+        if-no-files-found: error
 
     - name: Upload AAR
       if: matrix.build-type == 'release'
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: js8call-core-aar
         path: android/js8core-lib/build/outputs/aar/*.aar
 
     - name: Upload AAB (Release only)
       if: matrix.build-type == 'release'
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: js8call-release-aab
         path: android/app/build/outputs/bundle/release/*.aab
@@ -265,16 +301,76 @@ jobs:
         fi
         exit 1
 
+    - name: Remove release keystore
+      if: always()
+      run: rm -f android/release.jks
+
+  # Puts the rolling test build on the "test-build" release. Write access, but no build code runs
+  # here. Runs even when lint failed later in the build job, so a lint finding never holds up testing.
+  publish-test-build:
+    name: Publish rolling test build
+    needs: build
+    if: ${{ !cancelled() && needs.build.outputs.test_apk != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download test build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: publish-test-build
+          path: publish
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NAME: ${{ needs.build.outputs.test_apk }}
+        run: |
+          gh release view test-build >/dev/null 2>&1 || gh release create test-build --prerelease --title "Latest test build" --notes "Rolling test build from master."
+          # Only the newest test build is kept on the release.
+          for old in $(gh release view test-build --json assets --jq '.assets[].name' | grep '\.apk$'); do
+            gh release delete-asset test-build "$old" -y
+          done
+          gh release upload test-build "publish/$NAME" --clobber
+          gh release edit test-build --notes "Rolling test build from master. Commit ${GITHUB_SHA::8}, run #${GITHUB_RUN_NUMBER}, built $(date -u +%Y-%m-%dT%H:%MZ)."
+
+  # Puts the signed APK and its .sha256 on the release for the tag.
+  publish-release:
+    name: Publish signed alpha/release build
+    needs: build
+    if: ${{ !cancelled() && needs.build.outputs.release_apk != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: publish-release
+          path: publish
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NAME: ${{ needs.build.outputs.release_apk }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PRE=""; case "$TAG" in *alpha*|*beta*|*rc*) PRE="--prerelease";; esac
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" $PRE --title "JS8-Tactical ${TAG}" --notes "Signed build of ${TAG} (commit ${GITHUB_SHA::8})."
+          gh release upload "$TAG" "publish/$NAME" "publish/${NAME}.sha256" --clobber
+
 #  lint:
 #    name: Lint
 #    runs-on: ubuntu-latest
 #
 #    steps:
 #    - name: Checkout code
-#      uses: actions/checkout@v7
+#      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 #
 #    - name: Set up JDK 17
-#      uses: actions/setup-java@v6
+#      uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
 #      with:
 #        java-version: '17'
 #        distribution: 'temurin'
@@ -287,7 +383,7 @@ jobs:
 #      run: ./gradlew lint
 #
 #    - name: Upload lint results
-#      uses: actions/upload-artifact@v7
+#      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
 #      if: always()
 #      with:
 #        name: lint-results
