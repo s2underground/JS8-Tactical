@@ -250,31 +250,37 @@ class InterferenceDetector(
         learn(summary, nowMs)
     }
 
-    /** Runs of the strongest cell moving steadily one way across at least 1000 Hz. */
+    /**
+     * Runs of the strongest cell sliding steadily one way across at least 1000 Hz. A slide moves
+     * in small steps through many cells, frame after frame. In a busy net the strongest spot
+     * also moves, but by jumping from one station to another (often hundreds of Hz), pausing
+     * on each, and going back and forth: none of that continues a run.
+     */
     private fun countSweeps(peaks: List<Int>): Int {
         var sweeps = 0
-        var runStart = -1
-        var dir = 0
+        var start = -1
         var prev = -1
-        var back = 0
-        fun close(end: Int) {
-            if (runStart >= 0 && abs(end - runStart) >= SWEEP_CELLS) sweeps++
-            runStart = -1; dir = 0; back = 0
+        var dir = 0
+        var moves = 0
+        var still = 0
+        fun close() {
+            if (start >= 0 && abs(prev - start) >= SWEEP_CELLS && moves >= SWEEP_MIN_MOVES) sweeps++
+            start = -1; dir = 0; moves = 0; still = 0
         }
         for (p in peaks) {
-            if (p < 0) { close(prev); prev = -1; continue }
-            if (prev < 0 || runStart < 0) { runStart = p; prev = p; dir = 0; continue }
+            if (p < 0) { close(); prev = -1; continue }
+            if (start < 0) { start = p; prev = p; continue }
             val step = p - prev
+            val forward = dir == 0 || (step > 0) == (dir > 0)
             when {
-                step == 0 -> Unit
-                dir == 0 -> dir = if (step > 0) 1 else -1
-                (step > 0) == (dir > 0) -> Unit
-                back++ < 1 -> Unit // tolerate one wobble
-                else -> { close(prev); runStart = p }
+                // Standing still (or a one-cell wobble at a cell edge): fine for a moment.
+                step == 0 || (!forward && abs(step) <= 1) -> if (++still > SWEEP_MAX_STILL) { close(); start = p }
+                abs(step) > SWEEP_MAX_STEP || !forward -> { close(); start = p }
+                else -> { dir = if (step > 0) 1 else -1; moves++; still = 0 }
             }
             prev = p
         }
-        close(prev)
+        close()
         return sweeps
     }
 
@@ -386,6 +392,12 @@ class InterferenceDetector(
         const val CARRIER_WINDOWS = 4
         const val RESIDENT_OCC = 0.6f
         const val SWEEP_CELLS = 40 // 1000 Hz
+        /** Largest move between frames (0.1 s) that still counts as sliding: 400 Hz. */
+        const val SWEEP_MAX_STEP = 16
+        /** A slide moves at least this many times... */
+        const val SWEEP_MIN_MOVES = 6
+        /** ...and stands still for no more than this many frames in a row. */
+        const val SWEEP_MAX_STILL = 5
         const val QUIET_WINDOWS = 20 // 5 minutes
         const val HISTORY_WINDOWS = 24
         const val MIN_FRAMES = 50 // 5 s of spectrum in a window
