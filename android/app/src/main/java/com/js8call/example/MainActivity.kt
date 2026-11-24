@@ -12,12 +12,12 @@ import android.util.Log
 import android.view.MenuItem
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.os.bundleOf
 import androidx.lifecycle.ViewModelProvider
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.NavigationUI
@@ -296,8 +296,7 @@ class MainActivity : AppCompatActivity() {
             addAction(JS8EngineService.ACTION_DECODE)
             addAction(JS8EngineService.ACTION_TX_SENT)
         }
-        LocalBroadcastManager.getInstance(this)
-            .registerReceiver(decodeReceiver, filter)
+        AppBroadcasts.register(this, decodeReceiver, filter)
 
         val monitorFilter = IntentFilter().apply {
             addAction(JS8EngineService.ACTION_ENGINE_STATE)
@@ -310,8 +309,7 @@ class MainActivity : AppCompatActivity() {
             addAction(JS8EngineService.ACTION_TIME_DRIFT)
             addAction(JS8EngineService.ACTION_RIG_STATUS)
         }
-        LocalBroadcastManager.getInstance(this)
-            .registerReceiver(monitorReceiver, monitorFilter)
+        AppBroadcasts.register(this, monitorReceiver, monitorFilter)
         // Belt and braces: hand over anything waiting
         transmitViewModel.processNext()
     }
@@ -319,10 +317,8 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         PreferenceManager.getDefaultSharedPreferences(this)
             .unregisterOnSharedPreferenceChangeListener(prefsListener)
-        LocalBroadcastManager.getInstance(this)
-            .unregisterReceiver(decodeReceiver)
-        LocalBroadcastManager.getInstance(this)
-            .unregisterReceiver(monitorReceiver)
+        AppBroadcasts.unregister(decodeReceiver)
+        AppBroadcasts.unregister(monitorReceiver)
         decodeViewModel.persistDecodesOnStop()
         if (isFinishing && !isChangingConfigurations && !exiting) {
             stopEngineService()
@@ -418,6 +414,7 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    @RequiresApi(Build.VERSION_CODES.S)
     private fun requestBluetoothPermission() {
         ActivityCompat.requestPermissions(
             this,

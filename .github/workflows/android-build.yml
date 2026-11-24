@@ -173,9 +173,11 @@ jobs:
       working-directory: android
       run: ./gradlew test
 
-    # Static analysis of the Kotlin/Android code (includes Android's security checks). Report only
-    # for now: existing findings are being worked through, so lint does not fail the build yet.
-    - name: Android lint (report only)
+    # Static analysis of the Kotlin/Android code (includes Android's security checks). Known
+    # findings live in android/app/lint-baseline.xml; anything new fails this job, but only after
+    # the test build below has been published, so a lint finding never holds up testing.
+    - name: Android lint
+      id: lint
       if: matrix.build-type == 'debug'
       working-directory: android
       continue-on-error: true
@@ -252,6 +254,13 @@ jobs:
       with:
         name: js8call-release-aab
         path: android/app/build/outputs/bundle/release/*.aab
+
+    - name: Fail if lint failed
+      if: steps.lint.outcome == 'failure'
+      run: |
+        echo "The Android lint step failed: either it found new issues (see the lint-report artifact and fix"
+        echo "them), or lint itself could not run (see the step's log, e.g. a dependency download error)."
+        exit 1
 
 #  lint:
 #    name: Lint
