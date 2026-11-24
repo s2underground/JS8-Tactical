@@ -95,6 +95,12 @@ or grid) and the recent log, which includes traffic heard on the air.
 Radio control: Hamlib over USB (many radios, e.g. Xiegu G90), rigctld over the network,
 QMX and truSDX over USB serial, RTS/DTR PTT, and the BTECH UV-Pro over Bluetooth.
 
+**Xiegu X6100 / X6200:** use the radio's DEV port with a USB-A to USB-C cable and the OTG
+adapter at the tablet end. Rig Control: Serial (Hamlib), model Xiegu X6200 (or X6100),
+19200 baud, serial port Auto or Port 1 (CAT is on the second port of its dual serial chip).
+If the radio keys but shows no power, see "Connecting your radio over USB" in the app's
+Library.
+
 ## Operating notes
 
 - You are responsible for operating within your licence and local rules.
