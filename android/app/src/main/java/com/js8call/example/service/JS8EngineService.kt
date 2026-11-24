@@ -380,6 +380,33 @@ class JS8EngineService : Service() {
         if (key == PREF_LOG_MESSAGES) {
             updateMessageLogging()
         }
+        if (key in RIG_SETTING_KEYS) {
+            // Rig control is only set up when the receiver starts: restart it so the change is used
+            // (after a short pause, so several changes in a row restart once).
+            mainHandler.removeCallbacks(rigSettingsRestart)
+            mainHandler.postDelayed(rigSettingsRestart, RIG_SETTINGS_SETTLE_MS)
+        }
+    }
+
+    /** Radio settings changed while receiving: restart the receiver so they take effect. Never mid-send. */
+    private val rigSettingsRestart: Runnable = object : Runnable {
+        override fun run() {
+            if (engine == null && !engineStartInProgress) return // not running: the next start reads them
+            if (engineStartInProgress || isTransmitActive()) { mainHandler.postDelayed(this, 5_000L); return }
+            Log.i(TAG, "Radio settings changed; restarting the receiver to use them")
+            broadcastWarning("Radio settings changed: restarting the receiver to use them.", quiet = true)
+            stopEngine()
+            mainHandler.postDelayed(rigSettingsStart, 1_000L)
+        }
+    }
+
+    private val rigSettingsStart: Runnable = object : Runnable {
+        override fun run() {
+            if (engine != null || engineStartInProgress) return
+            // The old rig link may still be closing on the TX thread.
+            if (engineStoppingSinceMs > 0) { mainHandler.postDelayed(this, 1_000L); return }
+            startEngine()
+        }
     }
 
     /** Scheduled reports (Reports tab): queued when their time comes while the receiver runs. */
@@ -4765,6 +4792,13 @@ class JS8EngineService : Service() {
             Regex("^\\s*[A-Z0-9/]+:\\s+\\S+\\s+HEARTBEAT\\s+SNR\\b", RegexOption.IGNORE_CASE)
 
         // Actions
+        /** Settings that decide how the radio is reached; changing one restarts the receiver. */
+        private val RIG_SETTING_KEYS = setOf(
+            "rig_control_enabled", "rig_type", "rig_hamlib_model", "rig_hamlib_usb_port",
+            "rig_serial_baud", "rig_serial_data_bits", "rig_serial_stop_bits", "rig_serial_parity",
+            "rigctld_host", "rigctld_port", "qmx_cat_baud",
+        )
+        private const val RIG_SETTINGS_SETTLE_MS = 3_000L
         const val ACTION_START = "com.js8call.example.ACTION_START"
         const val ACTION_STOP = "com.js8call.example.ACTION_STOP"
         /** Stop everything and close the app (notification Exit). */
