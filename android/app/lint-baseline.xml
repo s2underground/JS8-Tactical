@@ -1750,38 +1750,8 @@
             column="17"/>
     </issue>
 
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="        val req = DownloadManager.Request(Uri.parse(m.url))"
-        errorLine2="                                          ~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/js8call/example/ai/AiModels.kt"
-            line="109"
-            column="43"/>
-    </issue>
 
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `SharedPreferences.edit` instead?"
-        errorLine1="        PreferenceManager.getDefaultSharedPreferences(ctx).edit().putLong(PREF_DOWNLOAD_PREFIX + m.id, id).apply()"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/js8call/example/ai/AiModels.kt"
-            line="116"
-            column="9"/>
-    </issue>
 
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `SharedPreferences.edit` instead?"
-        errorLine1="        PreferenceManager.getDefaultSharedPreferences(ctx).edit().remove(PREF_DOWNLOAD_PREFIX + m.id).apply()"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/js8call/example/ai/AiModels.kt"
-            line="146"
-            column="9"/>
-    </issue>
 
     <issue
         id="UseKtx"

@@ -2,7 +2,8 @@ package com.js8call.example.ai
 
 import android.app.DownloadManager
 import android.content.Context
-import android.net.Uri
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import androidx.preference.PreferenceManager
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -98,10 +99,10 @@ object AiModels {
                 val ok = runCatching { FileHash.sha256(src) }.getOrNull() == m.sha256
                 val target = file(app, m)
                 if (ok && (src == target || (target.delete() || !target.exists()) && src.renameTo(target))) {
-                    prefs(app).edit().putString(PREF_VERIFIED_PREFIX + m.id, stamp(target, m)).remove(PREF_REJECTED_PREFIX + m.id).apply()
+                    prefs(app).edit { putString(PREF_VERIFIED_PREFIX + m.id, stamp(target, m)); remove(PREF_REJECTED_PREFIX + m.id) }
                 } else {
                     src.delete()
-                    prefs(app).edit().remove(PREF_VERIFIED_PREFIX + m.id).putBoolean(PREF_REJECTED_PREFIX + m.id, !ok).apply()
+                    prefs(app).edit { remove(PREF_VERIFIED_PREFIX + m.id); putBoolean(PREF_REJECTED_PREFIX + m.id, !ok) }
                 }
             } finally {
                 verifying.remove(m.id)
@@ -174,15 +175,15 @@ object AiModels {
     fun download(ctx: Context, m: Model) {
         if (downloadId(ctx, m) != null) return
         partial(ctx, m).delete()
-        prefs(ctx).edit().remove(PREF_REJECTED_PREFIX + m.id).apply()
-        val req = DownloadManager.Request(Uri.parse(m.url))
+        prefs(ctx).edit { remove(PREF_REJECTED_PREFIX + m.id) }
+        val req = DownloadManager.Request(m.url.toUri())
             .setTitle("JS8-Tactical AI model")
             .setDescription(m.name)
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
             .setAllowedOverMetered(true)
             .setDestinationInExternalFilesDir(ctx, null, "models/" + m.file + ".part")
         val id = ctx.getSystemService(DownloadManager::class.java).enqueue(req)
-        PreferenceManager.getDefaultSharedPreferences(ctx).edit().putLong(PREF_DOWNLOAD_PREFIX + m.id, id).apply()
+        prefs(ctx).edit { putLong(PREF_DOWNLOAD_PREFIX + m.id, id) }
     }
 
     fun cancel(ctx: Context, m: Model) {
@@ -195,7 +196,7 @@ object AiModels {
     fun delete(ctx: Context, m: Model) {
         cancel(ctx, m)
         file(ctx, m).delete()
-        prefs(ctx).edit().remove(PREF_VERIFIED_PREFIX + m.id).remove(PREF_REJECTED_PREFIX + m.id).apply()
+        prefs(ctx).edit { remove(PREF_VERIFIED_PREFIX + m.id); remove(PREF_REJECTED_PREFIX + m.id) }
     }
 
     fun totalBytesOnDisk(ctx: Context): Long = dir(ctx).listFiles()?.sumOf { it.length() } ?: 0L
@@ -204,6 +205,6 @@ object AiModels {
         PreferenceManager.getDefaultSharedPreferences(ctx).getLong(PREF_DOWNLOAD_PREFIX + m.id, -1L).takeIf { it >= 0 }
 
     private fun forget(ctx: Context, m: Model) {
-        PreferenceManager.getDefaultSharedPreferences(ctx).edit().remove(PREF_DOWNLOAD_PREFIX + m.id).apply()
+        prefs(ctx).edit { remove(PREF_DOWNLOAD_PREFIX + m.id) }
     }
 }
