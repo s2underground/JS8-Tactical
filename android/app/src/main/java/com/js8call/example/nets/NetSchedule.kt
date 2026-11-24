@@ -131,7 +131,7 @@ object NetSchedule {
 
     // ------------------------------------------------------------------ text
 
-    fun hhmm(min: Int): String = "%02d%02d".format(min / 60 % 24, min % 60)
+    fun hhmm(min: Int): String = "%02d%02d".format(java.util.Locale.ROOT, min / 60 % 24, min % 60)
 
     fun daysText(days: Int): String = when (days and EVERY_DAY) {
         EVERY_DAY -> "Every day"

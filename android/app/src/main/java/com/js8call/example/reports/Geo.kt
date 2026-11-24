@@ -160,7 +160,8 @@ object Geo {
         val n = (floor((u.northing % 100000) / scale)).toInt()
         val fmt = "%0${digits}d"
         return if (digits == 0) "${u.zone}${bandFor(p.lat)} $col$row"
-        else "${u.zone}${bandFor(p.lat)} $col$row ${fmt.format(e)} ${fmt.format(n)}"
+        // Locale.ROOT: sent on the air; some locales would write the digits in another script.
+        else "${u.zone}${bandFor(p.lat)} $col$row ${fmt.format(java.util.Locale.ROOT, e)} ${fmt.format(java.util.Locale.ROOT, n)}"
     }
 
     private val mgrsRegex = Regex("""^(\d{1,2})\s*([C-HJ-NP-X])\s*([A-HJ-NP-Z])([A-HJ-NP-V])\s*(\d*)\s*(\d*)$""")
