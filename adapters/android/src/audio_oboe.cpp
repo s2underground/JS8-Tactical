@@ -270,8 +270,9 @@ bool OboeAudioOutput::start(AudioStreamParams const& params,
     params_.format.sample_type = SampleType::Int16;
   }
   __android_log_print(ANDROID_LOG_INFO, "JS8AudioOutput",
-                      "Output stream: device=%d, rate=%d Hz, channels=%d, format=%s, burst=%d",
-                      device_id_, params_.format.sample_rate, params_.format.channels,
+                      // requested vs opened: Android may route a stream elsewhere than the device asked for
+                      "Output stream: device=%d opened_on=%d, rate=%d Hz, channels=%d, format=%s, burst=%d",
+                      device_id_, stream_->getDeviceId(), params_.format.sample_rate, params_.format.channels,
                       params_.format.sample_type == SampleType::Float32 ? "float" : "int16",
                       stream_->getFramesPerBurst());
 
