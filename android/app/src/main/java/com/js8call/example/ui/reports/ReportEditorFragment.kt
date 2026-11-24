@@ -275,7 +275,7 @@ class ReportEditorFragment : Fragment() {
             content.addView(label(field.label))
             val input = edit(draft.values[field.key].orEmpty(), field.hint.ifBlank { field.options.joinToString(", ") }, 16f,
                 InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS).apply {
-                if (field.kind == Reports.Kind.LOCATION || field.kind == Reports.Kind.TIME) typeface = Typeface.MONOSPACE
+                if (field.kind == Reports.Kind.LOCATION || field.kind == Reports.Kind.TIME || field.kind == Reports.Kind.FREQUENCY) typeface = Typeface.MONOSPACE
                 watch { v -> draft = draft.copy(values = LinkedHashMap(draft.values).apply { put(field.key, v) }); changed() }
             }
             content.addView(input)
@@ -287,6 +287,9 @@ class ReportEditorFragment : Fragment() {
                     if (grid.isNotBlank()) quick.addView(Chip(ctx).apply { text = getString(R.string.reports_my_grid, grid); setOnClickListener { input.setText(grid) } })
                 }
                 Reports.Kind.TIME -> quick.addView(Chip(ctx).apply { text = getString(R.string.reports_now); setOnClickListener { input.setText(Reports.dtg()) } })
+                Reports.Kind.FREQUENCY -> ReportUi.dialKhz(ctx)?.let { khz ->
+                    quick.addView(Chip(ctx).apply { text = getString(R.string.reports_this_dial, khz); setOnClickListener { input.setText(khz) } })
+                }
                 else -> {}
             }
             if (quick.isNotEmpty()) content.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(quick) })

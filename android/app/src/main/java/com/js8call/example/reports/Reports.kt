@@ -11,7 +11,7 @@ package com.js8call.example.reports
  */
 object Reports {
 
-    enum class Kind { TEXT, LOCATION, TIME, CHOICE }
+    enum class Kind { TEXT, LOCATION, TIME, CHOICE, FREQUENCY }
 
     data class Field(
         val key: String,
@@ -97,7 +97,33 @@ object Reports {
         )
     )
 
-    val ALL = listOf(CHECKIN, SPOT, SALUTE, SITREP, POSREP, WX, SWX)
+    /**
+     * Interference or jamming on a frequency, after the military MIJI report (meaconing,
+     * intrusion, jamming, interference): what it sounds like, how strong, what it does to
+     * traffic, where and when. "Interference" until the operator judges it deliberate; the
+     * report says what was observed either way. Without a location, the map places it at the
+     * sender's grid (where it was heard).
+     */
+    val JAM = Type(
+        "JAM", "Interference / jamming", listOf(
+            Field("F", "Frequency", Kind.FREQUENCY, hint = "Dial in kHz, e.g. 7078"),
+            Field("Y", "Type", Kind.CHOICE, options = listOf("NOISE", "CARRIER", "SWEEP", "PULSE", "VOICE", "OTHER")),
+            Field("S", "Strength", hint = "e.g. S9, or 15DB over normal"),
+            Field("E", "Effect", Kind.CHOICE, options = listOf("DEGRADED", "DENIED")),
+            Field("L", "Location", Kind.LOCATION),
+            Field("T", "Time", Kind.TIME),
+            Field("N", "Note", hint = "Optional: since when, pattern, other bands"),
+        )
+    )
+
+    val ALL = listOf(CHECKIN, SPOT, SALUTE, SITREP, POSREP, JAM, WX, SWX)
+
+    /** A dial frequency in kHz as written in reports: 7078000 → "7078", 14078500 → "14078.5". */
+    fun khz(dialHz: Long): String {
+        val whole = dialHz / 1000
+        val frac = (dialHz % 1000).toString().padStart(3, '0').trimEnd('0')
+        return if (frac.isEmpty()) whole.toString() else "$whole.$frac"
+    }
     fun byTag(tag: String) = ALL.firstOrNull { it.tag == tag.uppercase() }
 
     /** Clean a value for the air: upper case, no field separators, single spaces. */

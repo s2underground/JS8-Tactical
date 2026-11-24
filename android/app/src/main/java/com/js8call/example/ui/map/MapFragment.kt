@@ -4,6 +4,10 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PointF
 import android.graphics.RectF
 import android.location.LocationManager
@@ -23,6 +27,7 @@ import com.google.android.material.chip.ChipGroup
 import com.google.android.material.navigation.NavigationBarView
 import com.js8call.example.R
 import com.js8call.example.reports.Geo
+import com.js8call.example.reports.JamReports
 import com.js8call.example.reports.LatLon
 import com.js8call.example.reports.Reports
 import com.js8call.example.ui.traffic.TrafficViewModel
@@ -122,7 +127,7 @@ class MapFragment : Fragment() {
             }
         }
         toggle(R.id.map_show_stations, L_STATIONS, L_STATION_LABELS)
-        toggle(R.id.map_show_reports, L_REPORTS, L_REPORT_LABELS)
+        toggle(R.id.map_show_reports, L_REPORTS, L_JAM, L_REPORT_LABELS)
         toggle(R.id.map_show_paths, L_PATHS)
         toggle(R.id.map_show_links, L_LINKS, L_LINK_LABELS)
         setUpBandFilter(view)
@@ -199,7 +204,15 @@ class MapFragment : Fragment() {
             PropertyFactory.circleColor(color),
             PropertyFactory.circleStrokeColor("#E6EAF0"),
             PropertyFactory.circleStrokeWidth(2f),
-        ))
+        ).withFilter(Expression.neq(Expression.get("kind"), Expression.literal("jam"))))
+        // Interference / jamming reports: a warning-triangle icon instead of a dot, fading with age.
+        st.addImage(I_JAM, jamIcon())
+        st.addLayer(SymbolLayer(L_JAM, S_REPORTS).withProperties(
+            PropertyFactory.iconImage(I_JAM),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+            PropertyFactory.iconOpacity(Expression.toNumber(Expression.get("opacity"))),
+        ).withFilter(Expression.eq(Expression.get("kind"), Expression.literal("jam"))))
         st.addLayer(SymbolLayer(L_REPORT_LABELS, S_REPORTS).withProperties(
             PropertyFactory.textField(Expression.get("label")),
             PropertyFactory.textFont(arrayOf("NotoSansBold")),
@@ -250,8 +263,12 @@ class MapFragment : Fragment() {
         (st.getSource(S_REPORTS) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(reports.map { r ->
             point(r.position).apply {
                 addStringProperty("id", "r:${r.id}")
-                addStringProperty("label", listOfNotNull(r.report.type.tag, r.sender).joinToString(" · "))
+                val jam = r.report.type == Reports.JAM
+                val tag = if (jam) listOfNotNull("JAM", r.report.values["F"]).joinToString(" ") else r.report.type.tag
+                addStringProperty("label", listOfNotNull(tag, r.sender).joinToString(" · "))
                 addStringProperty("color", reportColor(r.report))
+                addStringProperty("kind", if (jam) "jam" else "report")
+                addNumberProperty("opacity", JamReports.opacity(now - r.timeMs))
             }
         }))
         (st.getSource(S_PATHS) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(
@@ -313,7 +330,7 @@ class MapFragment : Fragment() {
     private fun onTap(m: MapLibreMap, latLng: LatLng): Boolean {
         val p: PointF = m.projection.toScreenLocation(latLng)
         val r = dp(22).toFloat()
-        val hits = m.queryRenderedFeatures(RectF(p.x - r, p.y - r, p.x + r, p.y + r), L_REPORTS, L_STATIONS)
+        val hits = m.queryRenderedFeatures(RectF(p.x - r, p.y - r, p.x + r, p.y + r), L_JAM, L_REPORTS, L_STATIONS)
         val id = hits.firstOrNull()?.getStringProperty("id")
         val d = data
         val sel = when {
@@ -372,7 +389,7 @@ class MapFragment : Fragment() {
                 body.text = r.report.type.fields
                     .filter { it.kind != Reports.Kind.LOCATION && it.kind != Reports.Kind.TIME }
                     .mapNotNull { f -> r.report.values[f.key]?.let { "${f.label}: $it" } }
-                    .joinToString("\n")
+                    .joinToString("\n") + jamOthers(r)
                 val loc = r.report.type.locationField?.let { r.report.values[it.key] }
                 meta.text = listOfNotNull(loc, me?.let { rangeText(it, r.position) }, zuluTime(r.timeMs)).joinToString(" · ")
                 open.isVisible = r.sender != null
@@ -495,8 +512,40 @@ class MapFragment : Fragment() {
                 else -> "#9AA4B2"
             }
             r.type == Reports.POSREP -> "#4FC3F7"
+            r.type == Reports.JAM -> "#FFB300"
             else -> "#FF8A3D" // SPOT, SALUTE
         }
+    }
+
+    /** For a #JAM report: the other stations that reported the same frequency in the last 12 hours. */
+    private fun jamOthers(r: TrafficViewModel.MapReport): String {
+        if (r.report.type != Reports.JAM) return ""
+        val freq = r.report.values["F"]
+        val cutoff = System.currentTimeMillis() - 12 * HOUR
+        val others = data?.reports.orEmpty()
+            .filter { it.id != r.id && it.report.type == Reports.JAM && it.timeMs >= cutoff && JamReports.sameFrequency(it.report.values["F"], freq) }
+            .mapNotNull { it.sender }.filter { it != r.sender }.distinct()
+        return if (others.isEmpty()) "" else "\n" + getString(R.string.map_jam_others, others.joinToString(", "))
+    }
+
+    /** Warning triangle with a zigzag: an amber marker that reads as "interference" at a glance. */
+    private fun jamIcon(): Bitmap {
+        val size = dp(30)
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val s = size.toFloat()
+        val tri = Path().apply { moveTo(s / 2, s * 0.06f); lineTo(s * 0.96f, s * 0.9f); lineTo(s * 0.04f, s * 0.9f); close() }
+        c.drawPath(tri, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFB300.toInt(); style = Paint.Style.FILL })
+        c.drawPath(tri, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF0A0D11.toInt(); style = Paint.Style.STROKE; strokeWidth = s * 0.07f; strokeJoin = Paint.Join.ROUND })
+        val zig = Path().apply {
+            moveTo(s * 0.27f, s * 0.68f); lineTo(s * 0.39f, s * 0.5f); lineTo(s * 0.5f, s * 0.68f)
+            lineTo(s * 0.61f, s * 0.5f); lineTo(s * 0.73f, s * 0.68f)
+        }
+        c.drawPath(zig, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFF0A0D11.toInt(); style = Paint.Style.STROKE; strokeWidth = s * 0.08f
+            strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND
+        })
+        return bmp
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -535,6 +584,8 @@ class MapFragment : Fragment() {
         const val L_STATION_LABELS = "tac-stations-label"
         const val L_REPORTS = "tac-reports-circle"
         const val L_REPORT_LABELS = "tac-reports-label"
+        const val L_JAM = "tac-reports-jam"
+        const val I_JAM = "tac-jam-icon"
         const val L_ME = "tac-me-circle"
         const val L_ME_LABEL = "tac-me-label"
     }

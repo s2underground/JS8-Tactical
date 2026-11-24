@@ -421,6 +421,7 @@
     <string name="map_just_now">just now</string>
     <string name="map_ago">%1$s ago</string>
     <string name="map_unknown_sender">Unknown sender</string>
+    <string name="map_jam_others">Also reported on this frequency (12 h): %1$s</string>
     <string name="map_attribution">© OpenStreetMap · OpenFreeMap · Natural Earth · MapLibre</string>
     <!-- Propagation tab -->
     <string name="nav_digest">Digest</string>
@@ -652,6 +653,7 @@
     <string name="reports_on_air">What goes on air</string>
     <string name="reports_my_grid">My grid %1$s</string>
     <string name="reports_now">Now</string>
+    <string name="reports_this_dial">This dial: %1$s</string>
     <string name="reports_auto">Automatic send</string>
     <string name="reports_auto_switch">Send automatically at a set time</string>
     <string name="reports_once">Once</string>

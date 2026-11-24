@@ -110,4 +110,30 @@ class ReportsAndGeoTest {
         assertNotNull(p)
         assertTrue("$p", p!!.lon in -180.0..180.0 && p.lat in -90.0..90.0)
     }
+
+    @Test
+    fun jamReportRoundTripsAndKhz() {
+        val line = Reports.encode(Reports.JAM, mapOf("F" to "7078", "Y" to "CARRIER", "E" to "DENIED", "L" to "EM73", "T" to "241500Z"))
+        assertEquals("#JAM F:7078 Y:CARRIER E:DENIED L:EM73 T:241500Z", line)
+        val r = Reports.parse("@TEAM $line")
+        assertEquals(Reports.JAM, r!!.type)
+        assertEquals("CARRIER", r.values["Y"])
+        assertNotNull(r.location)
+        assertEquals("7078", Reports.khz(7_078_000L))
+        assertEquals("14078.5", Reports.khz(14_078_500L))
+        assertEquals("3578.25", Reports.khz(3_578_250L))
+    }
+
+    @Test
+    fun jamFrequencyMatchingAndFade() {
+        assertEquals(7078, JamReports.khz("7078"))
+        assertEquals(7078, JamReports.khz("7.078"))
+        assertEquals(14079, JamReports.khz("14078.5 KHZ"))
+        assertNull(JamReports.khz("NONE"))
+        assertTrue(JamReports.sameFrequency("7078", "7.080"))
+        assertTrue(!JamReports.sameFrequency("7078", "7110"))
+        assertEquals(1f, JamReports.opacity(30 * 60_000L), 0f)
+        assertEquals(0.35f, JamReports.opacity(24 * 3_600_000L), 0f)
+        assertTrue(JamReports.opacity(6 * 3_600_000L) in 0.35f..1f)
+    }
 }

@@ -167,6 +167,17 @@ class ReportWriterSheet : BottomSheetDialogFragment() {
                     setOnClickListener { input.second.setText(Reports.dtg()) }
                 })
             }
+            Reports.Kind.FREQUENCY -> {
+                val input = textInput(field, field.label, field.hint)
+                val dial = com.js8call.example.ui.reports.ReportUi.dialKhz(ctx)
+                dial?.let { input.second.setText(it) }
+                column.addView(input.first)
+                if (dial != null) column.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = getString(R.string.reports_this_dial, dial)
+                    minHeight = dp(48)
+                    setOnClickListener { input.second.setText(dial) }
+                })
+            }
             Reports.Kind.TEXT -> column.addView(textInput(field, field.label, field.hint).first)
         }
         return column
@@ -182,7 +193,7 @@ class ReportWriterSheet : BottomSheetDialogFragment() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
             filters = arrayOf(InputFilter.AllCaps(), InputFilter.LengthFilter(80))
             textSize = 17f
-            if (field.kind == Reports.Kind.LOCATION || field.kind == Reports.Kind.TIME) typeface = android.graphics.Typeface.MONOSPACE
+            if (field.kind == Reports.Kind.LOCATION || field.kind == Reports.Kind.TIME || field.kind == Reports.Kind.FREQUENCY) typeface = android.graphics.Typeface.MONOSPACE
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit

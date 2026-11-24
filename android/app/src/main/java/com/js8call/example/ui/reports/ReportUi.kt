@@ -21,6 +21,11 @@ import java.util.TimeZone
 /** Airtime, time labels and the send action shared by the Reports list and editor. */
 object ReportUi {
 
+    /** The dial picked in the app, in kHz as reports write it ("7078"); null if none yet. */
+    fun dialKhz(ctx: Context): String? =
+        PreferenceManager.getDefaultSharedPreferences(ctx).getString("last_frequency", "")?.trim()
+            ?.toLongOrNull()?.takeIf { it > 0 }?.let { com.js8call.example.reports.Reports.khz(it) }
+
     data class Airtime(val frames: Int, val seconds: Int, val speed: String) {
         fun label(): String = "$frames frame${if (frames == 1) "" else "s"} · ${seconds / 60}:${"%02d".format(seconds % 60)} at $speed"
     }

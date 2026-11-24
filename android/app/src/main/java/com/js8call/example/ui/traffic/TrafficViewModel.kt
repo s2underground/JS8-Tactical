@@ -1026,7 +1026,10 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             },
             reports = messages.mapNotNull { m ->
                 val report = parsedReport(m) ?: return@mapNotNull null
-                val pos = report.location ?: return@mapNotNull null
+                // An interference report is about where it was heard: without a location, the sender's grid.
+                val pos = report.location
+                    ?: (if (report.type == Reports.JAM) m.sender?.let { posOf(it) } else null)
+                    ?: return@mapNotNull null
                 MapReport(m.id, report, m.sender, pos, m.lastHeardMs, colorFor(m.sender), m.firstHeardMs)
             },
         )
