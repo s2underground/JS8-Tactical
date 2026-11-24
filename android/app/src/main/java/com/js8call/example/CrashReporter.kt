@@ -279,27 +279,34 @@ object CrashReporter {
         sb.append("== Setup (no callsign or grid)\n")
         // Every setting except ones that identify the operator or their team.
         val private = Regex("(?i)call|grid|info|status_message|group|roster|host|sent_uids|location|lat|lon")
-        p.all.toSortedMap().forEach { (k, v) ->
-            if (private.containsMatchIn(k)) return@forEach
-            val text = v.toString()
-            if (text.length <= 200) sb.append("$k = $text\n")
+        // Each section is guarded: one that fails says why and the rest of the report still comes out.
+        section(sb) {
+            p.all.toSortedMap().forEach { (k, v) ->
+                if (private.containsMatchIn(k)) return@forEach
+                val text = v.toString()
+                if (text.length <= 200) sb.append("$k = $text\n")
+            }
         }
         sb.append('\n')
-        val pending = file(ctx).takeIf { it.exists() }?.readText().orEmpty()
-        if (pending.isNotBlank()) sb.append("== Pending report\n").append(pending).append('\n')
-        val past = File(ctx.filesDir, ARCHIVE).takeIf { it.exists() }?.readText().orEmpty()
+        section(sb) {
+            val pending = file(ctx).takeIf { it.exists() }?.readText().orEmpty()
+            if (pending.isNotBlank()) sb.append("== Pending report\n").append(pending).append('\n')
+        }
         sb.append("== Past crash/ANR reports (each shown once, oldest first)\n")
-            .append(if (past.isBlank()) "(none)\n" else distinctReports(past).takeLast(48_000)).append('\n')
-        val drops = com.js8call.example.service.UsbDropouts.text(ctx)
+        section(sb) {
+            val past = File(ctx.filesDir, ARCHIVE).takeIf { it.exists() }?.readText().orEmpty()
+            sb.append(if (past.isBlank()) "(none)\n" else distinctReports(past).takeLast(48_000)).append('\n')
+        }
+        val drops = runCatching { com.js8call.example.service.UsbDropouts.text(ctx) }.getOrElse { "(could not read: ${failure(it)})" }
         sb.append("== Audio and USB devices\n")
-            .append(runCatching { com.js8call.example.ui.AudioDevices.diagnostics(ctx) }.getOrElse { "(could not list: ${it.message})\n" }).append('\n')
+            .append(runCatching { com.js8call.example.ui.AudioDevices.diagnostics(ctx) }.getOrElse { "(could not list: ${failure(it)})\n" }).append('\n')
         sb.append("== Radio USB dropouts\n").append(if (drops.isBlank()) "(none recorded)\n" else drops.takeLast(12_000)).append('\n')
-        val echoes = com.js8call.example.ui.traffic.OwnEchoLog.text(ctx)
+        val echoes = runCatching { com.js8call.example.ui.traffic.OwnEchoLog.text(ctx) }.getOrElse { "(could not read: ${failure(it)})" }
         sb.append("== Own transmissions heard back (sent vs heard offset)\n").append(if (echoes.isBlank()) "(none decoded)\n" else echoes.takeLast(8_000)).append('\n')
         sb.append("== AI status\n").append(runCatching { com.js8call.example.ai.AiWork.diagnostics(ctx) }.getOrElse { "(could not check: ${it.message})\n" }).append('\n')
-        val ai = com.js8call.example.ai.AiSpeedLog.text(ctx)
+        val ai = runCatching { com.js8call.example.ai.AiSpeedLog.text(ctx) }.getOrElse { "(could not read: ${failure(it)})" }
         if (ai.isNotBlank()) sb.append("== AI speed tests\n").append(ai.takeLast(12_000)).append('\n')
-        val setAside = ctx.filesDir.listFiles { f -> f.name.contains("-set-aside-") }.orEmpty()
+        val setAside = runCatching { ctx.filesDir.listFiles { f -> f.name.contains("-set-aside-") }.orEmpty() }.getOrDefault(emptyArray())
         if (setAside.isNotEmpty()) {
             sb.append("== History files set aside after crash loops (names only)\n")
             setAside.sortedBy { it.name }.forEach { sb.append("${it.name} · ${it.length()} bytes\n") }
@@ -328,8 +335,22 @@ object CrashReporter {
         }.getOrElse { "(log unavailable: ${it.message})" }
         sb.append(log.takeLast(220_000))
         // Callsigns (own and heard), grids, Bluetooth/IP/email addresses out before it can be shared.
-        return DiagnosticsPrivacy.scrub(sb.toString(), p.getString("callsign", "").orEmpty(), p.getString("grid", "").orEmpty())
+        return runCatching {
+            DiagnosticsPrivacy.scrub(sb.toString(), p.getString("callsign", "").orEmpty(), p.getString("grid", "").orEmpty())
+        }.getOrElse {
+            // Never share an unscrubbed report: say what failed, nothing else.
+            "JS8-Tactical ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.GIT_SHA}) · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}\n" +
+                "The privacy scrub failed, so the report was withheld: ${failure(it)}\n"
+        }
     }
+
+    private inline fun section(sb: StringBuilder, body: () -> Unit) {
+        try { body() } catch (t: Throwable) { sb.append("(this section failed: ${failure(t)})\n") }
+    }
+
+    /** What went wrong, for a report: type, message and where (no user data). */
+    fun failure(t: Throwable): String =
+        "${t.javaClass.simpleName}: ${t.message} at " + t.stackTrace.take(4).joinToString(" < ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
 
     /** The archive repeats every report each time it was shown; keep each one once, in order. */
     internal fun distinctReports(past: String): String =
