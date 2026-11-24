@@ -49,6 +49,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # The Kotlin compiler and Jazzer, kept between runs: GitHub rate-limits release downloads
+      # (HTTP 429). The script still checks every file's SHA-256 before using it.
+      - name: Cache fuzzing tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/fuzz-kotlin/tools/*.jar
+            build/fuzz-kotlin/tools/kotlinc.zip
+          key: fuzz-kotlin-tools-${{ hashFiles('scripts/fuzz-kotlin.sh') }}
+
       # Pull requests get a short run; the weekly run goes longer.
       - name: Fuzz
         env:

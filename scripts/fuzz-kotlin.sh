@@ -35,7 +35,7 @@ mkdir -p "$TOOLS"
 fetch() {
   local url=$1 file=$2 sha=$3
   if [ -f "$file" ] && echo "$sha  $file" | sha256sum -c --quiet - >/dev/null 2>&1; then return; fi
-  curl -fsSL --retry 3 --retry-delay 5 -o "$file.tmp" "$url"
+  curl -fsSL --retry 5 --retry-delay 15 -o "$file.tmp" "$url"
   echo "$sha  $file.tmp" | sha256sum -c --quiet - || { echo "Checksum mismatch for $url" >&2; rm -f "$file.tmp"; exit 1; }
   mv "$file.tmp" "$file"
 }
@@ -45,10 +45,9 @@ fetch "$MAVEN/jazzer/$JAZZER_VERSION/jazzer-$JAZZER_VERSION.jar" "$TOOLS/jazzer.
 fetch "$MAVEN/jazzer-api/$JAZZER_VERSION/jazzer-api-$JAZZER_VERSION.jar" "$TOOLS/jazzer-api.jar" "$JAZZER_API_SHA256"
 fetch "https://github.com/JetBrains/kotlin/releases/download/v$KOTLIN_VERSION/kotlin-compiler-$KOTLIN_VERSION.zip" \
   "$TOOLS/kotlinc.zip" "$KOTLIN_SHA256"
-if [ ! -x "$TOOLS/kotlinc/bin/kotlinc" ]; then
-  rm -rf "$TOOLS/kotlinc"
-  unzip -q "$TOOLS/kotlinc.zip" -d "$TOOLS"
-fi
+# Unpack from the checked zip every run, so a stale or altered unpacked copy is never used.
+rm -rf "$TOOLS/kotlinc"
+unzip -q "$TOOLS/kotlinc.zip" -d "$TOOLS"
 STDLIB="$TOOLS/kotlinc/lib/kotlin-stdlib.jar"
 
 # The app code under test: plain Kotlin, no Android classes.
