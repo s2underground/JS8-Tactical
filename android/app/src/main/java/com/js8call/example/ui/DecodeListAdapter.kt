@@ -52,7 +52,7 @@ class DecodeListAdapter : ListAdapter<DecodedMessage, DecodeListAdapter.DecodeVi
         fun bind(decode: DecodedMessage, myGroups: Set<String>) {
             val context = itemView.context
             timeText.text = decode.formattedTime()
-            freqText.text = String.format("%.1f Hz", decode.frequency)
+            freqText.text = String.format(java.util.Locale.US, "%.1f Hz", decode.frequency)
             messageText.text = decode.text
 
             val params = bubbleContainer.layoutParams
@@ -82,9 +82,9 @@ class DecodeListAdapter : ListAdapter<DecodedMessage, DecodeListAdapter.DecodeVi
 
             snrIndicator.visibility = View.VISIBLE
             snrIndicator.background.mutate().setTint(ContextCompat.getColor(context, decode.snrColorRes))
-            snrText.text = String.format("%+d dB", decode.snr)
+            snrText.text = String.format(java.util.Locale.US, "%+d dB", decode.snr)
             dtText.visibility = View.VISIBLE
-            dtText.text = String.format("%+.1f s", decode.dt)
+            dtText.text = String.format(java.util.Locale.US, "%+.1f s", decode.dt)
 
             // Highlight group messages
             val isGroupMsg = myGroups.any { it.isNotEmpty() && decode.text.contains(it, ignoreCase = true) }

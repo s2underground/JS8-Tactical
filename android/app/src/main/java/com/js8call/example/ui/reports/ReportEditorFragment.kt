@@ -1,5 +1,6 @@
 package com.js8call.example.ui.reports
 
+import androidx.core.view.isNotEmpty
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.graphics.Typeface
@@ -288,7 +289,7 @@ class ReportEditorFragment : Fragment() {
                 Reports.Kind.TIME -> quick.addView(Chip(ctx).apply { text = getString(R.string.reports_now); setOnClickListener { input.setText(Reports.dtg()) } })
                 else -> {}
             }
-            if (quick.childCount > 0) content.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(quick) })
+            if (quick.isNotEmpty()) content.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(quick) })
         }
     }
 

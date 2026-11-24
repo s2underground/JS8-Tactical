@@ -69,6 +69,11 @@ class UvProSession(
     fun getLastError(): String? = lastError
 
     /** Connects to the first paired UV-Pro. Blocks for the RFCOMM connect. */
+    // MissingPermission: hasBluetoothPermission() checks BLUETOOTH_CONNECT first (lint doesn't follow the helper).
+    // DiscouragedApi: the audio clock must tick at a fixed rate to pace the SBC audio stream; it runs inside the
+    // foreground service while connected (never in a cached process) and tick() works from timestamps, so a late
+    // burst of ticks after a stall can't send audio early.
+    @android.annotation.SuppressLint("MissingPermission", "DiscouragedApi")
     fun start(): Boolean {
         lastError = null
         if (!hasBluetoothPermission()) return fail("Allow Nearby devices for JS8-Tactical in Android Settings")

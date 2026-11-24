@@ -61,6 +61,7 @@ data class DecodedMessage(
      */
     fun toDisplayString(): String {
         return String.format(
+            java.util.Locale.US,
             "%04d  %+3d dB  %+5.1f s  %7.1f Hz  %s",
             utc, snr, dt, frequency, text
         )
@@ -84,6 +85,7 @@ data class DecodedMessage(
             timeInMillis = utcCal.timeInMillis
         }
         return String.format(
+            java.util.Locale.US,
             "%02d:%02d:%02d",
             localCal.get(java.util.Calendar.HOUR_OF_DAY),
             localCal.get(java.util.Calendar.MINUTE),

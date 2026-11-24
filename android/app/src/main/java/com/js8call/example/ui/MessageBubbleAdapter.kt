@@ -94,7 +94,7 @@ class MessageBubbleAdapter : ListAdapter<MessageEntity, RecyclerView.ViewHolder>
             // Show SNR if available
             if (message.snr != null) {
                 snrText.visibility = View.VISIBLE
-                snrText.text = String.format("%+d dB", message.snr)
+                snrText.text = String.format(java.util.Locale.US, "%+d dB", message.snr)
             } else {
                 snrText.visibility = View.GONE
             }

@@ -19,6 +19,10 @@ android {
         // The app logs with android.util.Log on purpose (the crash reporter reads logcat);
         // it does not use Timber, whose lint check would flag every log call.
         disable += "LogNotTimber"
+        // The app is English-only and much of its text is radio data (callsigns, frequencies, SNR) that
+        // isn't translated; this check flags every such setText. Localisation isn't a security or
+        // correctness issue; locale-sensitive number formatting is still caught by DefaultLocale.
+        disable += "SetTextI18n"
         // Dependency and target-SDK freshness changes whenever upstream ships a release, which would
         // fail unchanged code; Dependabot tracks dependency updates instead.
         disable += setOf("GradleDependency", "AndroidGradlePluginVersion", "NewerVersionAvailable", "OldTargetApi")

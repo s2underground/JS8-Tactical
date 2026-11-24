@@ -398,7 +398,7 @@ class MapFragment : Fragment() {
         val km = Geo.distanceKm(from, to)
         val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
         val dir = dirs[(((Geo.bearingDeg(from, to) + 22.5) % 360) / 45).toInt()]
-        return if (km < 10) String.format("%.1f km %s", km, dir) else "${km.toInt()} km $dir"
+        return if (km < 10) String.format(java.util.Locale.US, "%.1f km %s", km, dir) else "${km.toInt()} km $dir"
     }
 
     private fun point(p: LatLon) = Feature.fromGeometry(Point.fromLngLat(p.lon, p.lat))
