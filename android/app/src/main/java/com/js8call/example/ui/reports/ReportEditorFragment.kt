@@ -173,7 +173,7 @@ class ReportEditorFragment : Fragment() {
                 else NavHostFragment.findNavController(this@ReportEditorFragment).navigate(R.id.navigation_report_edit, Bundle().apply { putString(ARG_ID, copy.id) })
             }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(8) })
-        actions.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        actions.addView(MaterialButton(ctx, null, androidx.appcompat.R.attr.borderlessButtonStyle).apply {
             text = getString(R.string.reports_delete)
             setTextColor(0xFFFF6B6B.toInt())
             setOnClickListener {
