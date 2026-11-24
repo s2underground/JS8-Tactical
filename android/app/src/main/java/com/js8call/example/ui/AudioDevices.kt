@@ -93,6 +93,12 @@ object AudioDevices {
             append("  %04x:%04x \"%s\" by \"%s\" · interfaces: %s · permission: %s\n".format(
                 java.util.Locale.US, u.vendorId, u.productId, product, maker, classes, usb?.hasPermission(u)))
         }
+        // What the USB serial driver makes of them: the ports Rig control can open for CAT. A radio
+        // whose audio works but has no port here is one the serial driver doesn't recognise.
+        append("USB serial ports found:\n")
+        val ports = runCatching { com.js8call.core.UsbSerialPortCatalog.listPorts(context) }
+        ports.onSuccess { list -> if (list.isEmpty()) append("  (none)\n") else list.forEach { append("  ${it.label}\n") } }
+            .onFailure { append("  (could not list: ${it.message})\n") }
     }
 
     /**
