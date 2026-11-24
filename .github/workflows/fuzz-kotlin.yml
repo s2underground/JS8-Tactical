@@ -2,8 +2,9 @@ name: Fuzz Kotlin parsers
 
 # Jazzer (coverage-guided fuzzing for the JVM) on the app's Kotlin code that reads text received
 # over the air: store-and-forward commands and the access rule for handing out held messages,
-# report lines with their locations and times, message rollup, and the diagnostics privacy
-# scrub. A finding fails the run; its input and a Java reproducer are kept as an artifact.
+# report lines with their locations and times, message rollup, the diagnostics privacy
+# scrub, and directed/relay frames with their checksums and reply paths. A finding fails the run;
+# its input and a Java reproducer are kept as an artifact.
 on:
   schedule:
     - cron: '41 5 * * 0'   # weekly, Sunday 05:41 UTC
@@ -17,6 +18,9 @@ on:
       - 'android/app/src/main/java/com/js8call/example/reports/Geo.kt'
       - 'android/app/src/main/java/com/js8call/example/rollup/RollupEngine.kt'
       - 'android/app/src/main/java/com/js8call/example/DiagnosticsPrivacy.kt'
+      - 'android/app/src/main/java/com/js8call/example/service/RelayProtocol.kt'
+      - 'android/app/src/main/java/com/js8call/example/util/Js8Commands.kt'
+      - 'android/app/src/main/java/com/js8call/example/util/CallsignValidator.kt'
   workflow_dispatch:
     inputs:
       seconds:
