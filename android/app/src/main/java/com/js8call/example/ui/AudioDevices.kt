@@ -35,7 +35,64 @@ object AudioDevices {
         AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "Bluetooth Audio"
         AudioDeviceInfo.TYPE_LINE_ANALOG -> "Line Input"
         AudioDeviceInfo.TYPE_LINE_DIGITAL -> "Digital Line Input"
-        else -> null
+        // Phone-call, broadcast-tuner and internal routing inputs can't carry rig audio.
+        in NOT_RIG_INPUTS -> null
+        // Any other input Android reports (a radio's built-in sound card can show up under an
+        // unexpected type) is offered rather than hidden, under the name the device gives itself.
+        else -> (device.productName?.toString()?.takeIf { it.isNotBlank() } ?: "Audio input") + " (type ${device.type})"
+    }
+
+    /** Telephony, FM/TV tuner, remote submix and echo reference. */
+    private val NOT_RIG_INPUTS = setOf(18, 16, 17, 25, 28)
+
+    private fun typeName(type: Int): String = when (type) {
+        AudioDeviceInfo.TYPE_BUILTIN_MIC -> "BUILTIN_MIC"
+        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "BUILTIN_SPEAKER"
+        AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "BUILTIN_EARPIECE"
+        AudioDeviceInfo.TYPE_WIRED_HEADSET -> "WIRED_HEADSET"
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "WIRED_HEADPHONES"
+        AudioDeviceInfo.TYPE_USB_DEVICE -> "USB_DEVICE"
+        AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB_ACCESSORY"
+        AudioDeviceInfo.TYPE_USB_HEADSET -> "USB_HEADSET"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "BLUETOOTH_SCO"
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "BLUETOOTH_A2DP"
+        AudioDeviceInfo.TYPE_LINE_ANALOG -> "LINE_ANALOG"
+        AudioDeviceInfo.TYPE_LINE_DIGITAL -> "LINE_DIGITAL"
+        AudioDeviceInfo.TYPE_TELEPHONY -> "TELEPHONY"
+        AudioDeviceInfo.TYPE_REMOTE_SUBMIX -> "REMOTE_SUBMIX"
+        AudioDeviceInfo.TYPE_FM_TUNER -> "FM_TUNER"
+        AudioDeviceInfo.TYPE_HDMI -> "HDMI"
+        else -> "type $type"
+    }
+
+    /**
+     * Every audio device and USB device Android reports, for the diagnostics report: what a
+     * radio's sound card or serial chip looks like on this phone, and whether the app offers it.
+     */
+    fun diagnostics(context: Context): String = buildString {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        append("Inputs:\n")
+        for (d in am.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+            append("  id ${d.id} ${typeName(d.type)} \"${d.productName}\" offered as: ${nameFor(d) ?: "(not offered)"}")
+            append(" · rates ${d.sampleRates.joinToString(",").ifEmpty { "any" }} · channels ${d.channelCounts.joinToString(",").ifEmpty { "any" }}\n")
+        }
+        append("Outputs:\n")
+        for (d in am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            append("  id ${d.id} ${typeName(d.type)} \"${d.productName}\"\n")
+        }
+        append("USB devices:\n")
+        val usb = context.getSystemService(Context.USB_SERVICE) as? android.hardware.usb.UsbManager
+        val list = usb?.deviceList?.values.orEmpty()
+        if (list.isEmpty()) append("  (none attached)\n")
+        for (u in list) {
+            val classes = (0 until u.interfaceCount).joinToString(",") { i ->
+                when (val c = u.getInterface(i).interfaceClass) { 1 -> "audio"; 2 -> "cdc"; 10 -> "cdc-data"; 3 -> "hid"; 255 -> "vendor"; else -> "class $c" }
+            }
+            val product = runCatching { u.productName }.getOrNull()
+            val maker = runCatching { u.manufacturerName }.getOrNull()
+            append("  %04x:%04x \"%s\" by \"%s\" · interfaces: %s · permission: %s\n".format(
+                java.util.Locale.US, u.vendorId, u.productId, product, maker, classes, usb?.hasPermission(u)))
+        }
     }
 
     /**
@@ -58,10 +115,19 @@ object AudioDevices {
 
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val devices = mutableListOf<Device>()
-        for (device in audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
-            if (!device.isSource) continue
-            val name = nameFor(device) ?: continue
-            devices.add(Device(device.id, name))
+        val inputs = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .filter { it.isSource }
+            .mapNotNull { d -> nameFor(d)?.let { d to it } }
+        // Phones often have two built-in mics with the same name; tell them apart by where Android
+        // says they are ("bottom", "back"), or number them when it doesn't say.
+        val counts = inputs.groupingBy { it.second }.eachCount()
+        val seen = mutableMapOf<String, Int>()
+        for ((device, name) in inputs) {
+            if ((counts[name] ?: 0) < 2) { devices.add(Device(device.id, name)); continue }
+            val n = (seen[name] ?: 0) + 1
+            seen[name] = n
+            val where = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) device.address.takeIf { it.isNotBlank() } else null
+            devices.add(Device(device.id, "$name (${where ?: n})"))
         }
 
         if (devices.isEmpty()) {

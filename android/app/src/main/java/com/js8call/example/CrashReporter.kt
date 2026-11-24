@@ -290,6 +290,8 @@ object CrashReporter {
         sb.append("== Past crash/ANR reports (each shown once, oldest first)\n")
             .append(if (past.isBlank()) "(none)\n" else distinctReports(past).takeLast(48_000)).append('\n')
         val drops = com.js8call.example.service.UsbDropouts.text(ctx)
+        sb.append("== Audio and USB devices\n")
+            .append(runCatching { com.js8call.example.ui.AudioDevices.diagnostics(ctx) }.getOrElse { "(could not list: ${it.message})\n" }).append('\n')
         sb.append("== Radio USB dropouts\n").append(if (drops.isBlank()) "(none recorded)\n" else drops.takeLast(12_000)).append('\n')
         val echoes = com.js8call.example.ui.traffic.OwnEchoLog.text(ctx)
         sb.append("== Own transmissions heard back (sent vs heard offset)\n").append(if (echoes.isBlank()) "(none decoded)\n" else echoes.takeLast(8_000)).append('\n')
