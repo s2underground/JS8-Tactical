@@ -17,6 +17,9 @@ import kotlin.math.max
  *    signals hop between tones and pause between slots, so they never look like this. Tones
  *    that are present here most of the time (a power supply, a local "birdie") are learned and
  *    reported as resident rather than as new interference.
+ *    A steady tone sitting exactly on a power-line harmonic (n × 50 or n × 60 Hz, low in the
+ *    passband) is reported as probable hum from the station's own setup (a charger, a ground
+ *    loop), not as interference.
  *  - SWEEP: a narrow signal sliding across the passband, again and again.
  *  - PULSE: the whole passband switching on and off in a rhythm.
  *
@@ -51,6 +54,8 @@ class InterferenceDetector(
         val carriersHz: List<Int>,
         /** Steady tones that are normally present on this dial (likely local). */
         val residentCarriersHz: List<Int>,
+        /** Steady tones on a power-line harmonic: probably hum from the station's own setup. */
+        val humHz: List<Int>,
         /** Stations normally decoded here have gone silent for the last 5 minutes. */
         val decodesQuiet: Boolean,
         /** Decodes still coming in, but this many dB weaker than usual. */
@@ -69,7 +74,7 @@ class InterferenceDetector(
 
         companion object {
             fun none(dialHz: Long, ready: Boolean = false) =
-                Assessment(dialHz, Level.NONE, emptySet(), null, emptyList(), emptyList(), false, null, null, ready)
+                Assessment(dialHz, Level.NONE, emptySet(), null, emptyList(), emptyList(), emptyList(), false, null, null, ready)
         }
     }
 
@@ -95,6 +100,9 @@ class InterferenceDetector(
     private class Window(val index: Long) {
         val frameFloors = ArrayList<Float>(160)
         val toneFrames = IntArray(CELLS)
+        /** Measured frequency of each cell's tone (sum and count over the frames it was there). */
+        val toneHzSum = DoubleArray(CELLS)
+        val toneHzN = IntArray(CELLS)
         var frames = 0
         val peaks = ArrayList<Int>(160) // strongest cell per frame, or -1
         var decodes = 0
@@ -105,6 +113,8 @@ class InterferenceDetector(
         val index: Long,
         val floorDb: Float,
         val toneOcc: FloatArray,
+        /** Mean measured frequency of each cell's tone; NaN when it had none. */
+        val toneHz: FloatArray,
         val sweeps: Int,
         val pulsed: Boolean,
         val decodes: Int,
@@ -119,6 +129,8 @@ class InterferenceDetector(
     private var assessment = Assessment.none(0)
     private var findingSinceMs: Long? = null
     private val cellDb = FloatArray(CELLS)
+    private val cellFirstBin = IntArray(CELLS)
+    private val cellEndBin = IntArray(CELLS)
     private val sortScratch = FloatArray(CELLS)
 
     /** The latest judgement (updated every 15 s). */
@@ -158,7 +170,10 @@ class InterferenceDetector(
         var peakCell = -1
         var peakDb = floor + PEAK_DB
         for (c in 0 until CELLS) {
-            if (cellDb[c] >= floor + TONE_DB) w.toneFrames[c]++
+            if (cellDb[c] >= floor + TONE_DB) {
+                w.toneFrames[c]++
+                toneHz(bins, binHz, c)?.let { w.toneHzSum[c] += it; w.toneHzN[c]++ }
+            }
             if (cellDb[c] >= peakDb) { peakDb = cellDb[c]; peakCell = c }
         }
         w.peaks += peakCell
@@ -183,6 +198,19 @@ class InterferenceDetector(
         return Window(index).also { current = it }
     }
 
+    /**
+     * Where in cell [c] the tone actually is: the power-weighted centre of the strongest bin and
+     * its two neighbours each side, in Hz. Sub-bin precision (bins are under 1 Hz apart).
+     */
+    private fun toneHz(bins: FloatArray, binHz: Float, c: Int): Double? {
+        var peak = cellFirstBin[c]
+        for (i in cellFirstBin[c] until cellEndBin[c]) if (bins[i] > bins[peak]) peak = i
+        var p = 0.0
+        var pf = 0.0
+        for (i in max(0, peak - 2)..minOf(bins.size - 1, peak + 2)) { p += bins[i]; pf += bins[i].toDouble() * i }
+        return if (p > 0) pf / p * binHz else null
+    }
+
     /** Average the bins into 25 Hz cells across the passband, in dB. False if the spectrum doesn't cover it. */
     private fun cells(bins: FloatArray, binHz: Float): Boolean {
         val first = (LOW_HZ / binHz).toInt()
@@ -191,6 +219,8 @@ class InterferenceDetector(
         for (c in 0 until CELLS) {
             val a = first + (c * perCell).toInt()
             val b = max(a + 1, first + ((c + 1) * perCell).toInt())
+            cellFirstBin[c] = a
+            cellEndBin[c] = b
             var sum = 0.0
             for (i in a until b) sum += bins[i]
             cellDb[c] = (10 * log10(sum / (b - a) + 1e-20)).toFloat()
@@ -203,6 +233,7 @@ class InterferenceDetector(
         val floors = w.frameFloors.sorted()
         val floor = floors[floors.size / 2]
         val occ = FloatArray(CELLS) { w.toneFrames[it].toFloat() / w.frames }
+        val toneHz = FloatArray(CELLS) { if (w.toneHzN[it] > 0) (w.toneHzSum[it] / w.toneHzN[it]).toFloat() else Float.NaN }
         // Pulsing: the frame floors jump between two levels at least 8 dB apart, many times.
         val lo = floors[floors.size / 10]
         val hi = floors[floors.size * 9 / 10]
@@ -212,7 +243,7 @@ class InterferenceDetector(
             var above = w.frameFloors.first() > mid
             for (f in w.frameFloors) { val a = f > mid; if (a != above) { transitions++; above = a } }
         }
-        val summary = Summary(w.index, floor, occ, countSweeps(w.peaks), transitions >= 6, w.decodes, w.snrs.toList())
+        val summary = Summary(w.index, floor, occ, toneHz, countSweeps(w.peaks), transitions >= 6, w.decodes, w.snrs.toList())
         recent.addLast(summary)
         while (recent.size > HISTORY_WINDOWS) recent.removeFirst()
         assessment = evaluate(nowMs)
@@ -266,6 +297,7 @@ class InterferenceDetector(
         // Steady tones through four windows (a minute, across slot boundaries).
         val newCarriers = ArrayList<Int>()
         val resident = ArrayList<Int>()
+        val hum = ArrayList<Int>()
         if (last.size >= CARRIER_WINDOWS) {
             val span = last.takeLast(CARRIER_WINDOWS)
             var c = 0
@@ -273,10 +305,16 @@ class InterferenceDetector(
                 if (span.all { it.toneOcc[c] >= CARRIER_OCC }) {
                     var end = c
                     while (end + 1 < CELLS && span.all { it.toneOcc[end + 1] >= CARRIER_OCC }) end++
-                    val mid = (c + end) / 2
-                    val hz = (LOW_HZ + (mid + 0.5f) * CELL_HZ).toInt()
+                    // The measured frequency in the run's most steadily occupied cell.
+                    val best = (c..end).maxByOrNull { cell -> span.sumOf { it.toneOcc[cell].toDouble() } } ?: c
+                    val measured = span.map { it.toneHz[best] }.filter { !it.isNaN() }.takeIf { it.isNotEmpty() }?.average()
+                    val hz = measured?.let { Math.round(it).toInt() } ?: (LOW_HZ + ((c + end) / 2 + 0.5f) * CELL_HZ).toInt()
                     val known = (c..end).any { (base?.toneOccupancy?.get(it) ?: 0f) >= RESIDENT_OCC }
-                    if (known) resident += hz else newCarriers += hz
+                    when {
+                        measured != null && isPowerLineHarmonic(measured) -> hum += hz
+                        known -> resident += hz
+                        else -> newCarriers += hz
+                    }
                     c = end + 1
                 } else c++
             }
@@ -309,7 +347,7 @@ class InterferenceDetector(
         }
         val since = if (level == Level.NONE) null else (findingSinceMs ?: (last[last.size - 3].index * WINDOW_MS))
         findingSinceMs = since
-        return Assessment(dialHz, level, kinds, above, newCarriers, resident, quiet && level != Level.NONE, snrDrop, since, ready)
+        return Assessment(dialHz, level, kinds, above, newCarriers, resident, hum, quiet && level != Level.NONE, snrDrop, since, ready)
     }
 
     /** Fold a normal window into the baseline (never one with a finding, so interference isn't learned as normal). */
@@ -356,6 +394,16 @@ class InterferenceDetector(
         const val BASELINE_CAP = 10_000
         /** Tone learning time constant, in windows (1 hour). */
         const val TONE_TIME_WINDOWS = 240f
+
+        /** Highest harmonic of 50/60 Hz mains treated as hum (up to 600/720 Hz). */
+        const val HUM_MAX_HARMONIC = 12
+        const val HUM_TOL_HZ = 1.2
+
+        /** Within [HUM_TOL_HZ] of n × 50 or n × 60 Hz (n ≤ [HUM_MAX_HARMONIC]). */
+        fun isPowerLineHarmonic(hz: Double): Boolean = listOf(50.0, 60.0).any { mains ->
+            val n = Math.round(hz / mains)
+            n in 1..HUM_MAX_HARMONIC && abs(hz - n * mains) <= HUM_TOL_HZ
+        }
 
         fun khz(dialHz: Long) = dialHz / 1000
         fun hourOf(ms: Long) = ((ms / 3_600_000L) % 24).toInt()

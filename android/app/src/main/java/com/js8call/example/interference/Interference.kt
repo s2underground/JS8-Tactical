@@ -91,7 +91,7 @@ object Interference {
     fun diagnostics(): String = synchronized(lock) {
         val a = lastPublished ?: return@synchronized "watch idle\n"
         "dial ${a.dialHz / 1000} kHz · ${a.level} ${a.kinds} · floor ${a.noiseAboveDb?.let { "%+.1f dB".format(java.util.Locale.US, it) } ?: "no baseline"}" +
-            " · carriers ${a.carriersHz} · resident ${a.residentCarriersHz} · quiet ${a.decodesQuiet} · snr drop ${a.snrDropDb}\n" +
+            " · carriers ${a.carriersHz} · resident ${a.residentCarriersHz} · hum ${a.humHz} · quiet ${a.decodesQuiet} · snr drop ${a.snrDropDb}\n" +
             "baselines for ${detector?.baselines?.size ?: 0} dials\n"
     }
 }

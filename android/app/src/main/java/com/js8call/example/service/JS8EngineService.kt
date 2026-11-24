@@ -1214,6 +1214,8 @@ class JS8EngineService : Service() {
     private fun openTruSdxSerialUsb(selection: SerialSelection, generation: Int) {
         var deviceId = selection.usbDeviceId
         var portIndex = selection.portIndex
+        // A hand-picked port goes stale when the radio is unplugged (Android renumbers devices).
+        if (deviceId != null && UsbPermissionHelper.findUsbDeviceById(this, deviceId) == null) deviceId = null
         if (deviceId == null) {
             val ports = try {
                 UsbSerialPortCatalog.listPorts(this)
@@ -1332,6 +1334,8 @@ class JS8EngineService : Service() {
 
         var deviceId = selection.usbDeviceId
         var portIndex = selection.portIndex
+        // A hand-picked port goes stale when the radio is unplugged (Android renumbers devices).
+        if (deviceId != null && UsbPermissionHelper.findUsbDeviceById(this, deviceId) == null) deviceId = null
         if (deviceId == null) {
             val firstPort = try { UsbSerialPortCatalog.listPorts(this).firstOrNull() } catch (_: Throwable) { null }
             deviceId = firstPort?.deviceId
@@ -1647,6 +1651,12 @@ class JS8EngineService : Service() {
         // Dual-port USB serial chips (the Xiegu X6100/X6200's WCH CH342, for one) carry CAT on
         // just one of them, and not always the first.
         var autoPorts: List<Int> = emptyList()
+        // Android gives a USB device a new id every time it is plugged in, so a port picked by hand
+        // goes stale after an unplug. Then do what Auto does rather than give up.
+        if (deviceId != null && UsbPermissionHelper.findUsbDeviceById(this, deviceId) == null) {
+            Log.w(TAG, "The USB serial device picked in Settings (id=$deviceId) isn't plugged in; looking for another")
+            deviceId = null
+        }
         if (deviceId == null) {
             val ports = try {
                 UsbSerialPortCatalog.listPorts(this)
@@ -1690,7 +1700,7 @@ class JS8EngineService : Service() {
                 }
             }
             Log.w(TAG, "No USB serial device found for Hamlib")
-            broadcastError("No USB serial device found for Hamlib control.")
+            broadcastError("No USB serial device found for rig control. Check the radio's USB cable, then Settings → Radio.")
             rigCtlErrorShown = true
             return
         }

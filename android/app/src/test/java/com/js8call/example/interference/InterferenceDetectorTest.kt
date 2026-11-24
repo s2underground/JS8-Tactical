@@ -108,6 +108,50 @@ class InterferenceDetectorTest {
     }
 
     @Test
+    fun carrierFrequencyIsMeasuredNotRoundedToItsCell() {
+        val d = InterferenceDetector()
+        d.learnNormal()
+        d.run(2 * 60, decodeEvery = 15) { b, _ -> addTone(b, 1612f, 200f) }
+        // The 25 Hz cell is 1600–1625; the reading comes from the bins themselves.
+        assertTrue(d.assessment().carriersHz.toString(), d.assessment().carriersHz.any { abs(it - 1612) <= 2 })
+    }
+
+    @Test
+    fun aToneOnAPowerLineHarmonicIsHumNotInterference() {
+        listOf(300f, 360f, 400f).forEach { hz ->
+            val d = InterferenceDetector()
+            d.learnNormal()
+            d.run(2 * 60, decodeEvery = 15) { b, _ -> addTone(b, hz, 200f) }
+            val a = d.assessment()
+            assertTrue("$hz: ${a.humHz}", a.humHz.any { abs(it - hz) <= 2 })
+            assertTrue("$hz: ${a.carriersHz}", a.carriersHz.isEmpty())
+            assertEquals("$hz", Level.NONE, a.level)
+        }
+    }
+
+    @Test
+    fun aToneBetweenHarmonicsIsStillACarrier() {
+        val d = InterferenceDetector()
+        d.learnNormal()
+        d.run(2 * 60, decodeEvery = 15) { b, _ -> addTone(b, 333f, 200f) }
+        val a = d.assessment()
+        assertTrue(a.carriersHz.toString(), a.carriersHz.any { abs(it - 333) <= 2 })
+        assertTrue(a.humHz.toString(), a.humHz.isEmpty())
+        assertEquals(Level.LIKELY, a.level)
+    }
+
+    @Test
+    fun powerLineHarmonics() {
+        assertTrue(InterferenceDetector.isPowerLineHarmonic(300.0))
+        assertTrue(InterferenceDetector.isPowerLineHarmonic(299.2))
+        assertTrue(InterferenceDetector.isPowerLineHarmonic(450.0))
+        assertTrue(InterferenceDetector.isPowerLineHarmonic(720.5))
+        assertFalse(InterferenceDetector.isPowerLineHarmonic(312.0))
+        assertFalse(InterferenceDetector.isPowerLineHarmonic(1500.0)) // past the 12th harmonic
+        assertFalse(InterferenceDetector.isPowerLineHarmonic(25.0))
+    }
+
+    @Test
     fun busyJs8TrafficIsNotACarrier() {
         val d = InterferenceDetector()
         d.run(10 * 60, decodeEvery = 15) { b, t -> js8(900f, 400f)(b, t); js8(1500f, 400f)(b, t); js8(2100f, 80f)(b, t) }

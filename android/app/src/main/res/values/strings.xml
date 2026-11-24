@@ -853,6 +853,7 @@
     <string name="interference_detail_pulse">Noise across the passband switching on and off</string>
     <string name="interference_detail_quiet">Stations normally decoded here have gone silent (last 5 minutes)</string>
     <string name="interference_detail_weaker">Stations still decode, but %1$s dB weaker than usual</string>
+    <string name="interference_detail_hum">Steady tone at %1$s Hz, exactly on a power-line harmonic: probably hum from your own setup (charger, power supply, ground loop), not interference (ignored)</string>
     <string name="interference_detail_resident">Steady tones normally present here, likely local (ignored): %1$s Hz</string>
     <string name="interference_since">Since %1$s</string>
     <string name="interference_possible_note">Stations are still decoding normally, so this could also be a change in audio or RF gain.</string>

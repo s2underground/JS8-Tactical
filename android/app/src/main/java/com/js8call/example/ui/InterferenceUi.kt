@@ -41,6 +41,7 @@ object InterferenceUi {
         if (Kind.PULSE in a.kinds) append("• ").append(ctx.getString(R.string.interference_detail_pulse)).append('\n')
         if (a.decodesQuiet) append("• ").append(ctx.getString(R.string.interference_detail_quiet)).append('\n')
         a.snrDropDb?.let { append("• ").append(ctx.getString(R.string.interference_detail_weaker, String.format(Locale.US, "%.0f", it))).append('\n') }
+        if (a.humHz.isNotEmpty()) append("• ").append(ctx.getString(R.string.interference_detail_hum, a.humHz.joinToString(", "))).append('\n')
         if (a.residentCarriersHz.isNotEmpty()) append("• ").append(ctx.getString(R.string.interference_detail_resident, a.residentCarriersHz.joinToString(", "))).append('\n')
         a.sinceMs?.let { append('\n').append(ctx.getString(R.string.interference_since, Reports.dtg(it))).append('\n') }
         if (a.level == Level.POSSIBLE) append('\n').append(ctx.getString(R.string.interference_possible_note)).append('\n')
