@@ -133,7 +133,9 @@ object Geo {
             (61 + 90 * t1 + 298 * c1 + 45 * t1 * t1 - 252 * EP2 - 3 * c1 * c1) * d.pow(6) / 720)
         val lon = (d - (1 + 2 * t1 + c1) * d.pow(3) / 6 +
             (5 - 2 * c1 + 28 * t1 - 3 * c1 * c1 + 8 * EP2 + 24 * t1 * t1) * d.pow(5) / 120) / cos(phi1)
-        return LatLon(Math.toDegrees(lat), lon0 + Math.toDegrees(lon))
+        // A square at the edge of zone 1 or 60 can reach past the antimeridian: wrap into -180..180.
+        val lonDeg = lon0 + Math.toDegrees(lon)
+        return LatLon(Math.toDegrees(lat), ((lonDeg + 540.0) % 360.0) - 180.0)
     }
 
     private const val BANDS = "CDEFGHJKLMNPQRSTUVWX"

@@ -42,7 +42,9 @@ jobs:
           sudo apt-get install -y clang libclang-rt-dev
 
       - name: Fuzz
-        run: scripts/fuzz-core.sh "${{ github.event.inputs.seconds || '900' }}"
+        env:
+          SECONDS_TO_FUZZ: ${{ github.event.inputs.seconds || '900' }}
+        run: scripts/fuzz-core.sh "$SECONDS_TO_FUZZ"
 
       - name: Keep crashing inputs
         if: failure()

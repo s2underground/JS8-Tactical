@@ -39,7 +39,9 @@ and decides what goes into each release.
 - Automated tests (Kotlin unit tests and native core tests) run on every change.
 - Static analysis: CodeQL on the native code and Android lint on the app.
 - The JS8 frame decoders, which handle everything received over the air, are fuzz-tested with
-  sanitizers ([scripts/fuzz-core.sh](scripts/fuzz-core.sh)).
+  sanitizers ([scripts/fuzz-core.sh](scripts/fuzz-core.sh)), and so is the app code that reads
+  received text: store-and-forward commands, report lines, message rollup
+  ([scripts/fuzz-kotlin.sh](scripts/fuzz-kotlin.sh)). Unit-test coverage is measured on every build.
 - Dependencies are monitored for known vulnerabilities, and the project's practices are scored
   by OpenSSF Scorecard.
 - What the app trusts, and the known gaps, are written down in

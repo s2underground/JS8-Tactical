@@ -91,4 +91,23 @@ class ReportsAndGeoTest {
         // 2026-11-18 13:42 UTC
         assertEquals("181342Z", Reports.dtg(1795009320000L))
     }
+
+    // Found by the Kotlin fuzzer.
+    @Test
+    fun dtgRejectsImpossibleTimes() {
+        val now = 1_795_000_000_000L
+        assertNull(Reports.dtgToMs("271183", now))  // minute 83
+        assertNull(Reports.dtgToMs("272500Z", now)) // hour 25
+        assertNull(Reports.dtgToMs("001200Z", now)) // day 0
+        assertNull(Reports.dtgToMs("321200Z", now)) // day 32
+        assertNotNull(Reports.dtgToMs(Reports.dtg(now), now))
+    }
+
+    // Found by the Kotlin fuzzer: a square on the edge of zone 1 came out at longitude -180.6.
+    @Test
+    fun mgrsAtTheAntimeridianWraps() {
+        val p = Geo.parseLocation("1RAP")
+        assertNotNull(p)
+        assertTrue("$p", p!!.lon in -180.0..180.0 && p.lat in -90.0..90.0)
+    }
 }

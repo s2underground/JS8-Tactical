@@ -137,6 +137,8 @@ object Reports {
     fun dtgToMs(dtg: String, nowMs: Long = System.currentTimeMillis()): Long? {
         val m = Regex("""^(\d{2})(\d{2})(\d{2})Z?$""").find(dtg.trim().uppercase()) ?: return null
         val (d, h, mi) = m.destructured
+        // Calendar would quietly roll "312599Z" over into the next day; refuse impossible times instead.
+        if (d.toInt() !in 1..31 || h.toInt() > 23 || mi.toInt() > 59) return null
         val c = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = nowMs }
         repeat(2) {
             val t = (c.clone() as java.util.Calendar).apply {

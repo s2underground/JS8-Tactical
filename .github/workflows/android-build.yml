@@ -194,6 +194,22 @@ jobs:
       working-directory: android
       run: ./gradlew test
 
+    # Unit-test line coverage (JaCoCo): totals in the run summary, full report as an artifact.
+    - name: Coverage report
+      if: matrix.build-type == 'debug'
+      working-directory: android
+      run: |
+        ./gradlew :app:createDebugUnitTestCoverageReport
+        python3 ../scripts/coverage-summary.py app/build/reports/coverage/test/debug/report.xml | tee -a "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload coverage report
+      if: matrix.build-type == 'debug'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: coverage-report
+        path: android/app/build/reports/coverage/test/debug/
+        if-no-files-found: ignore
+
     # Static analysis of the Kotlin/Android code (includes Android's security checks). Known
     # findings live in android/app/lint-baseline.xml; anything new fails this job, but only after
     # the test build below has been published, so a lint finding never holds up testing.
