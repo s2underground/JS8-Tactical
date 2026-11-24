@@ -17,6 +17,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.createBitmap
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
@@ -531,7 +532,7 @@ class MapFragment : Fragment() {
     /** Warning triangle with a zigzag: an amber marker that reads as "interference" at a glance. */
     private fun jamIcon(): Bitmap {
         val size = dp(30)
-        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val bmp = createBitmap(size, size)
         val c = Canvas(bmp)
         val s = size.toFloat()
         val tri = Path().apply { moveTo(s / 2, s * 0.06f); lineTo(s * 0.96f, s * 0.9f); lineTo(s * 0.04f, s * 0.9f); close() }
