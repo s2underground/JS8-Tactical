@@ -173,7 +173,7 @@
             android:textColor="@color/tac_alert"
             android:textSize="14sp"
             android:textStyle="bold"
-            tools:text="Sending · frame 2 of 5" />
+            tools:text="Sending · on air: frame 2 of 5" />
 
         <TextView
             android:id="@+id/tx_text"
