@@ -185,6 +185,27 @@ class InterferenceDetectorTest {
     }
 
     @Test
+    fun tuningAnAntennaIsNotASweep() {
+        // A few seconds of sweeping (an antenna tuner hunting, the radio keyed for a tune), right
+        // across a window boundary so it touches two windows, then again a minute later.
+        val d = InterferenceDetector()
+        d.learnNormal()
+        val t0 = now // on a window boundary
+        d.run(4 * 60, decodeEvery = 15) { b, t ->
+            val r = t - t0
+            if (r in 12_000L until 18_000L || r in 72_000L until 78_000L) addTone(b, 400f + 2200f * ((r % 1000) / 1000f), 300f)
+        }
+        assertFalse(d.assessment().kinds.toString(), Kind.SWEEP in d.assessment().kinds)
+
+        // Checked right after a tune, too, not only minutes later.
+        val d2 = InterferenceDetector()
+        d2.learnNormal()
+        val t1 = now
+        d2.run(40, decodeEvery = 15) { b, t -> val r = t - t1; if (r in 12_000L until 18_000L) addTone(b, 400f + 2200f * ((r % 1000) / 1000f), 300f) }
+        assertFalse(d2.assessment().kinds.toString(), Kind.SWEEP in d2.assessment().kinds)
+    }
+
+    @Test
     fun fastAndSlowSweepsAreFound() {
         listOf(800L, 6_000L).forEach { periodMs ->
             val d = InterferenceDetector()
