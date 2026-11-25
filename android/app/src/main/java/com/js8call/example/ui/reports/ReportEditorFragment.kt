@@ -225,15 +225,23 @@ class ReportEditorFragment : Fragment() {
     private lateinit var asMessageSwitch: MaterialSwitch
     private lateinit var asMessageNote: TextView
 
+    /**
+     * What the recipient's JS8Call does with a MSG, per the desktop source
+     * (mainwindow.cpp, command processing): stored in the inbox when addressed to
+     * the station or to a group it has joined; a MSG to @ALLCALL is not stored.
+     */
     private fun renderAsMessageNote() {
-        asMessageNote.text = getString(
-            when {
-                !draft.asMessage -> R.string.reports_as_message_off
-                draft.to.isBlank() -> R.string.reports_as_message_needs_to
-                else -> R.string.reports_as_message_on
-            }
-        )
-        asMessageNote.setTextColor(color(if (draft.asMessage && draft.to.isBlank()) R.color.tac_accent else R.color.tac_text_quiet))
+        val to = draft.to.trim().uppercase()
+        val allcall = to == "@ALLCALL"
+        val warn = draft.asMessage && (to.isBlank() || allcall)
+        asMessageNote.text = when {
+            !draft.asMessage -> getString(R.string.reports_as_message_off)
+            to.isBlank() -> getString(R.string.reports_as_message_needs_to)
+            allcall -> getString(R.string.reports_as_message_allcall)
+            to.startsWith("@") -> getString(R.string.reports_as_message_on_group, to)
+            else -> getString(R.string.reports_as_message_on, to)
+        }
+        asMessageNote.setTextColor(color(if (warn) R.color.tac_accent else R.color.tac_text_quiet))
     }
 
     private var deleted = false

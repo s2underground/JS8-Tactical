@@ -646,7 +646,9 @@
     <string name="reports_to">To</string>
     <string name="reports_as_message">Send as a message (MSG)</string>
     <string name="reports_as_message_off">Off: shows in band activity. On: sent with JS8\'s MSG command, so JS8Call stores it in the recipient\'s inbox.</string>
-    <string name="reports_as_message_on">Goes out as "TO MSG …": JS8Call stores it in the recipient\'s inbox.</string>
+    <string name="reports_as_message_on">Goes out as "%1$s MSG …": JS8Call stores it in %1$s\'s inbox.</string>
+    <string name="reports_as_message_on_group">Goes out as "%1$s MSG …": JS8Call stores it in the inbox of stations that have joined %1$s.</string>
+    <string name="reports_as_message_allcall">JS8Call doesn\'t store a MSG to @ALLCALL in anyone\'s inbox; it only shows in band activity. Pick a callsign or a group to reach inboxes.</string>
     <string name="reports_as_message_needs_to">A message needs a recipient: add a callsign or @GROUP above. Without one, it goes out as ordinary text.</string>
     <string name="reports_armed">🔒 ARMED: goes out %1$s, in %2$s, %3$s</string>
     <string name="reports_armed_then">then %1$s</string>
