@@ -43,4 +43,27 @@ class DiagnosticsPrivacyTest {
         assertFalse(out.contains("KQ4BR", ignoreCase = true))
         assertEquals("via VE3/STATION-1, path 8.21./MY-STATION[6", out)
     }
+
+    // Audit (Nov 25): GPS fills the grid to 8 characters, and reports carry MGRS and coordinates.
+    @Test fun eightCharacterGridsMasked() {
+        assertEquals("grid [GRID] and [GRID]", scrub("grid em96ab12 and FN31pr45"))
+    }
+
+    @Test fun mgrsMaskedHoweverWritten() {
+        val out = scrub("#SPOT 17S MV 12345 67890 1500Z; #POS 17SMV1234567890; at 4QFJ 1234 5678; area 1C AA 0 0")
+        assertFalse(out.contains("12345"))
+        assertFalse(out.contains("1234567890"))
+        assertFalse(out.contains("4QFJ"))
+        assertEquals("#SPOT [MGRS] 1500Z; #POS [MGRS]; at [MGRS]; area [MGRS]", out)
+    }
+
+    @Test fun coordinatesMasked() {
+        val out = scrub("fix 35.12345, -84.56789 acc 5m; lat=35.1234 lon: -84.5678; Latitude 35.9")
+        assertEquals("fix [LATLON] acc 5m; lat=[COORD] lon: [COORD]; Latitude [COORD]", out)
+    }
+
+    @Test fun ordinaryNumbersStay() {
+        val s = "dial 7.078 MHz, offset 1500 Hz, dt 0.12, build 1.2.0-alpha.5, SM-X356B, Android 14, 300 Hz hum"
+        assertEquals(s, scrub(s))
+    }
 }
