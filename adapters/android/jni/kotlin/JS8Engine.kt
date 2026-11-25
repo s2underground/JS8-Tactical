@@ -48,6 +48,34 @@ class JS8Engine private constructor(
         fun countFrames(myCall: String, myGrid: String, selectedCall: String, text: String, submode: Int = 0): Int =
             nativeCountFrames(myCall, myGrid, selectedCall, text, submode)
 
+        /**
+         * The text each frame of [text] carries on air, in the order they go out,
+         * framed exactly as [transmitMessage] with the same arguments frames it.
+         * Joined they give the message as sent (addressee, sender, checksum
+         * included). Null if the text can't be framed.
+         */
+        fun frameTexts(
+            myCall: String,
+            myGrid: String,
+            selectedCall: String,
+            text: String,
+            submode: Int = 0,
+            forceIdentify: Boolean = false,
+            forceData: Boolean = false,
+        ): List<String>? =
+            nativeFrameTexts(myCall, myGrid, selectedCall, text, submode, forceIdentify, forceData)?.toList()
+
+        @JvmStatic
+        private external fun nativeFrameTexts(
+            myCall: String,
+            myGrid: String,
+            selectedCall: String,
+            text: String,
+            submode: Int,
+            forceIdentify: Boolean,
+            forceData: Boolean,
+        ): Array<String>?
+
         @JvmStatic
         private external fun nativeCountFrames(
             myCall: String,

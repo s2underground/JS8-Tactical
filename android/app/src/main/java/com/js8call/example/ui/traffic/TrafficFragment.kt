@@ -40,6 +40,8 @@ import java.util.TimeZone
 class TrafficFragment : Fragment() {
 
     private companion object {
+        /** Sent text kept in the "Sending" bar ahead of the frame on air. */
+        const val SENT_TAIL_CHARS = 120
         const val ECHO_SHOW_MS = 3 * 60_000L
         /** The mismatch dialog is shown once per app session. */
         var echoMismatchShown = false
@@ -414,6 +416,9 @@ class TrafficFragment : Fragment() {
         val liveBar: View = view.findViewById(R.id.live_bar)
         val liveFrom: TextView = view.findViewById(R.id.live_from)
         val liveText: TextView = view.findViewById(R.id.live_text)
+        val txBar: View = view.findViewById(R.id.tx_bar)
+        val txHead: TextView = view.findViewById(R.id.tx_head)
+        val txText: TextView = view.findViewById(R.id.tx_text)
 
         val stations = StationAdapter(onLongClick = { stationLongPress(it) }) { row ->
             when {
@@ -550,6 +555,47 @@ class TrafficFragment : Fragment() {
                 liveText.text = getString(R.string.traffic_live_text, live.frames, live.text)
             }
         }
+        traffic.sending.observe(viewLifecycleOwner) { sending ->
+            txBar.isVisible = sending != null
+            if (sending != null) renderSending(sending.progress, txHead, txText, txBar)
+        }
+    }
+
+    /**
+     * Our send as it goes out: what has been sent in full, the frame on air now
+     * (bold, transmit colour) and what is still queued (dim), so the operator
+     * sees exactly what other stations have had so far.
+     */
+    private fun renderSending(p: com.js8call.example.service.TxProgress, head: TextView, body: TextView, bar: View) {
+        val ctx = requireContext()
+        head.text = when {
+            p.onAirNumber > 0 -> getString(R.string.traffic_tx_on_air, p.onAirNumber, p.total)
+            p.complete -> getString(R.string.traffic_tx_done, p.total)
+            p.done > 0 -> getString(R.string.traffic_tx_between, p.done, p.total)
+            else -> resources.getQuantityString(R.plurals.traffic_tx_waiting, p.total, p.total)
+        }
+        head.setTextColor(ContextCompat.getColor(ctx, if (p.onAirNumber > 0) R.color.tac_alert else R.color.tac_text_dim))
+        // A long message keeps the frame on air in view: the oldest sent text gives way first.
+        var sent = p.sentText
+        if (sent.length > SENT_TAIL_CHARS) sent = "…" + sent.takeLast(SENT_TAIL_CHARS)
+        val sb = android.text.SpannableStringBuilder()
+        sb.append(sent)
+        if (p.onAirText.isNotEmpty()) {
+            val start = sb.length
+            sb.append(p.onAirText)
+            sb.setSpan(android.text.style.ForegroundColorSpan(ContextCompat.getColor(ctx, R.color.tac_alert)), start, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (p.queuedText.isNotEmpty()) {
+            val start = sb.length
+            sb.append(p.queuedText)
+            sb.setSpan(android.text.style.ForegroundColorSpan(ContextCompat.getColor(ctx, R.color.tac_text_quiet)), start, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        body.text = sb
+        bar.contentDescription = getString(
+            R.string.traffic_tx_desc, head.text,
+            p.sentText.trim().ifEmpty { "-" }, p.onAirText.trim().ifEmpty { "-" }, p.queuedText.trim().ifEmpty { "-" },
+        )
     }
 
     /** A #JAM report filled in from the interference watch, to review and send to the selected station or group. */

@@ -151,6 +151,42 @@
             tools:text="frame 2 · NEED 2 MORE VOLUNTEERS FOR" />
     </LinearLayout>
 
+    <!-- Our own send, frame by frame: sent text, the frame on air now, and what is still to go. -->
+    <LinearLayout
+        android:id="@+id/tx_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/bg_tx_bar"
+        android:minHeight="40dp"
+        android:orientation="vertical"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="8dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <TextView
+            android:id="@+id/tx_head"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/tac_alert"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            tools:text="Sending · frame 2 of 5" />
+
+        <TextView
+            android:id="@+id/tx_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="4"
+            android:textColor="@color/tac_text"
+            android:textSize="14sp"
+            tools:text="@RACES MSG ROADS CLOSED NORTH OF TOWN" />
+    </LinearLayout>
+
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"

@@ -318,6 +318,15 @@
     <string name="traffic_receiving_from">Receiving from %1$s</string>
     <string name="traffic_receiving_at">Receiving at +%1$d Hz</string>
     <string name="traffic_live_text">frame %1$d · %2$s</string>
+    <plurals name="traffic_tx_waiting">
+        <item quantity="one">Queued to send · %1$d frame, at the next slot</item>
+        <item quantity="other">Queued to send · %1$d frames, first at the next slot</item>
+    </plurals>
+    <string name="traffic_tx_on_air">Sending · frame %1$d of %2$d on air</string>
+    <string name="traffic_tx_between">Sending · %1$d of %2$d frames sent, next at the next slot</string>
+    <string name="traffic_tx_done">Sent · all %1$d frames</string>
+    <string name="traffic_tx_desc">%1$s. Sent: %2$s. On air: %3$s. Still to send: %4$s.</string>
+    <string name="traffic_tx_stopped_note">[STOPPED · %1$d OF %2$d FRAMES SENT]</string>
     <string name="traffic_request_resend">Request resend</string>
     <string name="traffic_resend_queued">Asked %1$s to repeat (AGN?)</string>
     <string name="traffic_raw_title">Raw frames</string>
