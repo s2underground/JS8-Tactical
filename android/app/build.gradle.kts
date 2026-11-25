@@ -93,7 +93,14 @@ android {
             // Test builds say so in their version ("1.2.0-alpha.1-test"), and are signed with the
             // release key when it's available, so they install over a release and vice versa.
             versionNameSuffix = "-test"
-            if (releaseReady) signingConfig = signingConfigs.getByName("release")
+            if (releaseReady) {
+                signingConfig = signingConfigs.getByName("release")
+                // A debuggable app carrying the release signature could be installed over a
+                // release and then read with `adb run-as` (second independent audit, N5): test
+                // builds signed with the release key are not debuggable. Local builds, signed
+                // with the debug key, still are.
+                isDebuggable = false
+            }
             // Line coverage of the unit tests: :app:createDebugUnitTestCoverageReport
             // (report in app/build/reports/coverage/test/debug; CI posts the totals).
             enableUnitTestCoverage = true

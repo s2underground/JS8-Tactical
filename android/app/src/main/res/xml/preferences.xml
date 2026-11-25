@@ -381,6 +381,13 @@
             app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
+            app:key="auto_reply_safeguard"
+            app:title="@string/settings_auto_reply_safeguard"
+            app:summary="@string/settings_auto_reply_safeguard_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
             app:key="relay_enabled"
             app:title="@string/settings_relay"
             app:summary="@string/settings_relay_summary"

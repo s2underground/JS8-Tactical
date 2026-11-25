@@ -574,6 +574,11 @@ class JS8EngineService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // If the app crashes while the radio may be keyed, try once to unkey it (CrashReporter).
+        emergencyUnkeyHook = {
+            val keyed = synchronized(pttStateLock) { rigPttAsserted || rigPttMaybeKeyed }
+            !keyed || setRigPtt(false)
+        }
         // Make sure Traffic is listening even if Android restarted this service without the app's screen.
         runCatching { com.js8call.example.ui.traffic.TrafficViewModel.of(applicationContext) }
         // The send queue must exist (and listen) even when no screen has opened yet.
@@ -709,6 +714,7 @@ class JS8EngineService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        emergencyUnkeyHook = null
         Log.i(TAG, "Service destroyed")
         (getSystemService(AUDIO_SERVICE) as AudioManager)
             .unregisterAudioDeviceCallback(audioDeviceCallback)
@@ -2132,7 +2138,9 @@ class JS8EngineService : Service() {
                     if (shouldReleasePtt) {
                         // Captured references, not setRigPtt: the fields already
                         // hold the transports the next start will use.
-                        val released = try {
+                        // A few tries, backing off, before the transport closes for good: once it is
+                        // closed nothing can unkey the radio (second audit, N4). About 7 s at most.
+                        fun releaseOnce(): Boolean = try {
                             when (shutdownMode) {
                                 "network" -> shutdownNetwork?.setPtt(false) == true
                                 "hamlib_usb" -> shutdownHamlib?.setPtt(false) == true
@@ -2150,6 +2158,13 @@ class JS8EngineService : Service() {
                             Log.e(TAG, "PTT release failed during shutdown", t)
                             false
                         }
+                        var released = releaseOnce()
+                        for (waitMs in longArrayOf(250, 500, 1_000, 2_000, 3_000)) {
+                            if (released) break
+                            Log.w(TAG, "PTT release failed during shutdown; trying again in $waitMs ms")
+                            Thread.sleep(waitMs)
+                            released = releaseOnce()
+                        }
                         if (released) {
                             synchronized(pttStateLock) {
                                 rigPttAsserted = false
@@ -2159,6 +2174,8 @@ class JS8EngineService : Service() {
                             mainHandler.post { clearPttStuckWarning() }
                         } else {
                             Log.e(TAG, "Unable to confirm PTT release during shutdown")
+                            // The receiver is stopping, so nothing will try again: tell the operator.
+                            mainHandler.post { showPttStuckWarning(PTT_RELEASE_WARN_AFTER, stillTrying = false) }
                         }
                     }
                     rigTeardownStep("Hamlib close") { shutdownHamlib?.shutdown() }
@@ -3318,6 +3335,13 @@ class JS8EngineService : Service() {
             handBack("until the radio connection has been stable for a while")
             return
         }
+        // The Net Switcher's hold after a band change protects an antenna that may not be tuned
+        // yet. It applies to every automatic send (heartbeat ACKs, query answers, relays and
+        // relay ACKs), held here in one place; the operator's own sends go when asked.
+        if (intent.getBooleanExtra(EXTRA_TX_AUTOMATIC, false) && System.currentTimeMillis() < netHoldUntilMs) {
+            handBack("until the Net Switcher's hold after a band change ends")
+            return
+        }
         if (isRigPttRequired() && !isRigControlConnected()) {
             handBack("until the rig link is up")
             // Set after the hand-back so the poller's kick lands behind it
@@ -3809,9 +3833,10 @@ class JS8EngineService : Service() {
         (250L shl (failures - 1).coerceIn(0, 5)).coerceAtMost(5_000L)
 
     /** Sticky warning: the app couldn't confirm the radio unkeyed (it keeps trying). */
-    private fun showPttStuckWarning(failures: Int) {
+    private fun showPttStuckWarning(failures: Int, stillTrying: Boolean = true) {
+        val text = getString(if (stillTrying) R.string.ptt_stuck_text else R.string.ptt_stuck_text_stopped, failures)
         Log.e(TAG, "PTT release failed $failures times in a row: the radio may still be transmitting")
-        broadcastError(getString(R.string.ptt_stuck_text, failures))
+        broadcastError(text)
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_ID_MESSAGES, getString(R.string.notification_message_channel_name), NotificationManager.IMPORTANCE_HIGH)
@@ -3827,8 +3852,8 @@ class JS8EngineService : Service() {
             NotificationCompat.Builder(this, CHANNEL_ID_MESSAGES)
                 .setSmallIcon(R.drawable.ic_stat_js8t)
                 .setContentTitle(getString(R.string.ptt_stuck_title))
-                .setContentText(getString(R.string.ptt_stuck_text, failures))
-                .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.ptt_stuck_text, failures)))
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setOngoing(true)
@@ -4529,6 +4554,20 @@ class JS8EngineService : Service() {
         /** True while the engine is running (process-wide; read by the send queue). */
         @Volatile var engineRunning: Boolean = false
             private set
+
+        @Volatile private var emergencyUnkeyHook: (() -> Boolean)? = null
+
+        /**
+         * Last resort from the crash handler: if the radio may be keyed, try once to unkey it,
+         * waiting at most [timeoutMs]. A crash while transmitting would otherwise leave a CAT- or
+         * RTS-keyed radio transmitting until its own time-out (second audit, N9).
+         */
+        fun emergencyUnkey(timeoutMs: Long) {
+            val hook = emergencyUnkeyHook ?: return
+            val t = Thread({ runCatching { hook() } }, "emergency-unkey").apply { isDaemon = true }
+            t.start()
+            runCatching { t.join(timeoutMs) }
+        }
 
         // Shared by service instances: stopping monitoring destroys the service
         // while a UV-Pro worker may still hold the radio's sockets.

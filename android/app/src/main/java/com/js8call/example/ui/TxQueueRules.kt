@@ -12,6 +12,10 @@ import com.js8call.example.model.TransmitMessage
  * Plain Kotlin, unit-tested (TxQueueRulesTest).
  */
 object TxQueueRules {
+    /** An automatic reply already waiting with the same text and addressee: the new one adds nothing. */
+    fun isDuplicateAuto(queue: List<TransmitMessage>, m: TransmitMessage): Boolean =
+        m.priority > 0 && queue.any { it.priority > 0 && it.text == m.text && it.directed == m.directed }
+
     /** Automatic replies allowed to go ahead of a waiting operator message, in a row. */
     const val AUTO_AHEAD_OF_OPERATOR = 1
 
@@ -32,5 +36,30 @@ object TxQueueRules {
             autoAheadOfOperator >= AUTO_AHEAD_OF_OPERATOR -> Pick(operatorWaiting, 0)
             else -> Pick(first, autoAheadOfOperator + 1)
         }
+    }
+}
+
+/**
+ * The auto-reply safeguard (Settings, on by default): at most [max] automatic replies in any
+ * [windowMs]. Other stations decide when automatic replies are due, so without a ceiling a busy
+ * band, or one station asking from many callsigns, could keep the radio transmitting. Standard
+ * JS8Call has no overall limit (only one reply per station per 15 minutes to @ALLCALL queries).
+ * The operator's own sends never count and are never limited.
+ */
+class AutoReplyBudget(private val max: Int = DEFAULT_MAX, private val windowMs: Long = DEFAULT_WINDOW_MS) {
+    private val sent = ArrayDeque<Long>()
+
+    /** Whether another automatic reply may go now. */
+    fun allows(now: Long): Boolean {
+        while (sent.isNotEmpty() && (now - sent.first() >= windowMs || sent.first() > now)) sent.removeFirst()
+        return sent.size < max
+    }
+
+    /** An automatic reply went out at [now]. */
+    fun record(now: Long) { sent.addLast(now) }
+
+    companion object {
+        const val DEFAULT_MAX = 5
+        const val DEFAULT_WINDOW_MS = 5 * 60_000L
     }
 }
