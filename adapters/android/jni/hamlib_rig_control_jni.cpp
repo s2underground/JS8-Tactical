@@ -35,6 +35,15 @@ struct RigOpenContext {
 
 constexpr auto kRigOpenTimeout = std::chrono::milliseconds(5000);
 
+// rig_open calls that timed out but are still running on their own thread. Each one goes on
+// talking through the one Android serial bridge and, when it finally gives up, closes it: if
+// the app has moved on to another port (or a new session) by then, that close lands on the port
+// now in use (audit M1, Nov 25). Callers wait for these to finish before opening the bridge
+// again (nativeWaitForPendingOpens).
+std::mutex g_orphan_mutex;
+std::condition_variable g_orphan_cv;
+int g_orphan_opens = 0;
+
 int hamlib_debug_callback(enum rig_debug_level_e level,
                           rig_ptr_t /*arg*/,
                           const char* format,
@@ -239,18 +248,26 @@ jlong open_rig_with_path(int rig_model,
 
   std::thread open_thread([open_ctx]() {
     int open_ret = rig_open(open_ctx->rig);
+    bool timed_out = false;
     {
       std::lock_guard<std::mutex> lock(open_ctx->mutex);
       open_ctx->result = open_ret;
       open_ctx->done = true;
+      timed_out = open_ctx->timed_out;  // read under the lock the waiter set it under
     }
     open_ctx->cv.notify_one();
 
-    if (open_ctx->timed_out) {
+    if (timed_out) {
       if (open_ret == RIG_OK) {
         rig_close(open_ctx->rig);
       }
       rig_cleanup(open_ctx->rig);
+      {
+        std::lock_guard<std::mutex> lock(g_orphan_mutex);
+        --g_orphan_opens;
+      }
+      g_orphan_cv.notify_all();
+      log_info("timed-out rig_open finished and cleaned up");
     }
   });
 
@@ -258,6 +275,10 @@ jlong open_rig_with_path(int rig_model,
     std::unique_lock<std::mutex> lock(open_ctx->mutex);
     if (!open_ctx->cv.wait_for(lock, kRigOpenTimeout, [&open_ctx]() { return open_ctx->done; })) {
       open_ctx->timed_out = true;
+      {
+        std::lock_guard<std::mutex> orphan_lock(g_orphan_mutex);
+        ++g_orphan_opens;
+      }
       lock.unlock();
       log_error("rig_open timed out: ", "no response");
       open_thread.detach();
@@ -401,6 +422,18 @@ Java_com_js8call_core_HamlibRigControl_nativeSetPtt(JNIEnv* /*env*/,
     log_error("rig_set_ptt failed: ", rigerror(ret));
   }
   return ret == RIG_OK ? JNI_TRUE : JNI_FALSE;
+}
+
+// Waits up to [timeout_ms] for every timed-out rig_open to finish and clean up. True when none
+// is left running.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_js8call_core_HamlibRigControl_nativeWaitForPendingOpens(JNIEnv* /*env*/,
+                                                                 jclass /*clazz*/,
+                                                                 jlong timeout_ms) {
+  std::unique_lock<std::mutex> lock(g_orphan_mutex);
+  bool const clear = g_orphan_cv.wait_for(
+      lock, std::chrono::milliseconds(timeout_ms < 0 ? 0 : timeout_ms), [] { return g_orphan_opens == 0; });
+  return clear ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jstring JNICALL

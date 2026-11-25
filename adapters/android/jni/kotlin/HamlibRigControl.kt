@@ -8,6 +8,17 @@ class HamlibRigControl {
         init {
             System.loadLibrary("js8core-jni")
         }
+
+        /**
+         * Waits up to [timeoutMs] for any rig open that timed out to finish in the background.
+         * Such an open goes on using the USB serial bridge and closes it when it gives up, so the
+         * bridge must not be reopened (another port, a new session) until it has. True when
+         * none is left running. Blocks: call off the main thread.
+         */
+        fun waitForPendingOpens(timeoutMs: Long): Boolean = nativeWaitForPendingOpens(timeoutMs)
+
+        @JvmStatic
+        private external fun nativeWaitForPendingOpens(timeoutMs: Long): Boolean
     }
 
     @Volatile

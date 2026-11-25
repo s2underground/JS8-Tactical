@@ -1788,6 +1788,14 @@ class JS8EngineService : Service() {
             var answeredOn: Int? = null
             for ((attempt, port) in (listOf(portIndex) + alternates).withIndex()) {
                 if (bridge !== usbSerialBridge) return@Thread // stopped meanwhile
+                // A rig open that timed out (this probe's last port, or an earlier session) is
+                // still running and will close the serial bridge when it gives up: wait for it,
+                // or that close would land on the port opened next.
+                if (!HamlibRigControl.waitForPendingOpens(PENDING_RIG_OPEN_WAIT_MS)) {
+                    Log.w(TAG, "An earlier rig open is still running; not opening the serial port again yet")
+                    break
+                }
+                if (bridge !== usbSerialBridge) return@Thread
                 if (attempt > 0) {
                     bridge?.close()
                     Log.i(TAG, "Radio didn't answer on the previous port; trying port $port")
@@ -1876,6 +1884,10 @@ class JS8EngineService : Service() {
         val bridge = bluetoothSerialBridge
         val hamlib = hamlibRigControl
         Thread {
+            // As for USB: a timed-out rig open from before closes the bridge when it gives up.
+            if (!HamlibRigControl.waitForPendingOpens(PENDING_RIG_OPEN_WAIT_MS)) {
+                Log.w(TAG, "An earlier rig open is still running; not opening the Bluetooth port again yet")
+            }
             val preopenOk = bridge?.open(
                 address,
                 selection.portIndex,
@@ -4696,6 +4708,8 @@ class JS8EngineService : Service() {
         private const val TRUSDX_RX_KEEPALIVE_INTERVAL_MS = 2000L
         private const val PTT_LEAD_TIME_MS = 500
         private const val PTT_COMMAND_RETRIES = 1
+        /** Longest wait for a timed-out rig open to finish before reopening the serial port. */
+        private const val PENDING_RIG_OPEN_WAIT_MS = 30_000L
         /** Failed releases in a row before the "radio may still be transmitting" warning. */
         private const val PTT_RELEASE_WARN_AFTER = 3
         private const val NOTIFICATION_ID_PTT_STUCK = 992
