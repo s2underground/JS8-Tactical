@@ -72,7 +72,9 @@ object DiagnosticsPrivacyFuzz {
         check(!visible(out, otherCall, exactCase = true)) { "callsign $otherCall survived in: $out" }
         check(!visible(out, myGrid)) { "own grid $myGrid survived in: $out" }
         check(!visible(out, myFullGrid)) { "own 8-character grid $myFullGrid survived in: $out" }
-        check(!out.contains(position)) { "MGRS $position survived in: $out" }
+        // As a whole reference: the same characters glued inside a longer word ("A1C1C AA 0 0", which
+        // the fuzzer built from its own random text) aren't an MGRS position.
+        check(!visible(out, position)) { "MGRS $position survived in: $out" }
         check(!Regex("(?<![A-Za-z0-9.])" + Regex.escape(ip) + "(?![0-9.])").containsMatchIn(out)) { "IP $ip survived in: $out" }
     }
 }
