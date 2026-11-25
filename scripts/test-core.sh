@@ -68,4 +68,14 @@ OWN_FRAMES="$BUILD/own-frame-text-test"
   -o "$OWN_FRAMES"
 "$OWN_FRAMES"
 
+echo "==> running the JNI text conversion test"
+JNI_TEXT="$BUILD/jni-text-test"
+"$CXX" -std=c++20 -O2 -pthread \
+  -I "$CORE/include" \
+  -I "$ROOT/adapters/android/jni" \
+  "$ROOT/tools/jni_text_test.cpp" \
+  "$BUILD/libjs8core.a" \
+  -o "$JNI_TEXT"
+"$JNI_TEXT"
+
 echo "==> core tests passed"
