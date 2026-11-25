@@ -235,6 +235,14 @@ class JS8EngineService : Service() {
     private val pttStateLock = Any()
     @Volatile private var txPttGeneration = 0
     @Volatile private var rigPttAsserted = false
+    /**
+     * A key command went to the radio and no release has been confirmed since. A "key" whose
+     * reply was lost may still have keyed the radio, so Stop and failures unkey whenever this is
+     * set, not only when [rigPttAsserted] says the key took.
+     */
+    private var rigPttMaybeKeyed = false
+    /** Release attempts that have failed in a row (they are retried until one works). */
+    private var rigPttReleaseFailures = 0
     private var rigPttDesired = false
     private var rigPttDesiredGeneration = 0
     private var rigPttCommandPending = false
@@ -2096,7 +2104,10 @@ class JS8EngineService : Service() {
             val shutdownQmx = qmxCatSession
             val shutdownUvPro = uvProSession
             val shutdownNetwork = rigCtlClient
-            val shouldReleasePtt = isRigControlConnected()
+            // Try to unkey whenever a rig was in use, not only when its link is flagged up: a link
+            // marked down after an error may still reach a keyed radio. A dead link only costs a
+            // timeout here, on the TX thread.
+            val shouldReleasePtt = rigControlMode != "none"
             if (shutdownMode == "btech_uvpro") uvproWorkersActive.incrementAndGet()
 
             createRigTransports()
@@ -2150,7 +2161,12 @@ class JS8EngineService : Service() {
                             false
                         }
                         if (released) {
-                            synchronized(pttStateLock) { rigPttAsserted = false }
+                            synchronized(pttStateLock) {
+                                rigPttAsserted = false
+                                rigPttMaybeKeyed = false
+                                rigPttReleaseFailures = 0
+                            }
+                            mainHandler.post { clearPttStuckWarning() }
                         } else {
                             Log.e(TAG, "Unable to confirm PTT release during shutdown")
                         }
@@ -3699,6 +3715,7 @@ class JS8EngineService : Service() {
         synchronized(pttStateLock) {
             target = rigPttDesired
             generation = rigPttDesiredGeneration
+            if (target) rigPttMaybeKeyed = true
         }
 
         val success = setRigPtt(target)
@@ -3707,11 +3724,19 @@ class JS8EngineService : Service() {
         var failEnable = false
         var transmitReady: Boolean? = null
         var completionResult = success
+        var retryDelayMs = 0L
+        var stuckWarning: Int? = null
+        var stuckCleared = false
         synchronized(pttStateLock) {
             rigPttCommandPending = false
             if (success) {
                 rigPttAsserted = target
                 rigPttFailureCount = 0
+                if (!target) {
+                    rigPttMaybeKeyed = false
+                    if (rigPttReleaseFailures >= PTT_RELEASE_WARN_AFTER) stuckCleared = true
+                    rigPttReleaseFailures = 0
+                }
                 transmitReady = if (target) {
                     target == rigPttDesired && generation == txPttGeneration
                 } else {
@@ -3727,7 +3752,16 @@ class JS8EngineService : Service() {
 
             val targetStillDesired = target == rigPttDesired &&
                 generation == rigPttDesiredGeneration
-            if (!success && targetStillDesired) {
+            if (!success && !target && targetStillDesired) {
+                // A radio left keyed is the worst failure this app can have, and unkeying is
+                // always safe to repeat: keep trying, backing off, until it takes or a new send
+                // or Stop takes over the PTT.
+                rigPttReleaseFailures++
+                rigPttCommandPending = true
+                scheduleNext = true
+                retryDelayMs = pttReleaseRetryDelayMs(rigPttReleaseFailures)
+                if (rigPttReleaseFailures == PTT_RELEASE_WARN_AFTER) stuckWarning = rigPttReleaseFailures
+            } else if (!success && targetStillDesired) {
                 rigPttFailureCount++
                 if (rigPttFailureCount <= PTT_COMMAND_RETRIES) {
                     rigPttCommandPending = true
@@ -3760,8 +3794,55 @@ class JS8EngineService : Service() {
             if (failEnable) {
                 failTransmitForPtt(generation, "Failed to enable PTT")
             }
+            stuckWarning?.let { showPttStuckWarning(it) }
+            if (stuckCleared) clearPttStuckWarning()
         }
-        if (scheduleNext) postTxWork { runRigPttCommand() }
+        if (scheduleNext) {
+            if (retryDelayMs > 0) {
+                Log.w(TAG, "PTT release failed; retrying in $retryDelayMs ms")
+                txHandler.postAtTime({ runRigPttCommand() }, txWorkToken, SystemClock.uptimeMillis() + retryDelayMs)
+            } else {
+                postTxWork { runRigPttCommand() }
+            }
+        }
+    }
+
+    /** 0.25 s, 0.5 s, 1 s, 2 s, 4 s, then every 5 s. */
+    private fun pttReleaseRetryDelayMs(failures: Int): Long =
+        (250L shl (failures - 1).coerceIn(0, 5)).coerceAtMost(5_000L)
+
+    /** Sticky warning: the app couldn't confirm the radio unkeyed (it keeps trying). */
+    private fun showPttStuckWarning(failures: Int) {
+        Log.e(TAG, "PTT release failed $failures times in a row: the radio may still be transmitting")
+        broadcastError(getString(R.string.ptt_stuck_text, failures))
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID_MESSAGES, getString(R.string.notification_message_channel_name), NotificationManager.IMPORTANCE_HIGH)
+                .apply { description = getString(R.string.notification_message_channel_desc) },
+        )
+        val open = PendingIntent.getActivity(
+            this, NOTIFICATION_ID_PTT_STUCK,
+            Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        nm.notify(
+            NOTIFICATION_ID_PTT_STUCK,
+            NotificationCompat.Builder(this, CHANNEL_ID_MESSAGES)
+                .setSmallIcon(R.drawable.ic_stat_js8t)
+                .setContentTitle(getString(R.string.ptt_stuck_title))
+                .setContentText(getString(R.string.ptt_stuck_text, failures))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.ptt_stuck_text, failures)))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setOngoing(true)
+                .setContentIntent(open)
+                .build(),
+        )
+    }
+
+    private fun clearPttStuckWarning() {
+        Log.i(TAG, "PTT release confirmed after earlier failures")
+        getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID_PTT_STUCK)
     }
 
     /**
@@ -3773,7 +3854,7 @@ class JS8EngineService : Service() {
             rigPttDesired = false
             rigPttDesiredGeneration = txPttGeneration
             rigPttCompletion = null
-            if (!rigPttCommandPending && rigPttAsserted) {
+            if (!rigPttCommandPending && (rigPttAsserted || rigPttMaybeKeyed)) {
                 rigPttCommandPending = true
                 postTxWork { runRigPttCommand() }
             }
@@ -3803,7 +3884,7 @@ class JS8EngineService : Service() {
             rigPttDesiredGeneration = generation
             rigPttFailureCount = 0
             rigPttCompletion = null
-            if (!rigPttCommandPending && rigPttAsserted) {
+            if (!rigPttCommandPending && (rigPttAsserted || rigPttMaybeKeyed)) {
                 rigPttCommandPending = true
                 postTxWork { runRigPttCommand() }
             }
@@ -4888,6 +4969,9 @@ class JS8EngineService : Service() {
         private const val TRUSDX_RX_KEEPALIVE_INTERVAL_MS = 2000L
         private const val PTT_LEAD_TIME_MS = 500
         private const val PTT_COMMAND_RETRIES = 1
+        /** Failed releases in a row before the "radio may still be transmitting" warning. */
+        private const val PTT_RELEASE_WARN_AFTER = 3
+        private const val NOTIFICATION_ID_PTT_STUCK = 992
         private const val TX_PREKEY_MONITOR_INTERVAL_MS = 25L
         /** Longest the radio may sit keyed with audio held back before the send is abandoned. */
         private const val PTT_HOLD_LIMIT_MS = 4_000L
