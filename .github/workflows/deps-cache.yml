@@ -21,13 +21,14 @@ env:
   ANDROID_NDK_VERSION: 26.1.10909125
 
 jobs:
+  # Runs the build (third-party Gradle plugins and dependencies) with a read-only token. Only the
+  # publish job below, which runs no build code, can write to the repository.
   cache:
-    name: Build and publish dependency cache
+    name: Build dependency cache
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # Publishes the cache as a release asset at the end.
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -77,15 +78,42 @@ jobs:
           tar -C android -cf - libs/hamlib | zstd -T0 -10 -o hamlib-libs.tar.zst
           ls -la *.tar.zst
 
-      - name: Publish release asset
+      - name: Hand the cache to the publish job
         if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release view build-cache >/dev/null 2>&1 || gh release create build-cache --prerelease --title "Build cache (dev only)" --notes "Gradle dependency cache and prebuilt Hamlib for offline development builds. Not an app release."
-          gh release upload build-cache gradle-cache.tar.zst hamlib-libs.tar.zst build-log.txt --clobber
-          gh release edit build-cache --notes "Gradle dependency cache and prebuilt Hamlib for offline development builds. Not an app release. Commit ${GITHUB_SHA::8}, built $(date -u +%Y-%m-%dT%H:%MZ)."
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-cache
+          path: |
+            gradle-cache.tar.zst
+            hamlib-libs.tar.zst
+            build-log.txt
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Fail if the build failed
         if: steps.build.outputs.status != '0'
         run: exit 1
+
+  publish:
+    name: Publish dependency cache
+    needs: cache
+    if: always() && needs.cache.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Publishes the cache as a release asset. Checks nothing out and runs no build code.
+    permissions:
+      contents: write
+    steps:
+      - name: Download the cache
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-cache
+
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view build-cache >/dev/null 2>&1 || gh release create build-cache --prerelease --title "Build cache (dev only)" --notes "Gradle dependency cache and prebuilt Hamlib for offline development builds. Not an app release."
+          gh release upload build-cache gradle-cache.tar.zst hamlib-libs.tar.zst build-log.txt --clobber
+          gh release edit build-cache --notes "Gradle dependency cache and prebuilt Hamlib for offline development builds. Not an app release. Commit ${GITHUB_SHA::8}, built $(date -u +%Y-%m-%dT%H:%MZ)."
