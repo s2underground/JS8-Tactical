@@ -1594,7 +1594,8 @@ class JS8EngineService : Service() {
     private fun openRtsSerialUsbInternal(deviceId: Int, portIndex: Int, params: SerialParams) {
         val bridge = usbSerialBridge
         Thread {
-            val ok = bridge?.open(
+            // A timed-out Hamlib open from an earlier setting would close this port when it gives up.
+            val ok = HamlibRigControl.waitForPendingOpens(PENDING_RIG_OPEN_WAIT_MS) && bridge?.open(
                 deviceId,
                 portIndex,
                 params.baudRate,
@@ -1642,7 +1643,8 @@ class JS8EngineService : Service() {
 
         val bridge = bluetoothSerialBridge
         Thread {
-            val ok = bridge?.open(
+            // A timed-out Hamlib open from an earlier setting would close this port when it gives up.
+            val ok = HamlibRigControl.waitForPendingOpens(PENDING_RIG_OPEN_WAIT_MS) && bridge?.open(
                 address,
                 selection.portIndex,
                 params.baudRate,
@@ -1786,6 +1788,7 @@ class JS8EngineService : Service() {
             var anyPreopen = false
             var serialPath = ""
             var answeredOn: Int? = null
+            var earlierOpenRunning = false
             for ((attempt, port) in (listOf(portIndex) + alternates).withIndex()) {
                 if (bridge !== usbSerialBridge) return@Thread // stopped meanwhile
                 // A rig open that timed out (this probe's last port, or an earlier session) is
@@ -1793,6 +1796,7 @@ class JS8EngineService : Service() {
                 // or that close would land on the port opened next.
                 if (!HamlibRigControl.waitForPendingOpens(PENDING_RIG_OPEN_WAIT_MS)) {
                     Log.w(TAG, "An earlier rig open is still running; not opening the serial port again yet")
+                    earlierOpenRunning = true
                     break
                 }
                 if (bridge !== usbSerialBridge) return@Thread
@@ -1832,7 +1836,10 @@ class JS8EngineService : Service() {
                     hamlibRigConnected = false
                     rigCtlErrorShown = true
                     Log.w(TAG, "Hamlib USB pre-open failed for device=$deviceId port=$portIndex")
-                    broadcastError("Failed to open USB serial port for Hamlib control.")
+                    broadcastError(
+                        if (earlierOpenRunning) "The radio didn't answer an earlier connection attempt; try again in a moment."
+                        else "Failed to open USB serial port for Hamlib control."
+                    )
                 }
                 return@Thread
             }
@@ -1887,6 +1894,13 @@ class JS8EngineService : Service() {
             // As for USB: a timed-out rig open from before closes the bridge when it gives up.
             if (!HamlibRigControl.waitForPendingOpens(PENDING_RIG_OPEN_WAIT_MS)) {
                 Log.w(TAG, "An earlier rig open is still running; not opening the Bluetooth port again yet")
+                mainHandler.post {
+                    if (bridge !== bluetoothSerialBridge) return@post
+                    hamlibRigConnected = false
+                    rigCtlErrorShown = true
+                    broadcastError("The radio didn't answer an earlier connection attempt; try again in a moment.")
+                }
+                return@Thread
             }
             val preopenOk = bridge?.open(
                 address,
