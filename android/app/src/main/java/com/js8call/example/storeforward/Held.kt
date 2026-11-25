@@ -51,6 +51,37 @@ data class Held(
         /** Desktop JS8Call offers group messages for 48 hours. */
         const val GROUP_FLOOR_MS = 48 * 3600_000L
 
+        private const val DAY_MS = 24 * 3600_000L
+        /** A message held for one station is kept 30 days, or 7 days once that station has had it. */
+        const val RELAY_KEEP_MS = 30 * DAY_MS
+        const val RELAY_KEEP_DELIVERED_MS = 7 * DAY_MS
+        /**
+         * Most messages held for other stations at once. Anyone can ask us to hold one (MSG TO:),
+         * so without a ceiling the list, and the file rewritten on every change, could grow
+         * without end. The oldest relayed holds give way first; the operator's own posts never do.
+         */
+        const val MAX_RELAY_HOLDS = 200
+
+        /** Whether [h] is still kept at [now]: expired posts, and old relayed messages, are not. */
+        fun kept(h: Held, now: Long): Boolean {
+            if (h.expiresMs != null && now - h.expiresMs > DAY_MS) return false
+            if (h.kind != Kind.RELAY) return true
+            return when {
+                h.isGroup -> now - h.receivedMs <= GROUP_FLOOR_MS + DAY_MS
+                h.delivered -> now - (h.lastSentMs ?: h.receivedMs) <= RELAY_KEEP_DELIVERED_MS
+                else -> now - h.receivedMs <= RELAY_KEEP_MS
+            }
+        }
+
+        /** [held] with room for one more relayed hold: the oldest relayed ones past the ceiling go. */
+        fun makeRoomForRelay(held: List<Held>, max: Int = MAX_RELAY_HOLDS): List<Held> {
+            val relays = held.filter { it.kind == Kind.RELAY }
+            val excess = relays.size - (max - 1)
+            if (excess <= 0) return held
+            val drop = relays.sortedBy { it.receivedMs }.take(excess).map { it.id }.toSet()
+            return held.filterNot { it.kind == Kind.RELAY && it.id in drop }
+        }
+
         /** The callsign without /P, /M, W2/ and similar (desktop: Radio::base_callsign). */
         fun base(call: String): String {
             val c = call.trim().uppercase(Locale.ROOT)

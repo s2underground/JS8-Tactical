@@ -1118,9 +1118,21 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Everything the Digest tab needs for the window starting at [sinceMs]. */
-    /** A multi-frame message is still arriving (a frame in the last 30 s and not finished). */
-    fun messageInProgress(now: Long): Boolean =
-        runCatching { engine.live().any { now - it.lastFrameMs < 30_000L } }.getOrDefault(false)
+    /**
+     * A multi-frame message is still arriving (a frame in the last 30 s and not finished), so
+     * automatic replies and the Net Switcher wait for it. A station that never stops sending could
+     * otherwise hold that automation off for ever, so the wait ends after [IN_PROGRESS_HOLD_MAX_MS]
+     * of continuous traffic (longer than a 64-frame message at Normal speed) until the band
+     * goes quiet once. The operator's own sends never wait on this.
+     */
+    @Synchronized
+    fun messageInProgress(now: Long): Boolean {
+        val arriving = runCatching { engine.live().any { now - it.lastFrameMs < 30_000L } }.getOrDefault(false)
+        if (!arriving) { inProgressSinceMs = 0L; return false }
+        if (inProgressSinceMs == 0L) inProgressSinceMs = now
+        return now - inProgressSinceMs <= IN_PROGRESS_HOLD_MAX_MS
+    }
+    private var inProgressSinceMs = 0L
 
     /** Everything kept on this device, for the Digest's exports: all traffic heard (heartbeats too) and sent. */
     fun exportEntries(): List<com.js8call.example.digest.ExportBuilder.Entry> =
@@ -1235,6 +1247,9 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         Regex("(^|\\s)" + Regex.escape(tag) + "(\\s|$|:)").containsMatchIn(m.bodyText.uppercase())
 
     companion object {
+        /** Longest continuous "message coming in" that holds automatic replies and the Net Switcher. */
+        const val IN_PROGRESS_HOLD_MAX_MS = 20 * 60_000L
+
         @Volatile private var instance: TrafficViewModel? = null
 
         /** True when [call] is this station's callsign (ignoring /P and other suffixes). */

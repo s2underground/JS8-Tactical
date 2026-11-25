@@ -691,8 +691,9 @@ class JS8EngineService : Service() {
                 val driftMs = intent.getLongExtra(EXTRA_TIME_DRIFT_MS, 0L)
                 Log.i(TAG, "Setting time drift to $driftMs ms")
                 timeSyncOncePending = false
-                driftMmaMs = driftMs
-                driftMmaN = if (driftMs == 0L) 0 else 1
+                // A manual setting starts automatic sync afresh from what is heard next.
+                driftEstimator.clear()
+                lastAppliedDriftMs = driftMs
                 applyTimeDrift(driftMs)
             }
             ACTION_DEBUG_INJECT_DECODE -> {
@@ -958,7 +959,7 @@ class JS8EngineService : Service() {
 
                     // Broadcast on main thread
                     mainHandler.post {
-                        maybeApplyTimeSync(driftMs)
+                        maybeApplyTimeSync(driftMs, freq)
                         if (interferenceWatch()) {
                             com.js8call.example.interference.Interference.onDecode(this@JS8EngineService, System.currentTimeMillis(), interferenceDialHz(), snr)
                         }
@@ -2347,29 +2348,32 @@ class JS8EngineService : Service() {
     }
 
     private var timeSyncOncePending = false
-    private var driftMmaMs = 0L
-    private var driftMmaN = 0
+    /** Automatic time sync: each transmitter heard counts once (see [DriftEstimator]). */
+    private val driftEstimator = DriftEstimator()
+    private var lastAppliedDriftMs: Long? = null
 
-    private fun maybeApplyTimeSync(suggestedDriftMs: Int) {
+    private fun maybeApplyTimeSync(suggestedDriftMs: Int, freqHz: Float) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val autoSync = prefs.getBoolean(PREF_TIME_SYNC_AUTO, false)
         if (!autoSync && !timeSyncOncePending) return
+        val now = System.currentTimeMillis()
 
         if (timeSyncOncePending) {
+            // "Sync once": the operator asked to take this decode's timing as it is.
             timeSyncOncePending = false
-            driftMmaMs = suggestedDriftMs.toLong()
-            driftMmaN = 1
+            driftEstimator.clear()
+            driftEstimator.record(freqHz, suggestedDriftMs.toLong(), now)
+            lastAppliedDriftMs = suggestedDriftMs.toLong()
             applyTimeDrift(suggestedDriftMs.toLong())
             return
         }
 
-        if (driftMmaN == 0) {
-            driftMmaN = 1
-            driftMmaMs = engine?.timeDriftMs() ?: 0L
-        }
-        driftMmaMs = (((driftMmaN - 1) * driftMmaMs) + suggestedDriftMs) / driftMmaN
-        if (driftMmaN < 60) driftMmaN++
-        applyTimeDrift(driftMmaMs)
+        driftEstimator.record(freqHz, suggestedDriftMs.toLong(), now)
+        val drift = driftEstimator.estimate(now) ?: return
+        // Re-apply (prefs write, heartbeat reschedule) only when the correction actually moves.
+        if (lastAppliedDriftMs?.let { kotlin.math.abs(it - drift) < 5 } == true) return
+        lastAppliedDriftMs = drift
+        applyTimeDrift(drift)
     }
 
     private fun applyTimeDrift(driftMs: Long) {

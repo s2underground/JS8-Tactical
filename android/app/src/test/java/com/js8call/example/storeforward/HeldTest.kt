@@ -81,4 +81,33 @@ class HeldTest {
         assertTrue(relay(1, "K9DGY", delivered = setOf("K9DGY/P")).delivered)
         assertFalse(relay(1, "@GHOSTNET", delivered = setOf("K9DGY")).delivered)
     }
+
+    // --- Keeping the held list bounded (audit L9)
+
+    private fun relay(id: Int, to: String, receivedMs: Long, delivered: Boolean = false, lastSentMs: Long? = null) =
+        Held(id = id, to = to, from = "W1ABC", text = "T$id", receivedMs = receivedMs, kind = Held.Kind.RELAY,
+            deliveredTo = if (delivered) setOf(to) else emptySet(), lastSentMs = lastSentMs)
+
+    @Test
+    fun relayedMessagesForOneStationAreNotKeptForever() {
+        val day = 24 * 3600_000L
+        val now = 100 * day
+        assertTrue(Held.kept(relay(1, "K2XYZ", now - 29 * day), now))
+        assertFalse(Held.kept(relay(2, "K2XYZ", now - 31 * day), now))
+        assertTrue(Held.kept(relay(3, "K2XYZ", now - 20 * day, delivered = true, lastSentMs = now - 6 * day), now))
+        assertFalse(Held.kept(relay(4, "K2XYZ", now - 20 * day, delivered = true, lastSentMs = now - 8 * day), now))
+        // Group messages keep their own window; the operator's posts aren't touched.
+        assertFalse(Held.kept(relay(5, "@RACES", now - 4 * day), now))
+        val post = Held(id = 6, to = "@RACES", from = "KN4CRD", text = "P", receivedMs = 0, kind = Held.Kind.POSTED)
+        assertTrue(Held.kept(post, now))
+    }
+
+    @Test
+    fun theOldestRelayedHoldsGiveWayPastTheCeiling() {
+        val post = Held(id = 99, to = "@RACES", from = "KN4CRD", text = "P", receivedMs = 0, kind = Held.Kind.POSTED)
+        val held = (1..5).map { relay(it, "K2XYZ", it * 1000L) } + post
+        val room = Held.makeRoomForRelay(held, max = 3)
+        assertEquals(listOf(4, 5, 99), room.map { it.id })
+        assertEquals(held, Held.makeRoomForRelay(held, max = 10))
+    }
 }

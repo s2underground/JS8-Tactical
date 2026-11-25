@@ -20,6 +20,23 @@ class ModelIntegrityTest {
         }
     }
 
+    /** Android 8/9 path (audit L6): the hash checked is the hash of the copy actually written. */
+    @Test
+    fun copyAndHashHashesWhatItWrites() {
+        val src = File.createTempFile("model", ".part")
+        val dst = File.createTempFile("model", ".gguf")
+        try {
+            val bytes = ByteArray(3_000_000) { (it % 241).toByte() }
+            src.writeBytes(bytes)
+            val hash = FileHash.copyAndHash(src, dst)
+            assertTrue(dst.readBytes().contentEquals(bytes))
+            assertEquals(FileHash.sha256(dst), hash)
+            assertEquals(FileHash.sha256(src), hash)
+        } finally {
+            src.delete(); dst.delete()
+        }
+    }
+
     /** Every model downloads from a fixed revision and carries a full SHA-256 to check against. */
     @Test
     fun modelsArePinned() {
