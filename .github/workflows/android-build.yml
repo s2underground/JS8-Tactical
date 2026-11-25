@@ -148,8 +148,11 @@ jobs:
       run: chmod +x android/gradlew
 
     # Release builds must have the key. Test builds use it too when it's available (so they install
-    # over releases); without it (e.g. a pull request from a fork) they fall back to the debug key.
+    # over releases); without it they fall back to the debug key. Pull requests never get it, not
+    # even from branches in this repository: their builds aren't published, and the build runs the
+    # pull request's own code and Gradle plugins.
     - name: Prepare release keystore
+      if: github.event_name != 'pull_request'
       env:
         KEYSTORE_BASE64: ${{ secrets.JS8_KEYSTORE_BASE64 }}
         BUILD_TYPE: ${{ matrix.build-type }}
@@ -164,31 +167,31 @@ jobs:
         fi
         printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/release.jks
 
-    # Secrets reach the scripts as environment variables, never pasted into the script text.
-    - name: Configure release signing env
-      env:
-        STORE_PASSWORD: ${{ secrets.JS8_KEYSTORE_PASSWORD }}
-        KEY_ALIAS: ${{ secrets.JS8_KEY_ALIAS }}
-        KEY_PASSWORD: ${{ secrets.JS8_KEY_PASSWORD }}
-      run: |
-        [ -f android/release.jks ] || exit 0
-        {
-          echo "JS8_KEYSTORE_FILE=release.jks"
-          echo "JS8_KEYSTORE_PASSWORD=$STORE_PASSWORD"
-          echo "JS8_KEY_ALIAS=$KEY_ALIAS"
-          echo "JS8_KEY_PASSWORD=$KEY_PASSWORD"
-        } >> "$GITHUB_ENV"
-
+    # The signing secrets exist only in this step's environment (they used to go to $GITHUB_ENV,
+    # which handed them to every later step: tests, coverage, lint), and the keystore is deleted as
+    # soon as the step ends. Secrets reach the script as environment variables, never pasted into
+    # the script text.
     - name: Build with Gradle
       working-directory: android
       env:
         BUILD_TYPE: ${{ matrix.build-type }}
+        JS8_KEYSTORE_FILE: release.jks
+        JS8_KEYSTORE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.JS8_KEYSTORE_PASSWORD || '' }}
+        JS8_KEY_ALIAS: ${{ github.event_name != 'pull_request' && secrets.JS8_KEY_ALIAS || '' }}
+        JS8_KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.JS8_KEY_PASSWORD || '' }}
       run: |
         if [ "$BUILD_TYPE" == "release" ]; then
           ./gradlew assembleRelease bundleRelease
         else
           ./gradlew assembleDebug
         fi
+        # Stop the Gradle daemon too: it would otherwise keep the passwords in its environment
+        # for the steps that follow.
+        ./gradlew --stop
+
+    - name: Remove release keystore after the build
+      if: always()
+      run: rm -f android/release.jks
 
     - name: Run tests
       working-directory: android
