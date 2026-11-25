@@ -43,7 +43,7 @@ object ReportUi {
     private data class Job(val key: String, val call: String, val grid: String, val sent: String, val submode: Int)
 
     private fun job(ctx: Context, d: ReportDrafts.Draft): Job? {
-        val text = d.onAir
+        val text = d.sendText
         if (text.isBlank()) return null
         val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
         val submode = speedOf(ctx, d)
@@ -146,7 +146,43 @@ object ReportUi {
         else -> "every $min min"
     }
 
-    fun scheduleLine(s: ReportDrafts.Schedule): String = "Auto-send ${whenLabel(s.atMs)}, ${repeatLabel(s.repeatMin)}"
+    /** The @groups saved on Traffic ("Watch a group"), for quick recipient buttons. */
+    fun savedGroups(ctx: Context): List<String> =
+        PreferenceManager.getDefaultSharedPreferences(ctx).getString("my_groups", "").orEmpty()
+            .split(',', ' ', ';').map { it.trim().uppercase() }
+            .filter { it.length > 1 && !it.startsWith("#") }
+            .map { if (it.startsWith("@")) it else "@$it" }
+            .distinct()
+
+    /** "in 2 h 14 min" style countdown. */
+    fun untilLabel(ms: Long): String {
+        val min = ((ms + 59_999) / 60_000).coerceAtLeast(0)
+        return when {
+            min < 1 -> "under a minute"
+            min < 60 -> "$min min"
+            min < 48 * 60 -> "${min / 60} h ${min % 60} min"
+            else -> "${min / 1440} days"
+        }
+    }
+
+    /**
+     * The line that says a report is armed: when it goes, how long until then, what happens after.
+     * Second value: true when it needs attention (due but the receiver is off, or the receiver
+     * isn't running so it can't go).
+     */
+    fun armedLine(ctx: Context, s: ReportDrafts.Schedule, now: Long): Pair<String, Boolean> {
+        val then = if (s.repeatMin > 0) ctx.getString(R.string.reports_armed_then, repeatLabel(s.repeatMin)) else ctx.getString(R.string.reports_armed_once)
+        return when {
+            s.atMs <= now && !JS8EngineService.engineRunning ->
+                ctx.getString(R.string.reports_armed_due, whenLabel(s.atMs)) to true
+            s.atMs <= now ->
+                ctx.getString(R.string.reports_armed_sending) to false
+            !JS8EngineService.engineRunning ->
+                ctx.getString(R.string.reports_armed, whenLabel(s.atMs), untilLabel(s.atMs - now), then) + "\n" +
+                    ctx.getString(R.string.reports_armed_receiver_off) to true
+            else -> ctx.getString(R.string.reports_armed, whenLabel(s.atMs), untilLabel(s.atMs - now), then) to false
+        }
+    }
 
     fun lastLine(d: ReportDrafts.Draft): String? {
         val at = d.lastSentMs ?: return null
@@ -201,7 +237,7 @@ object ReportUi {
             .setView(android.widget.ScrollView(ctx).apply { addView(box) })
             .setPositiveButton(R.string.reports_send) { _, _ ->
                 val tx = TransmitViewModel.of(ctx)
-                if (draft.to.isBlank()) tx.queueManualMessage(draft.onAir, pick) else tx.queueThreadMessage(draft.to.uppercase(), draft.onAir, pick)
+                if (draft.to.isBlank()) tx.queueManualMessage(draft.sendText, pick) else tx.queueThreadMessage(draft.to.uppercase(), draft.sendText, pick)
                 // The speed picked here is remembered for this report (and its automatic sends).
                 ReportStore.of(ctx).put((ReportStore.of(ctx).get(draft.id) ?: draft)
                     .copy(speed = pick, lastSentMs = System.currentTimeMillis(), lastResult = "queued"))

@@ -68,6 +68,14 @@ class ReportEditorFragment : Fragment() {
         }
         root.addView(col)
 
+        // Armed banner: a report set to go out on its own says so at the top, where it can't be missed.
+        armedTop = TextView(ctx).apply {
+            textSize = 13.5f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        col.addView(armedTop, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
+
         // Title
         col.addView(edit(draft.title, getString(R.string.reports_title_hint), 20f, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS).apply {
             setTypeface(typeface, Typeface.BOLD)
@@ -78,12 +86,13 @@ class ReportEditorFragment : Fragment() {
         col.addView(label(getString(R.string.reports_to)))
         toInput = edit(draft.to, getString(R.string.reports_to_hint), 16f, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS).apply {
             typeface = Typeface.MONOSPACE
-            watch { draft = draft.copy(to = it.trim().uppercase()); changed() }
+            watch { draft = draft.copy(to = it.trim().uppercase()); changed(); if (::asMessageNote.isInitialized) renderAsMessageNote() }
         }
         col.addView(toInput)
         val toChips = ChipGroup(ctx).apply { isSingleLine = true }
-        val suggestions = (listOf("") + listOfNotNull(TrafficViewModel.of(ctx).sendTarget()) +
-            store.list().map { it.to } + listOf("@ALLCALL")).map { it.uppercase() }.distinct().take(7)
+        // Everyone, who Traffic is talking to, the groups saved on Traffic, recent recipients, @ALLCALL.
+        val suggestions = (listOf("") + listOfNotNull(TrafficViewModel.of(ctx).sendTarget()) + ReportUi.savedGroups(ctx) +
+            store.list().map { it.to } + listOf("@ALLCALL")).map { it.uppercase() }.distinct().take(14)
         suggestions.forEach { t ->
             toChips.addView(Chip(ctx).apply {
                 text = t.ifBlank { getString(R.string.reports_everyone) }
@@ -91,6 +100,18 @@ class ReportEditorFragment : Fragment() {
             })
         }
         col.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(toChips) })
+
+        // Send as a JS8 message, so it lands in the recipient's inbox
+        asMessageSwitch = MaterialSwitch(ctx).apply {
+            text = getString(R.string.reports_as_message)
+            isChecked = draft.asMessage
+            setTextColor(color(R.color.tac_text))
+            setOnCheckedChangeListener { _, on -> draft = draft.copy(asMessage = on); renderAsMessageNote(); changed() }
+        }
+        col.addView(asMessageSwitch)
+        asMessageNote = TextView(ctx).apply { textSize = 12f; setTextColor(color(R.color.tac_text_quiet)) }
+        col.addView(asMessageNote)
+        renderAsMessageNote()
 
         // Kind
         col.addView(label(getString(R.string.reports_kind)))
@@ -200,6 +221,21 @@ class ReportEditorFragment : Fragment() {
         return root
     }
 
+    private lateinit var armedTop: TextView
+    private lateinit var asMessageSwitch: MaterialSwitch
+    private lateinit var asMessageNote: TextView
+
+    private fun renderAsMessageNote() {
+        asMessageNote.text = getString(
+            when {
+                !draft.asMessage -> R.string.reports_as_message_off
+                draft.to.isBlank() -> R.string.reports_as_message_needs_to
+                else -> R.string.reports_as_message_on
+            }
+        )
+        asMessageNote.setTextColor(color(if (draft.asMessage && draft.to.isBlank()) R.color.tac_accent else R.color.tac_text_quiet))
+    }
+
     private var deleted = false
     private lateinit var postStatus: TextView
     private lateinit var postButton: MaterialButton
@@ -214,6 +250,7 @@ class ReportEditorFragment : Fragment() {
 
     override fun onPause() {
         super.onPause()
+        handler.removeCallbacks(tick)
         if (!deleted) save()
     }
 
@@ -297,7 +334,7 @@ class ReportEditorFragment : Fragment() {
     }
 
     private fun renderPreview() {
-        val text = draft.onAir
+        val text = draft.sendText
         val to = draft.to.uppercase()
         preview.text = when {
             text.isBlank() -> getString(R.string.reports_blank)
@@ -316,7 +353,7 @@ class ReportEditorFragment : Fragment() {
         if (view == null) return@Runnable
         val asked = draft
         ReportUi.airtimeAsync(requireContext(), asked) { air ->
-            if (view != null && draft.onAir == asked.onAir && draft.to == asked.to) airtime.text = air?.label() ?: ""
+            if (view != null && draft.sendText == asked.sendText && draft.to == asked.to) airtime.text = air?.label() ?: ""
         }
     }
 
@@ -354,7 +391,9 @@ class ReportEditorFragment : Fragment() {
             }
         }
         scheduleBox.addView(sw)
+        renderArmed()
         if (s == null) return
+        scheduleBox.addView(armedBox(ctx, s))
         scheduleBox.addView(MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             text = ReportUi.whenLabel(s.atMs)
             setTextColor(color(R.color.tac_text))
@@ -380,6 +419,45 @@ class ReportEditorFragment : Fragment() {
             setTextColor(color(R.color.tac_text_quiet))
             setPadding(0, dp(4), 0, 0)
         })
+    }
+
+    /** The banner at the top of the editor: shown only while the report is set to send on its own. */
+    private fun renderArmed() {
+        val s = draft.schedule
+        armedTop.visibility = if (s == null) View.GONE else View.VISIBLE
+        if (s == null) return
+        val (text, warn) = ReportUi.armedLine(requireContext(), s, System.currentTimeMillis())
+        armedTop.text = text
+        armedTop.setTextColor(if (warn) 0xFFF2A33A.toInt() else 0xFF4FC3F7.toInt())
+        armedTop.background = GradientDrawable().apply {
+            cornerRadius = dp(8).toFloat()
+            setColor(if (warn) 0x22F2A33A else 0x224FC3F7)
+            setStroke(dp(1), if (warn) 0xFFF2A33A.toInt() else 0xFF4FC3F7.toInt())
+        }
+    }
+
+    private fun armedBox(ctx: android.content.Context, s: ReportDrafts.Schedule) = TextView(ctx).apply {
+        val (text, warn) = ReportUi.armedLine(ctx, s, System.currentTimeMillis())
+        this.text = text
+        textSize = 13f
+        setTypeface(typeface, Typeface.BOLD)
+        setTextColor(if (warn) 0xFFF2A33A.toInt() else 0xFF4FC3F7.toInt())
+        setPadding(0, dp(6), 0, dp(2))
+    }
+
+    /** The countdown stays current while the editor is open. */
+    private val tick = object : Runnable {
+        override fun run() {
+            if (view == null) return
+            if (draft.schedule != null) renderSchedule()
+            handler.postDelayed(this, 30_000L)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        handler.removeCallbacks(tick)
+        handler.postDelayed(tick, 30_000L)
     }
 
     private fun pickTime(s: ReportDrafts.Schedule) {

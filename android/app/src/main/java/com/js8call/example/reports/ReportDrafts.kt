@@ -31,11 +31,19 @@ object ReportDrafts {
         val lastResult: String? = null,
         /** JS8 speed (submode) to send at; null = whatever speed is set on Traffic at the time. */
         val speed: Int? = null,
+        /**
+         * Send as a JS8 message ("TO MSG text") so JS8Call stores it in the recipient's inbox
+         * instead of only showing it in band activity. Needs a recipient.
+         */
+        val asMessage: Boolean = false,
     ) {
         val type: Reports.Type? get() = if (kind == FREE_TEXT) null else Reports.byTag(kind)
 
         /** The text that goes on air (JS8 has one line, upper case). */
         val onAir: String get() = type?.let { Reports.encode(it, values) } ?: airText(body)
+
+        /** What follows the recipient on air: the report, after "MSG " when sent as a message. */
+        val sendText: String get() = onAir.let { if (asMessage && to.isNotBlank() && it.isNotBlank()) "MSG $it" else it }
 
         val isEmpty: Boolean get() = if (type == null) body.isBlank() else values.values.all { it.isBlank() }
 
@@ -92,6 +100,7 @@ object ReportDrafts {
             d.schedule?.atMs?.toString().orEmpty(), d.schedule?.repeatMin?.toString().orEmpty(),
             d.lastSentMs?.toString().orEmpty(), d.lastResult.orEmpty(),
             d.speed?.toString().orEmpty(),
+            if (d.asMessage) "1" else "",
         ).joinToString("\t") { esc(it) }
     }
 
@@ -108,6 +117,7 @@ object ReportDrafts {
             schedule = f[9].toLongOrNull()?.let { Schedule(it, f[10].toIntOrNull() ?: 0) },
             lastSentMs = f[11].toLongOrNull(), lastResult = f[12].ifBlank { null },
             speed = f.getOrNull(13)?.toIntOrNull(),
+            asMessage = f.getOrNull(14) == "1",
         )
     }.toList()
 

@@ -23,6 +23,19 @@ class ReportDraftsTest {
     }
 
     @Test
+    fun sendAsMessageRoundTripsAndPutsMsgAfterTheRecipient() {
+        val d = Draft("m", kind = "SITREP", to = "@GHOSTNET", values = mapOf("S" to "green"), asMessage = true, speed = 1)
+        assertEquals(listOf(d), ReportDrafts.decode(ReportDrafts.encode(listOf(d))))
+        assertEquals("MSG #SITREP S:GREEN", d.sendText)
+        // Without a recipient, or switched off, it is the plain report.
+        assertEquals("#SITREP S:GREEN", d.copy(to = "").sendText)
+        assertEquals("#SITREP S:GREEN", d.copy(asMessage = false).sendText)
+        // Files from before this option read back as "off".
+        val old = ReportDrafts.encode(listOf(d.copy(asMessage = false))).substringBeforeLast('\t')
+        assertEquals(false, ReportDrafts.decode(old).single().asMessage)
+    }
+
+    @Test
     fun decodeSkipsJunk() {
         assertTrue(ReportDrafts.decode("nonsense\n\nv1\t\t").isEmpty())
         assertTrue(ReportDrafts.decode(null).isEmpty())
