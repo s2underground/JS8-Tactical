@@ -119,6 +119,23 @@ class ReportsFragment : Fragment() {
         super.onResume()
         // Throw away reports that were opened and never written in (not the one open now).
         store.list().filter { isBlank(it) && it.id != selectedId }.forEach { store.delete(it.id) }
+        ticker.removeCallbacks(tick)
+        ticker.postDelayed(tick, 30_000L)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        ticker.removeCallbacks(tick)
+    }
+
+    /** Armed reports show a countdown: keep it current while the list is on screen. */
+    private val ticker = android.os.Handler(android.os.Looper.getMainLooper())
+    private val tick = object : Runnable {
+        override fun run() {
+            if (view == null) return
+            if (store.list().any { it.schedule != null }) render(store.list())
+            ticker.postDelayed(this, 30_000L)
+        }
     }
 
     private fun isBlank(d: ReportDrafts.Draft) = d.isEmpty && d.title.isBlank() && d.schedule == null && d.lastSentMs == null
@@ -192,17 +209,18 @@ class ReportsFragment : Fragment() {
             addView(top)
             val mid = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             mid.addView(badge(d))
+            if (d.schedule != null) mid.addView(armedBadge(d.schedule.atMs <= now && !JS8EngineService.engineRunning))
             mid.addView(text(d.displayTitle(), 15f, bold = true).apply {
                 setPadding(dp(8), 0, 0, 0); maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(mid)
-            addView(text(d.onAir.ifBlank { getString(R.string.reports_blank) }, 12.5f, color(R.color.tac_text_dim)).apply {
+            addView(text(d.sendText.ifBlank { getString(R.string.reports_blank) }, 12.5f, color(R.color.tac_text_dim)).apply {
                 maxLines = 1; ellipsize = TextUtils.TruncateAt.END
             })
             d.schedule?.let { s ->
-                val overdue = s.atMs <= now && !JS8EngineService.engineRunning
-                addView(text("⏱ " + ReportUi.scheduleLine(s).removePrefix("Auto-send "), 11.5f, if (overdue) 0xFFF2A33A.toInt() else 0xFF4FC3F7.toInt(), bold = true).apply {
-                    maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+                val (line, warn) = ReportUi.armedLine(ctx, s, now)
+                addView(text(line, 11.5f, if (warn) 0xFFF2A33A.toInt() else 0xFF4FC3F7.toInt(), bold = true).apply {
+                    maxLines = 3; ellipsize = TextUtils.TruncateAt.END
                 })
             }
             if (d.lastResult == "missed") addView(text(ReportUi.lastLine(d).orEmpty(), 11.5f, 0xFFF2A33A.toInt()))
@@ -228,19 +246,19 @@ class ReportsFragment : Fragment() {
         }
         val top = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         top.addView(badge(d))
+        if (d.schedule != null) top.addView(armedBadge(d.schedule.atMs <= now && !JS8EngineService.engineRunning))
         top.addView(text(d.displayTitle(), 16.5f, bold = true).apply {
             setPadding(dp(10), 0, 0, 0); maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         card.addView(top)
         card.addView(text(getString(R.string.reports_to_line, d.to.ifBlank { getString(R.string.reports_everyone) }.uppercase()) +
             (ReportUi.cachedAirtime(ctx, d)?.let { "  ·  " + it.label() } ?: ""), 12.5f, color(R.color.tac_text_dim)))
-        card.addView(text(d.onAir.ifBlank { getString(R.string.reports_blank) }, 13.5f).apply {
+        card.addView(text(d.sendText.ifBlank { getString(R.string.reports_blank) }, 13.5f).apply {
             maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.MONOSPACE
         })
         d.schedule?.let { s ->
-            val overdue = s.atMs <= now && !JS8EngineService.engineRunning
-            card.addView(text(ReportUi.scheduleLine(s) + if (overdue) getString(R.string.reports_waiting_receiver) else "",
-                12.5f, if (overdue) 0xFFF2A33A.toInt() else 0xFF4FC3F7.toInt(), bold = true))
+            val (line, warn) = ReportUi.armedLine(ctx, s, now)
+            card.addView(text(line, 12.5f, if (warn) 0xFFF2A33A.toInt() else 0xFF4FC3F7.toInt(), bold = true))
         }
         ReportUi.lastLine(d)?.let { card.addView(text(it, 12f, if (d.lastResult == "missed") 0xFFF2A33A.toInt() else color(R.color.tac_text_quiet))) }
         val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END; setPadding(0, dp(6), 0, 0) }
@@ -255,6 +273,13 @@ class ReportsFragment : Fragment() {
         })
         card.addView(row)
         return card
+    }
+
+    /** A filled "ARMED" tag on reports set to go out on their own (amber when they can't). */
+    private fun armedBadge(warn: Boolean) = text(getString(R.string.reports_armed_badge), 10.5f, color(R.color.tac_ground), bold = true).apply {
+        setPadding(dp(6), dp(2), dp(6), dp(2))
+        background = GradientDrawable().apply { cornerRadius = dp(4).toFloat(); setColor(if (warn) 0xFFF2A33A.toInt() else 0xFF4FC3F7.toInt()) }
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(6) }
     }
 
     private fun badge(d: ReportDrafts.Draft) = text(if (d.kind == ReportDrafts.FREE_TEXT) "TEXT" else d.kind, 10.5f, color(R.color.tac_text), bold = true).apply {
