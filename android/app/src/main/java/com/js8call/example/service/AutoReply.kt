@@ -65,6 +65,40 @@ object AutoReply {
             CallsignValidator.isAmateurCallsign(d.from) &&
             !CallsignValidator.matches(me, d.from)
 
+    /** Queries answered when sent to a group this station has joined (desktop JS8Call's set). */
+    val GROUP_QUERIES = setOf("SNR?", "?", "INFO?", "STATUS?", "GRID?", "HEARING?")
+
+    /** Groups that are never answered as a group: everyone is in them. */
+    private val OPEN_GROUPS = setOf("@ALLCALL", "@HB")
+
+    /**
+     * Whether a directed frame is a query to a group in [myGroups] that this station should
+     * answer: a real group the operator joined, from a valid callsign that isn't ours.
+     */
+    fun isForMyGroup(me: String, myGroups: Collection<String>, d: DirectedCommand): Boolean {
+        val to = d.to.trim().uppercase(Locale.ROOT)
+        if (!to.startsWith("@") || to.length < 2 || to in OPEN_GROUPS) return false
+        if (myGroups.none { it.trim().uppercase(Locale.ROOT) == to }) return false
+        return CallsignValidator.isAmateurCallsign(d.from) && !CallsignValidator.matches(me, d.from)
+    }
+
+    /**
+     * The answer to a query sent to one of [myGroups], addressed to the asker as desktop does
+     * ("ME: ASKER SNR -05"), or null when it isn't one to answer.
+     */
+    fun groupReply(d: DirectedCommand, snr: Int, me: Station, myGroups: Collection<String>, heard: Heard): String? {
+        if (!isForMyGroup(me.callsign, myGroups, d)) return null
+        val command = d.command.trim().uppercase(Locale.ROOT)
+        if (command !in GROUP_QUERIES) return null
+        val asker = d.from.trim().uppercase(Locale.ROOT)
+        val prefix = "${me.callsign}: $asker"
+        return answer(command, snr, me, prefix, heard, exclude = setOf(asker, me.callsign.uppercase()))
+    }
+
+    /** The key [ReplayGuard] uses for a group query: one answer per asker, group and query. */
+    fun groupReplyKey(d: DirectedCommand): String =
+        "${d.to.trim().uppercase(Locale.ROOT)} ${d.command.trim().uppercase(Locale.ROOT)} ${d.from.trim().uppercase(Locale.ROOT)}"
+
     /** The direct answer to a query addressed to this station, or null when there is none to send. */
     fun directedReply(d: DirectedCommand, snr: Int, me: Station, heard: Heard): String? {
         if (!isForMe(me.callsign, d)) return null

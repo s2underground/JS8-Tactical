@@ -93,7 +93,12 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_com_js8call_llm_LlamaBridge_nativeLoad(JNIEnv * env, jclass, jstring jpath, jint n_ctx, jint n_threads) {
     if (!g_backend) {
         llama_log_set([](ggml_log_level level, const char * text, void *) {
-            if (level >= GGML_LOG_LEVEL_WARN) __android_log_print(ANDROID_LOG_WARN, TAG, "%s", text);
+            // CONT continues the previous line (the loader's progress dots follow an INFO line):
+            // judge it by that line's level, so the dots no longer fill the log as warnings.
+            static thread_local ggml_log_level last = GGML_LOG_LEVEL_INFO;
+            if (level == GGML_LOG_LEVEL_CONT) level = last; else last = level;
+            if (level >= GGML_LOG_LEVEL_WARN && level != GGML_LOG_LEVEL_CONT)
+                __android_log_print(ANDROID_LOG_WARN, TAG, "%s", text ? text : "");
         }, nullptr);
         llama_backend_init();
         g_backend = true;

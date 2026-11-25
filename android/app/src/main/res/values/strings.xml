@@ -168,7 +168,7 @@
     <string name="settings_autoreply">Enable Autoreply</string>
     <string name="settings_autoreply_summary">Automatically respond to heartbeats with SNR</string>
     <string name="settings_auto_reply_safeguard">Auto-reply safeguard</string>
-    <string name="settings_auto_reply_safeguard_summary">Send at most 5 automatic replies (heartbeat ACKs, query answers, relays) in any 5 minutes, and drop duplicates, so other stations can\'t keep this radio transmitting. Your own sends are never limited. Standard JS8Call has no such limit.</string>
+    <string name="settings_auto_reply_safeguard_summary">Send at most 5 automatic replies (heartbeat ACKs, query answers, relays) in any 5 minutes, answer the same group query from the same station once per 15 minutes, and drop duplicates, so other stations can\'t keep this radio transmitting. Your own sends are never limited. Standard JS8Call has no such limit.</string>
     <string name="auto_reply_safeguard_paused">Automatic replies paused: 5 sent in the last 5 minutes (Settings → Auto-reply safeguard). Your own sends aren\'t affected.</string>
     <string name="settings_relay">Enable Relay</string>
     <string name="settings_relay_summary">Automatically relay messages using CALL&gt;</string>

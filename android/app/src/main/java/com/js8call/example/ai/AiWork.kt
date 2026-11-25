@@ -75,6 +75,7 @@ object AiWork {
             if (k in checks(app) || !synchronized(checkQueued) { checkQueued.add(k) }) return@forEach
             worker.execute {
                 try {
+                    RadioGate.awaitQuiet() // the radio comes first (see RadioGate)
                     val s = acquire(app) ?: return@execute
                     setBusy(true)
                     runCheck(app, s, message, claim)
@@ -90,7 +91,7 @@ object AiWork {
 
     /** Worker thread: ask the model, remember the answer. */
     private fun runCheck(ctx: Context, s: LlamaBridge.Session, message: String, claim: String) {
-        val raw = s.generate(AiPrompt.CHECK_SYSTEM, AiPrompt.checkUser(message, claim), 3, 0f)
+        val raw = s.generate(AiPrompt.CHECK_SYSTEM, AiPrompt.checkUser(message, claim), 3, 0f) { RadioGate.awaitQuiet(); true }
         val v = AiPrompt.verdict(raw)
         Log.i(TAG, "check: ${when (v) { true -> "supported"; false -> "NOT supported"; null -> "unclear (\"${raw.trim().take(20)}\")" }} in ${s.stats().let { it.promptMs + it.genMs }} ms")
         storeCheck(ctx, checkKey(message, claim), when (v) { true -> "Y"; false -> "N"; null -> "?" })
@@ -158,9 +159,10 @@ object AiWork {
             worker.execute {
                 val key = keyOf(body)
                 try {
+                    RadioGate.awaitQuiet() // the radio comes first (see RadioGate)
                     val s = acquire(app) ?: return@execute
                     setBusy(true)
-                    val raw = s.generate(AiPrompt.BULLETIN_SYSTEM, AiPrompt.bulletinUser(body), 60, 0f)
+                    val raw = s.generate(AiPrompt.BULLETIN_SYSTEM, AiPrompt.bulletinUser(body), 60, 0f) { RadioGate.awaitQuiet(); true }
                     val line = AiPrompt.completeSentences(AiPrompt.firstSentences(AiPrompt.clean(raw, oneLine = true)))
                     val bad = AiPrompt.unverifiedNumbers(line, body)
                     if (bad.isNotEmpty()) Log.w(TAG, "bulletin summary dropped: numbers not in the bulletin: $bad")
@@ -188,10 +190,12 @@ object AiWork {
         val app = ctx.applicationContext
         worker.execute {
             try {
+                RadioGate.awaitQuiet() // the radio comes first (see RadioGate)
                 val s = acquire(app) ?: run { main.post { onDone(null, "The model could not be loaded.") }; return@execute }
                 setBusy(true)
                 val sb = StringBuilder()
                 val raw = s.generate(AiPrompt.LEAD_SYSTEM, userText, 120, 0f) { piece ->
+                    RadioGate.awaitQuiet()
                     sb.append(piece)
                     val so = AiPrompt.clean(sb.toString())
                     main.post { onText(so) }

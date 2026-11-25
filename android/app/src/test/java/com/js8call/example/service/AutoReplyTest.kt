@@ -155,4 +155,70 @@ class AutoReplyTest {
         assertTrue(g.allow("K1ABC", 600_000))
         assertFalse(g.allow("", 0))
     }
+
+    // --- group queries (desktop JS8Call answers these for groups in My Groups)
+
+    private val groups = listOf("@GHOSTNET", "@ARES")
+
+    @Test
+    fun answersSnrQueryToJoinedGroup() {
+        assertEquals("W2XYZ: K1ABC SNR -06", AutoReply.groupReply(q("K1ABC: @GHOSTNET SNR?"), -6, me, groups, heard))
+    }
+
+    @Test
+    fun groupMatchIgnoresCase() {
+        assertEquals("W2XYZ: K1ABC SNR +04", AutoReply.groupReply(q("K1ABC: @ghostnet SNR?"), 4, me, listOf(" @GhostNet "), heard))
+    }
+
+    @Test
+    fun answersInfoStatusGridHearingToGroup() {
+        assertEquals("W2XYZ: K1ABC INFO FT-891 20W EFHW", AutoReply.groupReply(q("K1ABC: @ARES INFO?"), 0, me, groups, heard))
+        assertEquals("W2XYZ: K1ABC STATUS QRV", AutoReply.groupReply(q("K1ABC: @ARES STATUS?"), 0, me, groups, heard))
+        assertEquals("W2XYZ: K1ABC GRID FN42", AutoReply.groupReply(q("K1ABC: @ARES GRID?"), 0, me, groups, heard))
+        assertEquals("W2XYZ: K1ABC HEARING N3QRS KD9KUA", AutoReply.groupReply(q("K1ABC: @ARES HEARING?"), 0, me, groups, heard))
+    }
+
+    @Test
+    fun ignoresGroupsNotJoined() {
+        assertNull(AutoReply.groupReply(q("K1ABC: @OTHERNET SNR?"), -6, me, groups, heard))
+        assertNull(AutoReply.groupReply(q("K1ABC: @GHOSTNET SNR?"), -6, me, emptyList(), heard))
+    }
+
+    @Test
+    fun neverAnswersAllcallOrHbAsAGroup() {
+        val all = listOf("@ALLCALL", "@HB")
+        assertNull(AutoReply.groupReply(q("K1ABC: @ALLCALL SNR?"), -6, me, all, heard))
+        assertNull(AutoReply.groupReply(q("K1ABC: @HB SNR?"), -6, me, all, heard))
+    }
+
+    @Test
+    fun doesNotReplayAgnToAGroup() {
+        assertNull(AutoReply.groupReply(q("K1ABC: @GHOSTNET AGN?"), -6, me, groups, heard))
+    }
+
+    @Test
+    fun ignoresOwnAndInvalidSendersToGroup() {
+        assertNull(AutoReply.groupReply(q("W2XYZ: @GHOSTNET SNR?"), -6, me, groups, heard))
+        assertNull(AutoReply.groupReply(DirectedCommand("R\u0000", "@GHOSTNET", "SNR?", ""), -6, me, groups, heard))
+        assertNull(AutoReply.groupReply(DirectedCommand("", "@GHOSTNET", "SNR?", ""), -6, me, groups, heard))
+    }
+
+    @Test
+    fun groupQueryIsNotADirectedReply() {
+        // The direct path still never answers a group: only groupReply does, for joined groups.
+        assertNull(AutoReply.directedReply(q("K1ABC: @GHOSTNET SNR?"), -6, me, heard))
+    }
+
+    @Test
+    fun groupReplyKeySeparatesAskerGroupAndQuery() {
+        val guard = ReplayGuard(windowMs = 15 * 60_000L)
+        val snr = AutoReply.groupReplyKey(q("K1ABC: @GHOSTNET SNR?"))
+        assertTrue(guard.allow(snr, 0))
+        assertFalse(guard.allow(snr, 60_000))
+        assertFalse(guard.allow(AutoReply.groupReplyKey(q("K1ABC/P: @ghostnet SNR?")), 60_000))
+        assertTrue(guard.allow(AutoReply.groupReplyKey(q("K1ABC: @GHOSTNET GRID?")), 60_000))
+        assertTrue(guard.allow(AutoReply.groupReplyKey(q("K1ABC: @ARES SNR?")), 60_000))
+        assertTrue(guard.allow(AutoReply.groupReplyKey(q("N3QRS: @GHOSTNET SNR?")), 60_000))
+        assertTrue(guard.allow(snr, 15 * 60_000L))
+    }
 }
