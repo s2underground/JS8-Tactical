@@ -44,7 +44,10 @@ object InterferenceUi {
         if (a.humHz.isNotEmpty()) append("• ").append(ctx.getString(R.string.interference_detail_hum, a.humHz.joinToString(", "))).append('\n')
         if (a.residentCarriersHz.isNotEmpty()) append("• ").append(ctx.getString(R.string.interference_detail_resident, a.residentCarriersHz.joinToString(", "))).append('\n')
         a.sinceMs?.let { append('\n').append(ctx.getString(R.string.interference_since, Reports.dtg(it))).append('\n') }
-        if (a.level == Level.POSSIBLE) append('\n').append(ctx.getString(R.string.interference_possible_note)).append('\n')
+        if (a.level == Level.POSSIBLE) {
+            val note = if (Kind.NOISE in a.kinds) R.string.interference_possible_note else R.string.interference_possible_note_carrier
+            append('\n').append(ctx.getString(note)).append('\n')
+        }
         if (!a.baselineReady) append('\n').append(ctx.getString(R.string.interference_learning)).append('\n')
         append('\n').append(ctx.getString(R.string.interference_your_call))
     }
@@ -74,7 +77,13 @@ object InterferenceUi {
     fun showDetails(f: Fragment, a: Assessment, onReport: (() -> Unit)?) {
         val ctx = f.requireContext()
         MaterialAlertDialogBuilder(ctx)
-            .setTitle(if (a.level == Level.LIKELY) R.string.interference_title else R.string.interference_title_possible)
+            .setTitle(
+                when {
+                    a.level == Level.LIKELY -> R.string.interference_title
+                    Kind.NOISE in a.kinds -> R.string.interference_title_possible
+                    else -> R.string.interference_title_possible_carrier
+                }
+            )
             .setMessage(details(ctx, a))
             .apply { if (onReport != null) setPositiveButton(R.string.interference_report) { _, _ -> onReport() } }
             .setNegativeButton(R.string.interference_close, null)
@@ -100,7 +109,13 @@ object InterferenceUi {
             pill.isVisible = show
             if (!show) return@observe
             val likely = a!!.level == Level.LIKELY
-            pill.text = ctx.getString(if (likely) R.string.interference_pill else R.string.interference_pill_possible)
+            pill.text = ctx.getString(
+                when {
+                    likely -> R.string.interference_pill
+                    Kind.NOISE in a.kinds -> R.string.interference_pill_possible
+                    else -> R.string.interference_pill_possible_carrier
+                }
+            )
             pill.setBackgroundResource(if (likely) R.drawable.bg_pill_warn else R.drawable.bg_pill_off)
             pill.setTextColor(ContextCompat.getColor(ctx, if (likely) R.color.tac_ground else R.color.tac_text_dim))
             pill.setOnClickListener { showDetails(f, a, onReport) }

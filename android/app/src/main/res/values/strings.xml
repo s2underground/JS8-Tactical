@@ -840,6 +840,9 @@
     <string name="interference_pill_possible">NOISE?</string>
     <string name="interference_title">Interference on this dial</string>
     <string name="interference_title_possible">Noise floor raised</string>
+    <string name="interference_pill_possible_carrier">CARRIER?</string>
+    <string name="interference_title_possible_carrier">Steady tone on this dial</string>
+    <string name="interference_possible_note_carrier">One steady tone is often a station tuning up, a CW signal, or a birdie from your own radio. It is called interference if it stays for 5 minutes. You are only warned before sending if it sits on your transmit offset.</string>
     <string name="interference_on_dial">What the receiver measured on %1$s kHz:</string>
     <string name="interference_short_noise">noise %1$s dB</string>
     <string name="interference_short_carrier">carrier at %1$s Hz</string>
