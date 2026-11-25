@@ -100,11 +100,25 @@ class InterferenceDetectorTest {
         d.run(2 * 60, decodeEvery = 15) { b, _ -> addTone(b, 1612f, 200f) }
         val a = d.assessment()
         assertTrue(a.kinds.toString(), Kind.CARRIER in a.kinds)
-        assertEquals(Level.LIKELY, a.level)
+        // A minute or two of one tone: shown, not yet called interference (someone tuning up, CW, a birdie).
+        assertEquals(Level.POSSIBLE, a.level)
         assertTrue(a.carriersHz.toString(), a.carriersHz.any { abs(it - 1612) <= 25 })
         assertTrue(a.carrierNear(1600f))
         assertFalse(a.carrierNear(1000f))
         assertFalse("a tone alone leaves the rest of the passband usable", a.affectsTraffic)
+
+        // Still there after five minutes: interference.
+        d.run(4 * 60, decodeEvery = 15) { b, _ -> addTone(b, 1612f, 200f) }
+        assertEquals(Level.LIKELY, d.assessment().level)
+        assertFalse(d.assessment().affectsTraffic)
+    }
+
+    @Test
+    fun severalNewCarriersAtOnceAreInterference() {
+        val d = InterferenceDetector()
+        d.learnNormal()
+        d.run(2 * 60, decodeEvery = 15) { b, _ -> addTone(b, 700f, 200f); addTone(b, 1450f, 200f); addTone(b, 2210f, 200f) }
+        assertEquals(Level.LIKELY, d.assessment().level)
     }
 
     @Test
@@ -137,7 +151,7 @@ class InterferenceDetectorTest {
         val a = d.assessment()
         assertTrue(a.carriersHz.toString(), a.carriersHz.any { abs(it - 333) <= 2 })
         assertTrue(a.humHz.toString(), a.humHz.isEmpty())
-        assertEquals(Level.LIKELY, a.level)
+        assertEquals(Level.POSSIBLE, a.level)
     }
 
     @Test
@@ -265,7 +279,7 @@ class InterferenceDetectorTest {
         val d = InterferenceDetector()
         d.learnNormal()
         d.run(2 * 60) { b, _ -> addTone(b, 1612f, 200f) }
-        assertEquals(Level.LIKELY, d.assessment().level)
+        assertEquals(Level.POSSIBLE, d.assessment().level)
         d.onSpectrum(now, 14_078_000L, frame(1f), binHz)
         assertEquals(Level.NONE, d.assessment().level)
         assertFalse("no baseline for the new dial yet", d.assessment().baselineReady)

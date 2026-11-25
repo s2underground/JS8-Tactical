@@ -312,6 +312,7 @@ class InterferenceDetector(
         val newCarriers = ArrayList<Int>()
         val resident = ArrayList<Int>()
         val hum = ArrayList<Int>()
+        var longCarrier = false
         if (last.size >= CARRIER_WINDOWS) {
             val span = last.takeLast(CARRIER_WINDOWS)
             var c = 0
@@ -327,7 +328,13 @@ class InterferenceDetector(
                     when {
                         measured != null && isPowerLineHarmonic(measured) -> hum += hz
                         known -> resident += hz
-                        else -> newCarriers += hz
+                        else -> {
+                            newCarriers += hz
+                            // There for five minutes, not just one?
+                            if (last.size >= CARRIER_LONG_WINDOWS &&
+                                last.takeLast(CARRIER_LONG_WINDOWS).all { w -> (c..end).any { w.toneOcc[it] >= CARRIER_OCC } }
+                            ) longCarrier = true
+                        }
                     }
                     c = end + 1
                 } else c++
@@ -358,7 +365,12 @@ class InterferenceDetector(
 
         val confirmed = quiet || snrDrop != null
         val level = when {
-            Kind.CARRIER in kinds || Kind.SWEEP in kinds || Kind.PULSE in kinds -> Level.LIKELY
+            Kind.SWEEP in kinds || Kind.PULSE in kinds -> Level.LIKELY
+            // One steady tone for a minute is often a station tuning up, CW, or a birdie in the
+            // radio itself: shown, but only called interference once it has stayed five minutes
+            // (or comes with other signs).
+            Kind.CARRIER in kinds && (longCarrier || newCarriers.size >= 3 || Kind.NOISE in kinds) -> Level.LIKELY
+            Kind.CARRIER in kinds -> Level.POSSIBLE
             Kind.NOISE in kinds && confirmed -> Level.LIKELY
             Kind.NOISE in kinds -> Level.POSSIBLE
             else -> Level.NONE
@@ -402,6 +414,8 @@ class InterferenceDetector(
         const val SNR_DROP_DB = 6f
         const val CARRIER_OCC = 0.95f
         const val CARRIER_WINDOWS = 4
+        /** A carrier there this long (5 min) counts as interference on its own. */
+        const val CARRIER_LONG_WINDOWS = 20
         const val RESIDENT_OCC = 0.6f
         const val SWEEP_CELLS = 40 // 1000 Hz
         /** Largest move between frames (0.1 s) that still counts as sliding: 400 Hz. */
