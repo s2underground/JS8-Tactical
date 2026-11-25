@@ -11,7 +11,9 @@ import java.util.Locale
  *
  * Everything here reacts to text from anyone on the air, so it never replies to itself, to a
  * group, or to a frame that isn't addressed to this station, and it sends nothing it has no
- * value for (no INFO set → no INFO reply).
+ * value for (no INFO set → no INFO reply). The sender's name goes into what we transmit, so it
+ * must be a callsign: free text shaped like "ANY WORDS: @HB HEARTBEAT" can't put words on the
+ * air under our call.
  */
 object AutoReply {
 
@@ -48,6 +50,7 @@ object AutoReply {
      */
     fun heartbeatAck(text: String, snr: Int, me: Station, extra: (String) -> String = { "" }): String? {
         val from = RelayProtocol.heartbeatSender(text) ?: return null
+        if (!CallsignValidator.isAmateurCallsign(from)) return null
         if (CallsignValidator.matches(me.callsign, from)) return null
         val snrText = formatSnr(snr)
         if (snrText.isEmpty()) return null
@@ -55,17 +58,18 @@ object AutoReply {
         return "${me.callsign}: $target HEARTBEAT SNR $snrText${extra(target)}"
     }
 
-    /** Whether a directed frame is one this station should answer: to us, by callsign, not from us. */
+    /** Whether a directed frame is one this station should answer: to us, by callsign, from another callsign. */
     fun isForMe(me: String, d: DirectedCommand): Boolean =
         !d.to.startsWith("@") &&
             CallsignValidator.matches(me, d.to) &&
+            CallsignValidator.isAmateurCallsign(d.from) &&
             !CallsignValidator.matches(me, d.from)
 
     /** The direct answer to a query addressed to this station, or null when there is none to send. */
     fun directedReply(d: DirectedCommand, snr: Int, me: Station, heard: Heard): String? {
         if (!isForMe(me.callsign, d)) return null
         val asker = d.from.trim().uppercase()
-        val prefix = "${me.callsign}: ${d.from}"
+        val prefix = "${me.callsign}: $asker"
         return answer(d.command, snr, me, prefix, heard, exclude = setOf(asker, me.callsign.uppercase()))
     }
 

@@ -57,21 +57,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-internal fun assembleMsgPayload(parts: List<String>): String = parts.joinToString(separator = "")
-
-internal fun findClosestMsgBufferKey(
-    keys: Iterable<Int>,
-    frequency: Float,
-    toleranceHz: Int = 10
-): Int? {
-    val rounded = Math.round(frequency)
-    return keys
-        .map { key -> key to Math.abs(key - rounded) }
-        .filter { (_, distance) -> distance <= toleranceHz }
-        .minByOrNull { (_, distance) -> distance }
-        ?.first
-}
-
 /**
  * Foreground service for running the JS8 engine in the background.
  *
@@ -267,8 +252,8 @@ class JS8EngineService : Service() {
     private val offerStarts = mutableMapOf<Int, Pair<String, Long>>()
     private val heardCallsigns = mutableMapOf<String, Long>()
     private val heardLock = Any()
-    private val relayBuffers = mutableMapOf<Int, RelayBuffer>()
-    private val relayLock = Any()
+    /** Relays addressed to us, collected frame by frame (see [RelayAssembler]). */
+    private val relayAssembler = RelayAssembler()
     private val gridRegex = Regex("\\b[A-R]{2}[0-9]{2}([A-X]{2})?\\b", RegexOption.IGNORE_CASE)
     private val txMonitorRunnable = object : Runnable {
         override fun run() {
@@ -3834,120 +3819,17 @@ class JS8EngineService : Service() {
      *   payload...              (multi-frame: data frames follow)
      */
     private fun maybeHandleIncomingMessage(text: String, snr: Int, freq: Float, type: Int, submode: Int) {
-        val callsign = getConfiguredCallsign()
-        Log.d(TAG, "maybeHandleIncomingMessage: text='$text' type=$type callsign=$callsign")
-        if (callsign == null) {
-            Log.d(TAG, "maybeHandleIncomingMessage: no callsign configured, skipping")
-            return
-        }
-        
-        val now = System.currentTimeMillis()
-        cleanupMsgBuffers(now)
-        
-        // Try parsing as a directed command (MSG header frame)
-        val directed = RelayProtocol.parseDirectedCommand(text)
-        
-        val cmd = directed?.command?.uppercase()
-        if (directed != null && (cmd == Js8Commands.CMD_MSG || cmd == Js8Commands.CMD_MSG_TO || cmd == Js8Commands.CMD_QUERY)) {
-            // This is a MSG command frame
-            val isForMe = isSelfCallsign(callsign, directed.to)
-            val isForMyGroup = isSubscribedGroup(directed.to)
-            if (cmd == Js8Commands.CMD_QUERY && !isForMe) return
-            
-            if (!isForMe && !isForMyGroup) {
-                Log.d(TAG, "maybeHandleIncomingMessage: MSG not for me ($callsign) or my groups, skipping")
-                return
-            }
-            
-            val initialPayload = directed.payload
-            
-            Log.d(TAG, "maybeHandleIncomingMessage: MSG command from=${directed.from} to=${directed.to} initialPayload='$initialPayload' isLastFrame=${isLastFrame(type)}")
-            
-            // If this is the last frame and we have payload, deliver immediately
-            if (isLastFrame(type) && initialPayload.isNotBlank() && cmd != Js8Commands.CMD_MSG) {
-                val payload = initialPayload.trim().replace(Regex("\\s*[▪■]+\\s*$"), "").replace(Regex("\\s+[A-Z0-9]{3}$"), "").trim()
-                handleStoreForwardCommand(cmd, directed.from.trim().uppercase(), directed.to.trim().uppercase(), payload, snr, freq, submode)
-                return
-            }
-            if (isLastFrame(type) && initialPayload.isNotBlank()) {
-                val conversationId = if (isForMyGroup) directed.to else directed.from
-                // Strip checksum (3 uppercase alphanumeric chars at end, preceded by space)
-                val cleanPayload = initialPayload.trim()
-                    .replace(Regex("\\s*[▪■]+\\s*$"), "")
-                    .replace(Regex("\\s+[A-Z0-9]{3}$"), "")
-                    .trim()
-                Log.i(TAG, "MSG received (single frame): from=${directed.from} to=${directed.to} text='$cleanPayload' conversationId=$conversationId")
-                persistStoredAwareMessage(directed.from, cleanPayload, snr, freq, conversationId)
-                
-                // Queue auto-ACK now that full message is received (if autoreply enabled)
-                if (isAutoreplyEnabled()) {
-                    Log.i(TAG, "Auto ACK for MSG from=${directed.from}")
-                    broadcastQueueTx("$callsign: ${directed.from} ACK", null, priority = 2)
-                }
-                return
-            }
-            
-            // Buffer the MSG command and wait for data frames
-            val key = findMatchingMsgBufferKey(freq) ?: Math.round(freq)
-            val buffer = MsgBuffer(
-                from = directed.from.trim().uppercase(),
-                to = directed.to.trim().uppercase(),
-                command = cmd,
-                submode = submode,
-                snr = snr,
-                frequency = freq,
-                lastUpdated = now,
-                // Rides out three lost frames in a row before giving up.
-                timeoutMs = 4 * framePeriodMs(submode),
-                parts = if (initialPayload.isNotBlank()) mutableListOf(initialPayload) else mutableListOf()
-            )
-            synchronized(msgLock) {
-                msgBuffers[key] = buffer
-            }
-            Log.d(TAG, "maybeHandleIncomingMessage: buffered MSG command, waiting for data frames")
-            
-            // If last frame with no payload, it's an empty MSG (shouldn't happen normally)
-            if (isLastFrame(type)) {
-                synchronized(msgLock) {
-                    msgBuffers.remove(key)
-                }
-                Log.d(TAG, "maybeHandleIncomingMessage: last frame but no payload, discarding")
-            }
-            return
-        }
-        
-        // Not a directed command - check if it's a data frame for a buffered MSG
-        if (!DecodedMessage.isDataFrame(type)) {
-            return
-        }
-        
-        val result = synchronized(msgLock) {
-            val key = findMatchingMsgBufferKey(freq) ?: return@synchronized null
-            val buffer = msgBuffers[key] ?: return@synchronized null
-            // A frame slot went by with nothing heard (often our own transmission over it): mark
-            // the gap, so the Inbox doesn't show a message with words missing as if it were whole.
-            val period = buffer.timeoutMs / 4
-            if (period > 0 && now - buffer.lastUpdated > period * 8 / 5) {
-                val missed = ((now - buffer.lastUpdated + period / 2) / period - 1).coerceAtLeast(1)
-                buffer.parts.add(" [… $missed frame${if (missed == 1L) "" else "s"} missing …] ")
-                Log.i(TAG, "maybeHandleIncomingMessage: gap of $missed frame(s) in MSG from ${buffer.from}")
-            }
-            buffer.parts.add(text)
-            buffer.lastUpdated = now
-            Log.d(TAG, "maybeHandleIncomingMessage: added data frame to buffer, parts=${buffer.parts.size} isLastFrame=${isLastFrame(type)}")
-            if (isLastFrame(type)) {
-                msgBuffers.remove(key)
-                buffer
-            } else {
-                null
-            }
-        }
-        
-        if (result != null) {
-            processMsgBuffer(result, callsign)
-        }
+        val callsign = getConfiguredCallsign() ?: return
+        val msg = msgAssembler.onFrame(
+            text, snr, freq, type, System.currentTimeMillis(), submode, framePeriodMs(submode)
+        ) { command, to ->
+            val forMe = isSelfCallsign(callsign, to)
+            // A QUERY only ever asks us; MSG and MSG TO: can come to a group we follow.
+            forMe || (command != Js8Commands.CMD_QUERY && isSubscribedGroup(to))
+        } ?: return
+        processMsg(msg, callsign)
     }
-    
+
     // ------------------------------------------------------------------ store and forward
 
     /** An incoming MSG to us: a stored message we asked for reads "text FROM AUTHOR [NEXT MSG ID n]". */
@@ -4042,69 +3924,39 @@ class JS8EngineService : Service() {
         com.js8call.example.storeforward.SfParse.offerTail(text)?.let { heldStore.addWaiting(start.first, it, now) }
     }
 
-    private data class MsgBuffer(
-        val from: String,
-        val to: String,
-        /** MSG, MSG TO: or QUERY. */
-        val command: String,
-        val submode: Int,
-        val snr: Int,
-        val frequency: Float,
-        var lastUpdated: Long,
-        val timeoutMs: Long,
-        val parts: MutableList<String> = mutableListOf()
-    )
-    
-    private val msgBuffers = mutableMapOf<Int, MsgBuffer>()
-    private val msgLock = Any()
-    
-    private fun cleanupMsgBuffers(now: Long) {
-        synchronized(msgLock) {
-            msgBuffers.entries.removeIf { (_, buffer) ->
-                now - buffer.lastUpdated > buffer.timeoutMs
+    /** Stored-message commands to us or our groups, collected frame by frame (see [MsgAssembler]). */
+    private val msgAssembler = MsgAssembler()
+
+    /**
+     * A stored-message command heard in full. A MSG goes to the Inbox either way, marked when its
+     * checksum didn't match; only an intact one is acknowledged automatically, so a sender never
+     * hears "ACK" for a message that arrived garbled or with frames missing (JS8Call discards
+     * those). MSG TO: and QUERY drive automatic store-and-forward replies, so they are acted on
+     * only when intact, as in JS8Call.
+     */
+    private fun processMsg(msg: ReceivedMsg, myCallsign: String) {
+        if (msg.command != Js8Commands.CMD_MSG) {
+            if (!msg.intact) {
+                Log.w(TAG, "${msg.command} from ${msg.from} failed its checksum; ignored")
+                return
             }
-        }
-    }
-    
-    private fun findMatchingMsgBufferKey(freq: Float): Int? {
-        synchronized(msgLock) {
-            return findClosestMsgBufferKey(msgBuffers.keys, freq)
-        }
-    }
-    
-    private fun processMsgBuffer(buffer: MsgBuffer, myCallsign: String) {
-        // Data frames split at arbitrary byte boundaries, not word boundaries.
-        val fullText = assembleMsgPayload(buffer.parts).trim()
-        // Remove end-of-message marker if present
-        var cleanText = fullText.replace(Regex("\\s*[▪■]+\\s*$"), "").trim()
-        
-        // Remove MSG checksum (3 uppercase alphanumeric chars at end, preceded by space)
-        // JS8Call MSG uses 16-bit checksum which is 3 characters
-        cleanText = cleanText.replace(Regex("\\s+[A-Z0-9]{3}$"), "").trim()
-        
-        if (cleanText.isBlank()) {
-            Log.d(TAG, "processMsgBuffer: empty message after joining parts, discarding")
+            handleStoreForwardCommand(msg.command, msg.from, msg.to, msg.text, msg.snr, msg.freq, msg.submode)
             return
         }
-        if (buffer.command != Js8Commands.CMD_MSG) {
-            handleStoreForwardCommand(buffer.command, buffer.from, buffer.to, cleanText, buffer.snr, buffer.frequency, buffer.submode)
+        val conversationId = if (isSubscribedGroup(msg.to)) msg.to else msg.from
+        val shown = if (msg.intact || msg.gaps > 0) msg.text else "${msg.text} $MSG_CHECKSUM_FAILED_NOTE"
+        Log.i(TAG, "MSG received: from=${msg.from} to=${msg.to} intact=${msg.intact} gaps=${msg.gaps} conversationId=$conversationId")
+        persistStoredAwareMessage(msg.from, shown, msg.snr, msg.freq, conversationId)
+
+        if (!isAutoreplyEnabled()) return
+        if (!msg.intact) {
+            Log.i(TAG, "No auto ACK for MSG from=${msg.from}: it didn't arrive intact")
             return
         }
-        
-        val isForMyGroup = isSubscribedGroup(buffer.to)
-        val conversationId = if (isForMyGroup) buffer.to else buffer.from
-        
-        Log.i(TAG, "MSG received (multi-frame): from=${buffer.from} to=${buffer.to} text='$cleanText' conversationId=$conversationId")
-        persistStoredAwareMessage(buffer.from, cleanText, buffer.snr, buffer.frequency, conversationId)
-        
-        // Queue auto-ACK now that full message is received (if autoreply enabled)
-        if (isAutoreplyEnabled()) {
-            Log.i(TAG, "Auto ACK for MSG from=${buffer.from}")
-            broadcastQueueTx("$myCallsign: ${buffer.from} ACK", null, priority = 2)
-        }
+        Log.i(TAG, "Auto ACK for MSG from=${msg.from}")
+        broadcastQueueTx("$myCallsign: ${msg.from} ACK", null, priority = 2)
     }
-    
-    
+
     private fun isSubscribedGroup(target: String): Boolean {
         if (!target.startsWith("@")) return false
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
@@ -4159,78 +4011,12 @@ class JS8EngineService : Service() {
     private fun handleRelayFrame(text: String, snr: Int, mode: Int, freq: Float, type: Int) {
         if (!isRelayEnabled()) return
         val callsign = getConfiguredCallsign() ?: return
-        val now = System.currentTimeMillis()
-        cleanupRelayBuffers(now)
-
-        val directed = RelayProtocol.parseDirectedCommand(text)
-        if (directed != null && directed.command == ">") {
-            val target = directed.to.trim().uppercase()
-            if (isGroupTarget(target)) return
-            if (!isSelfCallsign(callsign, target)) return
-
-            val key = findMatchingRelayBufferKey(freq) ?: Math.round(freq)
-            val buffer = RelayBuffer(
-                from = directed.from.trim().uppercase(),
-                to = target,
-                snr = snr,
-                submode = getPreferredTxSubmode(),
-                frequency = freq,
-                lastUpdated = now,
-                inlinePayload = directed.payload.isNotBlank()
-            )
-            synchronized(relayLock) {
-                relayBuffers[key] = buffer
-            }
-            Log.i(TAG, "Relay command buffered from=${directed.from} to=${directed.to} freq=$freq")
-
-            if (directed.payload.isNotBlank()) {
-                val (payload, hasEom) = RelayProtocol.normalizePayload(directed.payload)
-                if (payload.isNotBlank()) {
-                    buffer.parts.add(payload)
-                    buffer.lastUpdated = now
-                }
-                if (hasEom || isLastFrame(type)) {
-                    synchronized(relayLock) {
-                        relayBuffers.remove(key)
-                    }
-                    processRelayBuffer(buffer)
-                }
-                return
-            }
-
-            return
-        }
-
-        if (!DecodedMessage.isDataFrame(type)) return
-
-        val result = synchronized(relayLock) {
-            val key = findMatchingRelayBufferKey(freq) ?: return@synchronized null
-            val buffer = relayBuffers[key] ?: return@synchronized null
-            buffer.parts.add(text)
-            buffer.lastUpdated = now
-            if (isLastFrame(type)) {
-                relayBuffers.remove(key)
-                buffer
-            } else {
-                null
-            }
-        }
-
-        if (result != null) {
-            processRelayBuffer(result)
-        }
+        val relay = relayAssembler.onFrame(
+            text, snr, freq, type, System.currentTimeMillis(), callsign, getPreferredTxSubmode()
+        ) ?: return
+        Log.i(TAG, "Relay heard in full from=${relay.from} freq=$freq")
+        processRelay(relay)
     }
-
-    private data class RelayBuffer(
-        val from: String,
-        val to: String,
-        val snr: Int,
-        val submode: Int,
-        val frequency: Float,
-        var lastUpdated: Long,
-        val inlinePayload: Boolean,
-        val parts: MutableList<String> = mutableListOf()
-    )
 
     private fun isAutoreplyEnabled(): Boolean {
         // Held for a few minutes after the Net Switcher changed band (setting), so an untuned antenna isn't keyed.
@@ -4377,24 +4163,8 @@ class JS8EngineService : Service() {
         return CallsignValidator.matches(myCall, from)
     }
 
-    private fun isGroupTarget(target: String): Boolean {
-        return target.contains("@")
-    }
 
-
-    private fun isLastFrame(type: Int): Boolean = (type and 0x2) != 0
-
-    private fun cleanupRelayBuffers(now: Long) {
-        synchronized(relayLock) {
-            val iterator = relayBuffers.iterator()
-            while (iterator.hasNext()) {
-                val entry = iterator.next()
-                if (now - entry.value.lastUpdated > RELAY_BUFFER_TIMEOUT_MS) {
-                    iterator.remove()
-                }
-            }
-        }
-    }
+    private fun isLastFrame(type: Int): Boolean = RelayAssembler.isLastFrame(type)
 
     private fun updateMessageLogging() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
@@ -4415,65 +4185,18 @@ class JS8EngineService : Service() {
         logger.logTx(message, directed, lastTxFrequencyHz, lastTxSubmode)
     }
 
-    private fun findMatchingRelayBufferKey(freq: Float): Int? {
-        synchronized(relayLock) {
-            for ((key, _) in relayBuffers) {
-                if (kotlin.math.abs(freq - key) <= RELAY_FREQUENCY_TOLERANCE_HZ) {
-                    return key
-                }
+    /** Acts on a relay heard in full: pass it on, answer it, or acknowledge it. */
+    private fun processRelay(relay: ReceivedRelay) {
+        val myCall = getConfiguredCallsign() ?: return
+        when (val action = RelayAssembler.decide(relay, myCall)) {
+            null -> Log.i(TAG, "Relay from ${relay.from} needs nothing from us (blank, group, ACK, failed checksum or a loop)")
+            is RelayAction.Forward -> sendRelayMessage(action.text, relay.submode)
+            is RelayAction.Deliver -> {
+                val handled = maybeHandleRelayedAutoreply(action.payload, action.path, relay.snr, relay.submode)
+                if (!handled) sendRelayMessage("${action.path} ACK", relay.submode)
             }
         }
-        return null
     }
-
-    private fun processRelayBuffer(buffer: RelayBuffer) {
-        if (buffer.parts.isEmpty()) return
-        val combined = RelayProtocol.stripEom(buffer.parts.joinToString(separator = "").trimEnd())
-        if (combined.isBlank()) return
-
-        if (combined.trimStart().startsWith("@")) {
-            Log.i(TAG, "Relay payload starts with group token, ignoring")
-            return
-        }
-
-        val (valid, message) = RelayProtocol.validateChecksum(combined)
-        val payload = if (valid) {
-            message
-        } else if (buffer.inlinePayload) {
-            Log.w(TAG, "Relay payload checksum invalid, forwarding inline payload without validation")
-            RelayProtocol.stripOptionalChecksum(combined)
-        } else {
-            Log.w(TAG, "Relay payload failed checksum validation")
-            return
-        }
-
-        if (payload.isBlank()) return
-
-        val forwardPayload = RelayProtocol.forwardPayload(payload)
-        if (forwardPayload != null) {
-            val forwardText = if (buffer.from.isNotBlank()) {
-                "$forwardPayload *DE* ${buffer.from}"
-            } else {
-                forwardPayload
-            }
-            sendRelayMessage(forwardText, buffer.submode)
-            return
-        }
-
-        val trimmed = payload.trimStart()
-        if (trimmed.startsWith("ACK", ignoreCase = true)) {
-            return
-        }
-
-        val relayPath = RelayProtocol.pathCallsigns(buffer.from, payload).joinToString(">")
-        if (relayPath.isBlank()) return
-
-        val handled = maybeHandleRelayedAutoreply(payload, relayPath, buffer.snr, buffer.submode)
-        if (!handled) {
-            sendRelayMessage("$relayPath ACK", buffer.submode)
-        }
-    }
-
 
     private fun maybeHandleRelayedAutoreply(
         payload: String,
@@ -4482,7 +4205,7 @@ class JS8EngineService : Service() {
         submode: Int
     ): Boolean {
         if (!isAutoreplyEnabled()) return false
-        if (isTransmitActive()) return false
+        // No check for a transmission in progress: the queue waits for a free slot.
         val callsign = getConfiguredCallsign() ?: return false
         val me = autoReplyStation(callsign, PreferenceManager.getDefaultSharedPreferences(this))
         val reply = AutoReply.relayedReply(payload, relayPath, snr, me) { exclude -> getRecentHeardCallsigns(exclude, HEARD_LIMIT) }
@@ -4490,36 +4213,17 @@ class JS8EngineService : Service() {
         return sendRelayMessage(reply, submode)
     }
 
+    /**
+     * A relay forward, relay ACK or relayed auto-reply goes through the transmit queue like every
+     * other automatic reply, so it waits for a free slot and honours the same holds: a message
+     * still coming in, the Net Switcher's hold after a band change, a radio link that just came
+     * back, rig control not yet up. (Sending straight to the engine skipped all of those.)
+     */
     private fun sendRelayMessage(text: String, submode: Int): Boolean {
-        val activeEngine = engine ?: return false
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val callsign = getConfiguredCallsign() ?: return false
-        val grid = prefs.getString("grid", "")?.trim().orEmpty().uppercase()
-        if (isTransmitActive()) return false
-
         val payload = text.trim()
-        if (payload.isEmpty()) return false
-
-        val ok = transmitIfIdle(activeEngine) {
-            activeEngine.transmitMessage(
-                text = payload,
-                myCall = callsign,
-                myGrid = grid,
-                selectedCall = "",
-                submode = submode,
-                audioFrequencyHz = currentTxOffsetHz.toDouble(),
-                txDelaySec = 0.0,
-                forceIdentify = callsign.isNotBlank(),
-                forceData = false
-            )
-        } ?: return false
-
-        if (ok) {
-            updateLastTxMessage(payload, "", submode, currentTxOffsetHz.toDouble())
-            broadcastTxState(TX_STATE_QUEUED)
-            startTxMonitor(frameTextsFor(payload, callsign, grid, "", submode, callsign.isNotBlank(), forceData = false))
-        }
-        return ok
+        if (payload.isEmpty() || getConfiguredCallsign() == null) return false
+        broadcastQueueTx(payload, null, priority = 2, submode = submode)
+        return true
     }
 
     private fun updateHeardCallsign(text: String) {
@@ -4742,8 +4446,6 @@ class JS8EngineService : Service() {
         private const val HEARD_LIMIT = 4
         private const val HEARD_WINDOW_MS = 15 * 60 * 1000L
         private val HEARD_EXCLUDE_TOKENS = setOf("CQ", "HB", "HEARTBEAT", "ALLCALL", "@ALLCALL")
-        private const val RELAY_BUFFER_TIMEOUT_MS = 90_000L
-        private const val RELAY_FREQUENCY_TOLERANCE_HZ = 10.0f
         const val SUBMODE_NORMAL = 0
         const val SUBMODE_FAST = 1
         const val SUBMODE_TURBO = 2
@@ -4790,6 +4492,8 @@ class JS8EngineService : Service() {
         const val ACTION_TX_STATE = "com.js8call.example.ACTION_TX_STATE"
         const val ACTION_TX_SENT = "com.js8call.example.ACTION_TX_SENT"
         /** Where the send in progress has got, frame by frame (see [TxProgress]). */
+        /** Added to a MSG whose checksum didn't match (no frames known missing). */
+        private const val MSG_CHECKSUM_FAILED_NOTE = "[… checksum didn't match: some text may be wrong …]"
         const val ACTION_TX_PROGRESS = "com.js8call.example.ACTION_TX_PROGRESS"
         const val EXTRA_TX_FRAME_TEXTS = "tx_frame_texts"
         const val EXTRA_TX_FRAMES_STARTED = "tx_frames_started"
