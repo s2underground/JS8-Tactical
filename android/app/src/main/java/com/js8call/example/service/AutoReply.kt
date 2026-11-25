@@ -23,7 +23,7 @@ object AutoReply {
         val info: String = "",
         val status: String = "",
         val grid: String = "",
-        /** The last message this station sent, for AGN?. */
+        /** The last message the operator sent (not an automatic reply), for AGN?. */
         val lastTx: String = "",
     )
 
@@ -96,4 +96,29 @@ object AutoReply {
             "AGN?" -> me.lastTx.trimEnd().takeIf { it.isNotBlank() }
             else -> null
         }
+}
+
+/**
+ * Lets an automatic replay (AGN?) go to each station once per [windowMs]. A one-frame "AGN?" can
+ * make us send a long message again, so without this one station could keep us transmitting by
+ * asking over and over. A repeat ask inside the window is left to the operator, who sees it in
+ * Traffic and can send again by hand.
+ */
+class ReplayGuard(private val windowMs: Long = DEFAULT_WINDOW_MS) {
+    private val last = HashMap<String, Long>()
+
+    /** Whether to replay automatically for [requester] at [now]; records the replay if so. */
+    @Synchronized
+    fun allow(requester: String, now: Long): Boolean {
+        val key = requester.trim().uppercase().substringBefore('/')
+        if (key.isEmpty()) return false
+        last.values.removeAll { now - it >= windowMs || now < it }
+        if (key in last) return false
+        last[key] = now
+        return true
+    }
+
+    companion object {
+        const val DEFAULT_WINDOW_MS = 10 * 60_000L
+    }
 }

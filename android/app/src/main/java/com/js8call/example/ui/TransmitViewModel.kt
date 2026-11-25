@@ -133,6 +133,7 @@ class TransmitViewModel internal constructor(application: Application) : Android
             putExtra(JS8EngineService.EXTRA_TX_TEXT, next.text)
             next.directed?.let { putExtra(JS8EngineService.EXTRA_TX_DIRECTED, it) }
             next.submode?.let { putExtra(JS8EngineService.EXTRA_TX_SUBMODE, it) }
+            putExtra(JS8EngineService.EXTRA_TX_AUTOMATIC, next.priority > 0)
             putExtra(JS8EngineService.EXTRA_TX_FREQ_HZ, com.js8call.example.service.TxOffsets.txOffset(app).toDouble())
         }
         runCatching { app.startService(tx) }.onFailure { e ->

@@ -2,7 +2,9 @@ package com.js8call.example.service
 
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.util.Locale
@@ -129,5 +131,21 @@ class AutoReplyTest {
         assertNull(AutoReply.relayedReply("HELLO THERE", "N3QRS>K1ABC", -15, me, heard))
         assertNull(AutoReply.relayedReply("", "N3QRS>K1ABC", -15, me, heard))
         assertNull(AutoReply.relayedReply("SNR?", "", -15, me, heard))
+    }
+
+    // --- AGN? replays (audit M3)
+
+    @Test
+    fun agnIsReplayedOncePerStationPerWindow() {
+        val g = ReplayGuard(windowMs = 600_000)
+        assertTrue(g.allow("K1ABC", 0))
+        // Asking again, in any case or with a suffix, inside the window: left to the operator.
+        assertFalse(g.allow("k1abc", 60_000))
+        assertFalse(g.allow("K1ABC/P", 599_999))
+        // Another station has its own allowance.
+        assertTrue(g.allow("N3QRS", 60_000))
+        // After the window, one more automatic replay.
+        assertTrue(g.allow("K1ABC", 600_000))
+        assertFalse(g.allow("", 0))
     }
 }
