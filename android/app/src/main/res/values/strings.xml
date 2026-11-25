@@ -167,6 +167,9 @@
     <string name="settings_log_messages_summary">Write TX/RX logs to Downloads/JS8CallLogs/js8call-log.txt</string>
     <string name="settings_autoreply">Enable Autoreply</string>
     <string name="settings_autoreply_summary">Automatically respond to heartbeats with SNR</string>
+    <string name="settings_auto_reply_safeguard">Auto-reply safeguard</string>
+    <string name="settings_auto_reply_safeguard_summary">Send at most 5 automatic replies (heartbeat ACKs, query answers, relays) in any 5 minutes, and drop duplicates, so other stations can\'t keep this radio transmitting. Your own sends are never limited. Standard JS8Call has no such limit.</string>
+    <string name="auto_reply_safeguard_paused">Automatic replies paused: 5 sent in the last 5 minutes (Settings → Auto-reply safeguard). Your own sends aren\'t affected.</string>
     <string name="settings_relay">Enable Relay</string>
     <string name="settings_relay_summary">Automatically relay messages using CALL&gt;</string>
 
@@ -393,6 +396,7 @@
     <string name="map_band_all">All bands</string>
     <string name="map_band_one">Band: %1$s</string>
     <string name="map_heard_on">Heard on %1$s</string>
+    <string name="ptt_stuck_text_stopped">The receiver stopped without confirming the radio unkeyed (failed PTT releases: %1$d). Check the radio now and unkey it by hand if it is still transmitting.</string>
     <string name="ptt_stuck_title">Radio may still be transmitting</string>
     <string name="ptt_stuck_text">The app couldn\'t confirm the radio unkeyed (failed PTT releases in a row: %1$d). It keeps trying. Check the radio and unkey it by hand if it is still transmitting.</string>
     <string name="notification_receiver_closed_title">Receiver stopped: Android closed the app</string>

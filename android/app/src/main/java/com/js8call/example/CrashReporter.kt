@@ -48,6 +48,8 @@ object CrashReporter {
         appContext = context.applicationContext
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            // First, before anything that could fail: don't leave the radio keyed.
+            runCatching { com.js8call.example.service.JS8EngineService.emergencyUnkey(2_000L) }
             runCatching { noteCrashTime(context.applicationContext) }
             runCatching { append("CRASH on thread '${thread.name}'", error) }
             previous?.uncaughtException(thread, error)

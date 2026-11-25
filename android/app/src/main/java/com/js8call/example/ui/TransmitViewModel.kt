@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import androidx.preference.PreferenceManager
 import com.js8call.example.AppBroadcasts
 import com.js8call.example.MainActivity
 import com.js8call.example.data.MessageEntity
@@ -124,8 +125,25 @@ class TransmitViewModel internal constructor(application: Application) : Android
         }
         if (receiving) retrySoon()
         pick ?: return
-        autoAheadOfOperator = pick.autoAheadOfOperator
         val next = pick.message
+        if (next.priority > 0 && autoReplySafeguard() && !autoReplyBudget.allows(now)) {
+            // Other stations have had their share: this automatic reply is dropped, not delayed
+            // (an answer minutes late is no answer), and the operator is told once per window.
+            txQueue.remove(next)
+            publishQueue()
+            Log.i(TAG, "Auto-reply safeguard: dropped '${next.text}'")
+            if (now - lastSafeguardNoticeMs >= AutoReplyBudget.DEFAULT_WINDOW_MS) {
+                lastSafeguardNoticeMs = now
+                AppBroadcasts.send(getApplication(), Intent(JS8EngineService.ACTION_ERROR).putExtra(
+                    JS8EngineService.EXTRA_ERROR_MESSAGE,
+                    getApplication<Application>().getString(com.js8call.example.R.string.auto_reply_safeguard_paused),
+                ))
+            }
+            processNext()
+            return
+        }
+        if (next.priority > 0) autoReplyBudget.record(now)
+        autoAheadOfOperator = pick.autoAheadOfOperator
         // Keep this entry tied to the eventual TX result even if a higher-priority one is queued meanwhile.
         beginTransmission(next)
         Log.d(TAG, "Sending to service: text='${next.text}' directed=${next.directed}")
@@ -184,6 +202,11 @@ class TransmitViewModel internal constructor(application: Application) : Android
     private val sendOrder = Mutex()
     /** Automatic replies sent in a row while an operator message waited (see [TxQueueRules]). */
     private var autoAheadOfOperator = 0
+    private val autoReplyBudget = AutoReplyBudget()
+    private var lastSafeguardNoticeMs = 0L
+    private fun autoReplySafeguard(): Boolean = runCatching {
+        PreferenceManager.getDefaultSharedPreferences(getApplication()).getBoolean(PREF_AUTO_REPLY_SAFEGUARD, true)
+    }.getOrDefault(true)
     private val repository by lazy { MessageRepository.getInstance(getApplication()) }
 
     /**
@@ -205,6 +228,10 @@ class TransmitViewModel internal constructor(application: Application) : Android
     }
 
     private fun enqueue(message: TransmitMessage) {
+        if (message.priority > 0 && autoReplySafeguard() && TxQueueRules.isDuplicateAuto(txQueue.filter { it !== activeMessage }, message)) {
+            Log.i(TAG, "Dropped a duplicate automatic reply: '${message.text}'")
+            return
+        }
         txQueue.add(message)
         txQueue.sortByDescending { it.priority }
         if (_txState.value == TransmitState.IDLE) _txState.value = TransmitState.QUEUED
@@ -378,6 +405,8 @@ class TransmitViewModel internal constructor(application: Application) : Android
 
     companion object {
         private const val TAG = "TransmitViewModel"
+        /** Settings: the auto-reply safeguard (see [AutoReplyBudget]); on unless turned off. */
+        const val PREF_AUTO_REPLY_SAFEGUARD = "auto_reply_safeguard"
         /** An automatic reply still waiting after this long is no use; drop it. */
         private const val AUTO_STALE_MS = 10 * 60_000L
 

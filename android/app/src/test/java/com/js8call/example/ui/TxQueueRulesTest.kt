@@ -2,7 +2,9 @@ package com.js8call.example.ui
 
 import com.js8call.example.model.TransmitMessage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TxQueueRulesTest {
@@ -51,5 +53,24 @@ class TxQueueRulesTest {
         assertEquals("ACK", pick!!.message.text)
         assertEquals(0, pick.autoAheadOfOperator)
         assertNull(TxQueueRules.pickNext(listOf(held), 0) { it !== held })
+    }
+
+    @Test
+    fun theSafeguardAllowsFiveAutomaticRepliesInAnyFiveMinutes() {
+        val b = AutoReplyBudget()
+        repeat(5) { assertTrue(b.allows(it * 1_000L)); b.record(it * 1_000L) }
+        assertFalse(b.allows(10_000))
+        assertFalse(b.allows(299_999))
+        // The first one leaves the window five minutes after it went.
+        assertTrue(b.allows(300_000))
+    }
+
+    @Test
+    fun aDuplicateAutomaticReplyAddsNothing() {
+        val waiting = listOf(auto("W2XYZ: K1ABC SNR -10"), mine("HELLO"))
+        assertTrue(TxQueueRules.isDuplicateAuto(waiting, auto("W2XYZ: K1ABC SNR -10")))
+        assertFalse(TxQueueRules.isDuplicateAuto(waiting, auto("W2XYZ: K1ABC SNR -12")))
+        // The operator's own sends are never dropped as duplicates.
+        assertFalse(TxQueueRules.isDuplicateAuto(waiting, mine("HELLO")))
     }
 }
