@@ -8,6 +8,7 @@
 #include <vector>
 #include "hamlib/rig.h"
 #include "js8_engine_jni.h"
+#include "jni_jstring.hpp"
 
 // JNI method implementations for com.js8call.core.JS8Engine
 
@@ -443,7 +444,7 @@ Java_com_js8call_core_HamlibRigCatalog_nativeListRigModels(
     }
     label += entry.name;
     std::string packed = std::to_string(entry.model) + "|" + label;
-    jstring packed_str = env->NewStringUTF(packed.c_str());
+    jstring packed_str = js8tactical::to_jstring(env, packed);
     env->SetObjectArrayElement(result, static_cast<jsize>(i + 1), packed_str);
     env->DeleteLocalRef(packed_str);
   }

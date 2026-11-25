@@ -17,6 +17,7 @@
 #include "js8core/engine.hpp"
 #include "js8core/protocol/varicode.hpp"
 #include "own_frame_text.hpp"
+#include "jni_jstring.hpp"
 #include "js8core/dsp/resampler.hpp"
 #include "js8core/android/audio_oboe.hpp"
 #include "js8core/android/logger_android.hpp"
@@ -102,13 +103,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_js8call_core_JS8Engine_nativeFrameTexts(
   env->DeleteLocalRef(string_class);
   if (!out) return nullptr;
   for (std::size_t i = 0; i < texts.size(); ++i) {
-    // Frame text is plain ASCII; anything else is dropped rather than handed to
-    // NewStringUTF, which would abort on invalid modified UTF-8.
-    std::string ascii;
-    for (char c : texts[i]) {
-      if (static_cast<unsigned char>(c) < 0x80 && c != '\0') ascii += c;
-    }
-    jstring value = env->NewStringUTF(ascii.c_str());
+    jstring value = js8tactical::to_jstring(env, texts[i]);
     if (!value) return nullptr;
     env->SetObjectArrayElement(out, static_cast<jsize>(i), value);
     env->DeleteLocalRef(value);
@@ -540,6 +535,16 @@ static bool is_repeat(JS8Engine_Native* native, js8core::events::Decoded const& 
   return false;
 }
 
+// A Kotlin callback that throws leaves an exception pending on this native thread; the next JNI
+// call would then abort the app (CheckJNI) or behave undefined. Log it and clear it.
+static void clear_pending_exception(JNIEnv* env, char const* where) {
+  if (env && env->ExceptionCheck()) {
+    __android_log_print(ANDROID_LOG_ERROR, "JS8Engine_Native", "Java callback %s threw; cleared", where);
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
+}
+
 // Event callback that marshals C++ events to Java
 static void event_callback(JS8Engine_Native* native, js8core::events::Variant const& event) {
   if (!native || !native->callback_handler) return;
@@ -574,10 +579,13 @@ static void event_callback(JS8Engine_Native* native, js8core::events::Variant co
 
     jmethodID method = env->GetMethodID(handler_class, "onDecoded", "(IIFFLjava/lang/String;IFII)V");
     if (method) {
-      jstring text = env->NewStringUTF(rendered.c_str());
+      // Decoded text can hold any byte (the dictionary has single Latin-1 bytes): never
+      // NewStringUTF here, which aborts on invalid modified UTF-8 (see jni_text.hpp).
+      jstring text = js8tactical::to_jstring(env, rendered);
       env->CallVoidMethod(native->callback_handler, method,
                          decoded->utc, decoded->snr, decoded->xdt, decoded->frequency,
                          text, type, decoded->quality, decoded->mode, decoded->drift_ms);
+      clear_pending_exception(env, "onDecoded");
       env->DeleteLocalRef(text);
     }
   } else if (auto* spectrum = std::get_if<js8core::events::Spectrum>(&event)) {
@@ -589,6 +597,7 @@ static void event_callback(JS8Engine_Native* native, js8core::events::Variant co
                                spectrum->bins.data());
       env->CallVoidMethod(native->callback_handler, method,
                          bins, spectrum->bin_hz, spectrum->power_db, spectrum->peak_db);
+      clear_pending_exception(env, "onSpectrum");
       env->DeleteLocalRef(bins);
     }
   } else if (auto* decode_started = std::get_if<js8core::events::DecodeStarted>(&event)) {
@@ -596,6 +605,7 @@ static void event_callback(JS8Engine_Native* native, js8core::events::Variant co
     jmethodID method = env->GetMethodID(handler_class, "onDecodeStarted", "(I)V");
     if (method) {
       env->CallVoidMethod(native->callback_handler, method, decode_started->submodes);
+      clear_pending_exception(env, "onDecodeStarted");
     }
   } else if (auto* decode_finished = std::get_if<js8core::events::DecodeFinished>(&event)) {
     // Call onDecodeFinished(int count)
@@ -603,6 +613,7 @@ static void event_callback(JS8Engine_Native* native, js8core::events::Variant co
     if (method) {
       env->CallVoidMethod(native->callback_handler, method,
                          static_cast<jint>(decode_finished->decoded));
+      clear_pending_exception(env, "onDecodeFinished");
     }
   }
 
@@ -623,8 +634,9 @@ static void error_callback(JS8Engine_Native* native, std::string_view message) {
 
   jmethodID method = env->GetMethodID(handler_class, "onError", "(Ljava/lang/String;)V");
   if (method) {
-    jstring msg = env->NewStringUTF(std::string(message).c_str());
+    jstring msg = js8tactical::to_jstring(env, message);
     env->CallVoidMethod(native->callback_handler, method, msg);
+    clear_pending_exception(env, "onError");
     env->DeleteLocalRef(msg);
   }
 
@@ -645,8 +657,9 @@ static void log_callback(JS8Engine_Native* native, js8core::LogLevel level, std:
 
   jmethodID method = env->GetMethodID(handler_class, "onLog", "(ILjava/lang/String;)V");
   if (method) {
-    jstring msg = env->NewStringUTF(std::string(message).c_str());
+    jstring msg = js8tactical::to_jstring(env, message);
     env->CallVoidMethod(native->callback_handler, method, static_cast<jint>(level), msg);
+    clear_pending_exception(env, "onLog");
     env->DeleteLocalRef(msg);
   }
 
@@ -694,6 +707,7 @@ JS8Engine_Native* js8_engine_create(JNIEnv* env, jobject callback_handler,
                                           reinterpret_cast<const jshort*>(samples.data()));
               cb_env->CallVoidMethod(native->callback_handler, method, array,
                                      static_cast<jint>(sample_rate_hz));
+              clear_pending_exception(cb_env, "onTxAudio");
               cb_env->DeleteLocalRef(array);
             }
           }

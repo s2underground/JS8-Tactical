@@ -15,6 +15,7 @@
 #endif
 
 #include "hamlib/rig.h"
+#include "jni_jstring.hpp"
 
 namespace {
 
@@ -406,7 +407,7 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_js8call_core_HamlibRigControl_nativeGetLastError(JNIEnv* env,
                                                           jobject /*thiz*/) {
   std::string message = get_last_error();
-  return env->NewStringUTF(message.c_str());
+  return js8tactical::to_jstring(env, message);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
