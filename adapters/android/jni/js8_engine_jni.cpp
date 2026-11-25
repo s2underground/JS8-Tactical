@@ -18,6 +18,7 @@
 #include "js8core/protocol/varicode.hpp"
 #include "own_frame_text.hpp"
 #include "jni_jstring.hpp"
+#include "jni_thread.hpp"
 #include "js8core/dsp/resampler.hpp"
 #include "js8core/android/audio_oboe.hpp"
 #include "js8core/android/logger_android.hpp"
@@ -170,20 +171,8 @@ struct JS8Engine_Native {
 
 // Helper to get JNI environment for current thread
 static JNIEnv* get_jni_env() {
-  if (!g_jvm) return nullptr;
-
-  JNIEnv* env = nullptr;
-  int status = g_jvm->GetEnv((void**)&env, JNI_VERSION_1_6);
-
-  if (status == JNI_EDETACHED) {
-    // Attach current thread
-    status = g_jvm->AttachCurrentThread(&env, nullptr);
-    if (status != JNI_OK) {
-      return nullptr;
-    }
-  }
-
-  return env;
+  // Attaches the calling thread if needed and detaches it when the thread ends.
+  return js8tactical::attach_current_thread(g_jvm);
 }
 
 class PumpAudioOutput final : public js8core::AudioOutput {

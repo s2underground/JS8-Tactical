@@ -18,7 +18,13 @@ import java.util.concurrent.Executors
  * publishes for that file. The check runs in the background once the download finishes, and once
  * for a model downloaded by an older version of the app. A file that doesn't match is deleted
  * and never loaded. After that, a model counts as checked while its size and timestamp are
- * unchanged (the app's own storage, which other apps can't write to).
+ * unchanged, which is safe only where no other app can write to the file:
+ * - Android 10 and later: the app's external files folder (Android/data/<app>/files/models),
+ *   which other apps can't reach (scoped storage).
+ * - Android 8 and 9: any app with storage permission can write there, so a checked model could
+ *   be swapped for a crafted file before llama.cpp loads it (audit L6, Nov 25). There, a
+ *   download is copied into the app's private storage, and the SHA-256 is taken of the copy as it
+ *   is written; only that copy is ever loaded.
  */
 object AiModels {
 
@@ -63,9 +69,20 @@ object AiModels {
 
     fun enabled(ctx: Context) = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(PREF_ENABLED, false)
 
-    fun dir(ctx: Context): File = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "models").apply { mkdirs() }
+    /** Where DownloadManager writes (it can only write to external storage). */
+    private fun downloadDir(ctx: Context): File = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "models").apply { mkdirs() }
+
+    /** Other apps can't write to the external files folder (Android 10+, scoped storage). */
+    private val externalIsPrivate: Boolean get() = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
+
+    /** Where checked models live and are loaded from. */
+    fun dir(ctx: Context): File =
+        if (externalIsPrivate) downloadDir(ctx) else File(ctx.filesDir, "models").apply { mkdirs() }
     fun file(ctx: Context, m: Model) = File(dir(ctx), m.file)
-    private fun partial(ctx: Context, m: Model) = File(dir(ctx), m.file + ".part")
+    private fun partial(ctx: Context, m: Model) = File(downloadDir(ctx), m.file + ".part")
+    /** A model an older version left in the external folder on Android 8/9 (moved in on its next check). */
+    private fun legacyExternal(ctx: Context, m: Model): File? =
+        if (externalIsPrivate) null else File(downloadDir(ctx), m.file).takeIf { it.isFile }
 
     /** Downloaded, looks like a GGUF file, and passed the SHA-256 check. Cheap: safe on the main thread. */
     fun ready(ctx: Context, m: Model): Boolean {
@@ -96,9 +113,21 @@ object AiModels {
         val app = ctx.applicationContext
         verifier.execute {
             try {
-                val ok = runCatching { FileHash.sha256(src) }.getOrNull() == m.sha256
                 val target = file(app, m)
-                if (ok && (src == target || (target.delete() || !target.exists()) && src.renameTo(target))) {
+                val ok: Boolean
+                val placed: Boolean
+                if (src.parentFile == target.parentFile) {
+                    ok = runCatching { FileHash.sha256(src) }.getOrNull() == m.sha256
+                    placed = ok && (src == target || (target.delete() || !target.exists()) && src.renameTo(target))
+                } else {
+                    // Into private storage (Android 8/9): hash the copy as it is written.
+                    val tmp = File(target.path + ".tmp")
+                    ok = runCatching { FileHash.copyAndHash(src, tmp) }.getOrNull() == m.sha256
+                    placed = ok && (target.delete() || !target.exists()) && tmp.renameTo(target)
+                    if (!placed) tmp.delete()
+                    src.delete()
+                }
+                if (placed) {
                     prefs(app).edit { putString(PREF_VERIFIED_PREFIX + m.id, stamp(target, m)); remove(PREF_REJECTED_PREFIX + m.id) }
                 } else {
                     src.delete()
@@ -151,6 +180,12 @@ object AiModels {
         }
         if (m.id in verifying) return State.Verifying
         if (ready(ctx, m)) return State.Ready
+        legacyExternal(ctx, m)?.let { old ->
+            // Downloaded to the shared folder by an older version on Android 8/9: check it into
+            // private storage.
+            verify(ctx, m, old)
+            return State.Verifying
+        }
         val f = file(ctx, m)
         if (f.isFile) {
             // Downloaded by a version of the app that didn't check: check it now.
@@ -171,7 +206,7 @@ object AiModels {
      */
     fun settle(ctx: Context) {
         ALL.forEach { m ->
-            val unchecked = file(ctx, m).isFile && !ready(ctx, m)
+            val unchecked = (file(ctx, m).isFile || legacyExternal(ctx, m) != null) && !ready(ctx, m)
             if (downloadId(ctx, m) != null || unchecked) runCatching { state(ctx, m) }
         }
     }
@@ -200,10 +235,12 @@ object AiModels {
     fun delete(ctx: Context, m: Model) {
         cancel(ctx, m)
         file(ctx, m).delete()
+        legacyExternal(ctx, m)?.delete()
         prefs(ctx).edit { remove(PREF_VERIFIED_PREFIX + m.id); remove(PREF_REJECTED_PREFIX + m.id) }
     }
 
-    fun totalBytesOnDisk(ctx: Context): Long = dir(ctx).listFiles()?.sumOf { it.length() } ?: 0L
+    fun totalBytesOnDisk(ctx: Context): Long =
+        listOf(dir(ctx), downloadDir(ctx)).distinct().sumOf { d -> d.listFiles()?.sumOf { it.length() } ?: 0L }
 
     private fun downloadId(ctx: Context, m: Model): Long? =
         PreferenceManager.getDefaultSharedPreferences(ctx).getLong(PREF_DOWNLOAD_PREFIX + m.id, -1L).takeIf { it >= 0 }

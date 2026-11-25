@@ -48,6 +48,9 @@ class HeldStore private constructor(private val ctx: Context) {
         nextId = maxOf(nextId, (held.maxOfOrNull { it.id } ?: 0) + 1)
     }
 
+    /** Writes happen off the caller's thread (often the main thread), in order, one at a time. */
+    private val io = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "held-store").apply { isDaemon = true } }
+
     @Synchronized private fun save() {
         val o = JSONObject()
         o.put("nextId", nextId)
@@ -55,7 +58,15 @@ class HeldStore private constructor(private val ctx: Context) {
         o.put("waiting", JSONArray().apply {
             waiting.forEach { w -> put(JSONObject().put("station", w.station).put("id", w.id).put("seen", w.seenMs).apply { w.askedMs?.let { put("asked", it) } }) }
         })
-        runCatching { file.writeText(o.toString()) }
+        val text = o.toString()
+        io.execute {
+            // Whole file or nothing: a crash mid-write leaves the previous version.
+            runCatching {
+                val tmp = File(file.path + ".tmp")
+                tmp.writeText(text)
+                if (!tmp.renameTo(file)) { file.writeText(text); tmp.delete() }
+            }
+        }
         bump()
     }
 
@@ -66,6 +77,10 @@ class HeldStore private constructor(private val ctx: Context) {
     @Synchronized fun add(h: Held): Held {
         load()
         val withId = h.copy(id = nextId++)
+        if (h.kind == Held.Kind.RELAY) {
+            val now = System.currentTimeMillis()
+            held = Held.makeRoomForRelay(held.filter { Held.kept(it, now) })
+        }
         held = held + withId
         save()
         return withId
@@ -90,14 +105,13 @@ class HeldStore private constructor(private val ctx: Context) {
         return held.any { it.kind == Held.Kind.RELAY && it.to.equals(to, true) && it.from.equals(from, true) && it.text == text }
     }
 
-    /** Drops expired posts and old relayed group messages (kept a day past their window, for the list). */
+    /**
+     * Drops expired posts (a day past expiry, for the list), relayed group messages a day past
+     * their window, and relayed messages for one station after 30 days (7 once delivered).
+     */
     @Synchronized fun prune(now: Long) {
         load()
-        val keep = held.filter { h ->
-            val gone = h.expiresMs != null && now - h.expiresMs > DAY_MS ||
-                h.kind == Held.Kind.RELAY && h.isGroup && now - h.receivedMs > Held.GROUP_FLOOR_MS + DAY_MS
-            !gone
-        }
+        val keep = held.filter { Held.kept(it, now) }
         val w = waiting.filter { now - it.seenMs < 3 * DAY_MS }
         if (keep.size != held.size || w.size != waiting.size) { held = keep; waiting = w; save() }
     }

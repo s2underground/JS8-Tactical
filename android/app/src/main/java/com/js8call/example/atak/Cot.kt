@@ -89,10 +89,13 @@ object Cot {
     ): Point {
         val from = sender?.takeIf { it.isNotBlank() } ?: "UNKNOWN"
         val status = report.values["S"]?.takeIf { report.type == Reports.CHECKIN || report.type == Reports.SITREP }
-        val name = listOfNotNull(report.type.tag, from, status?.let { "($it)" }).joinToString(" ")
+        // "(JS8)" marks it as heard over the radio, not from a TAK user: anyone can transmit a
+        // report under any callsign, and ATAK passes the point on to the whole team (audit I2).
+        val name = listOfNotNull(report.type.tag, from, status?.let { "($it)" }, "(JS8)").joinToString(" ")
         val locText = report.type.locationField?.let { report.values[it.key] }.orEmpty()
         val lines = mutableListOf<String>()
         lines += "${report.type.title} from $from, heard on JS8 ${utcHuman(heardMs)}"
+        lines += "Unverified: heard over the radio. JS8 has no sign-in, so anyone can send under any callsign."
         report.type.fields.forEach { f -> report.values[f.key]?.let { lines += "${f.label}: $it" } }
         lines += "Position as sent: $locText (${precisionText(locText)})"
         lines += "Raw: ${Reports.encode(report.type, report.values)}"

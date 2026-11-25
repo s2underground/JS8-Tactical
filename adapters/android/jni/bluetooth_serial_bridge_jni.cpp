@@ -6,6 +6,7 @@
 #endif
 
 #include <mutex>
+#include "jni_thread.hpp"
 
 namespace {
 
@@ -37,15 +38,8 @@ struct BridgeSnapshot {
 };
 
 JNIEnv* get_env(JavaVM* jvm) {
-  if (!jvm) return nullptr;
-  JNIEnv* env = nullptr;
-  int status = jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
-  if (status == JNI_EDETACHED) {
-    if (jvm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
-      return nullptr;
-    }
-  }
-  return env;
+  // Attaches the calling thread if needed and detaches it when the thread ends.
+  return js8tactical::attach_current_thread(jvm);
 }
 
 bool snapshot_bridge(BridgeSnapshot& out) {

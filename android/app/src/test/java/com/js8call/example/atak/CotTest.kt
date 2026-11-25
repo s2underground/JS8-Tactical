@@ -28,7 +28,7 @@ class CotTest {
         assertEquals("JS8-Tactical.KX4ABC.SALUTE.42", e.getAttribute("uid"))
         assertEquals("2026-11-18T00:00:00.000Z", e.getAttribute("time"))
         assertEquals("2026-11-18T23:59:00.000Z", e.getAttribute("stale"))  // 24 h after heard
-        assertEquals("SALUTE KX4ABC", e.child("contact").getAttribute("callsign"))
+        assertEquals("SALUTE KX4ABC (JS8)", e.child("contact").getAttribute("callsign"))
         assertEquals(Cot.MAGENTA.toString(), e.child("color").getAttribute("argb"))
         assertEquals("COT_MAPPING_SPOTMAP/b-m-p-s-m/${Cot.MAGENTA}", e.child("usericon").getAttribute("iconsetpath"))
         assertEquals(7.071, e.child("point").getAttribute("ce").toDouble(), 0.01) // 8-digit MGRS = 10 m cell
@@ -52,7 +52,8 @@ class CotTest {
     fun checkinNameShowsStatus() {
         val r = Reports.parse("#CHECKIN S:EMERG L:EM12KX N:BROKEN LEG")!!
         val p = Cot.reportPoint(r, "W1AW", r.location!!, now, 7L, 3_600_000L, now)
-        assertEquals("CHECKIN W1AW (EMERG)", p.callsign)
+        assertEquals("CHECKIN W1AW (EMERG) (JS8)", p.callsign)
+        assertTrue(p.remarks.contains("Unverified"))
     }
 
     @Test
