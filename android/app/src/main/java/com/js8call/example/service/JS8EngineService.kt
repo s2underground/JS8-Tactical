@@ -226,6 +226,10 @@ class JS8EngineService : Service() {
     private val currentTxOffsetHz: Float get() = TxOffsets.txOffset(this)
     private var txMonitorActive = false
     private var txMonitorWasAudioActive = false
+    /** The text each frame of the send in progress carries (display form), for the "Sending" bar. */
+    private var txFrameTexts: List<String> = emptyList()
+    /** Frames of the send in progress whose audio has started. */
+    private var txFramesStarted = 0
     // Drifted clock at the send's first audio; 0 until it goes on air
     @Volatile private var txSentStartMs = 0L
     private val pttStateLock = Any()
@@ -287,11 +291,13 @@ class JS8EngineService : Service() {
                     requestRigPtt(false, generation) { released ->
                         if (!isCurrentTxGeneration(generation)) return@requestRigPtt
                         if (!released) broadcastError("Failed to release PTT after transmission")
+                        txFrameTexts = emptyList()
                         broadcastTxSent()
                         broadcastTxState(TX_STATE_FINISHED)
                     }
                 } else {
                     if (isCurrentTxGeneration(generation)) {
+                        txFrameTexts = emptyList()
                         broadcastTxSent()
                         broadcastTxState(TX_STATE_FINISHED)
                     }
@@ -334,13 +340,16 @@ class JS8EngineService : Service() {
                     txSentStartMs = System.currentTimeMillis() + activeEngine.timeDriftMs()
                 }
                 logTxStarted()
+                txFramesStarted++
                 broadcastTxState(TX_STATE_STARTED)
+                broadcastTxProgress(onAir = true)
             } else if (!audioActive && txMonitorWasAudioActive) {
                 txMonitorWasAudioActive = false
                 if (rigConnected) {
                     requestRigPtt(false, generation)
                 }
                 broadcastTxState(TX_STATE_QUEUED)
+                broadcastTxProgress(onAir = false)
             }
 
             val nextCheckMs = if (millisecondsUntilAudio.toLong() > PTT_LEAD_TIME_MS + TX_MONITOR_INTERVAL_MS) {
@@ -3257,7 +3266,7 @@ class JS8EngineService : Service() {
                     TxOffsets.heartbeatSent(this, submode)
                     updateLastTxMessage(payload, "", submode, freq.toDouble())
                     broadcastTxState(TX_STATE_QUEUED)
-                    startTxMonitor()
+                    startTxMonitor(frameTextsFor(payload, callsign, grid, "", submode, forceIdentify = true, forceData = false))
                 }
                 false -> Log.e(TAG, "Failed to send heartbeat")
                 null -> Log.i(TAG, "Skipping heartbeat due to active transmission, rescheduling")
@@ -3368,7 +3377,7 @@ class JS8EngineService : Service() {
             else TxOffsets.heartbeatSent(this, submode)
             updateLastTxMessage(payloadText, directed, submode, audioFrequencyHz)
             broadcastTxState(TX_STATE_QUEUED)
-            startTxMonitor()
+            startTxMonitor(frameTextsFor(payloadText, callsign, grid, directed, submode, effectiveForceIdentify, forceData))
         } else {
             Log.e(TAG, "TX request rejected")
             broadcastError("Failed to start transmit")
@@ -3562,12 +3571,53 @@ class JS8EngineService : Service() {
         notificationManager.notify(NOTIFICATION_ID_MESSAGE_BASE + from.hashCode(), notification)
     }
 
-    private fun startTxMonitor() {
+    /**
+     * The text each frame of a send carries, framed exactly as the engine frames
+     * it, for the "Sending" bar. Null (no bar) if it can't be worked out; the
+     * send itself doesn't depend on it.
+     */
+    private fun frameTextsFor(
+        text: String, myCall: String, myGrid: String, selected: String,
+        submode: Int, forceIdentify: Boolean, forceData: Boolean,
+    ): List<String>? = runCatching {
+        JS8Engine.frameTexts(myCall, myGrid, selected, text, submode, forceIdentify, forceData)
+    }.onFailure { Log.w(TAG, "frame texts unavailable", it) }.getOrNull()
+        ?.map { it.uppercase(java.util.Locale.ROOT) }
+        ?.let { TxProgress.forDisplay(it, myCall) }
+
+    /**
+     * Where the send in progress has got, frame by frame. [stopped] marks a send
+     * cut short (operator stop or PTT failure); a frame on air then was cut.
+     */
+    private fun broadcastTxProgress(onAir: Boolean, stopped: Boolean = false) {
+        val frames = txFrameTexts
+        if (frames.isEmpty()) return
+        val intent = Intent(ACTION_TX_PROGRESS).apply {
+            putExtra(EXTRA_TX_FRAME_TEXTS, frames.toTypedArray())
+            putExtra(EXTRA_TX_FRAMES_STARTED, txFramesStarted)
+            putExtra(EXTRA_TX_FRAME_ON_AIR, onAir)
+            putExtra(EXTRA_TX_STOPPED, stopped)
+            putExtra(EXTRA_TX_SENT_FREQ, lastTxFrequencyHz.toFloat())
+        }
+        AppBroadcasts.send(this, intent)
+    }
+
+    /** A send ended early: say how much of it went out, then forget it. */
+    private fun endTxProgressStopped(frameWasOnAir: Boolean) {
+        broadcastTxProgress(onAir = frameWasOnAir, stopped = true)
+        txFrameTexts = emptyList()
+        txFramesStarted = 0
+    }
+
+    private fun startTxMonitor(frameTexts: List<String>? = null) {
         txMonitorHandler.removeCallbacks(txMonitorRunnable)
         pttHoldSinceMs = 0L
         txMonitorActive = true
         txMonitorWasAudioActive = false
         txSentStartMs = 0L
+        txFrameTexts = frameTexts.orEmpty()
+        txFramesStarted = 0
+        broadcastTxProgress(onAir = false)
         synchronized(pttStateLock) {
             txPttGeneration++
             rigPttDesired = rigPttAsserted
@@ -3730,6 +3780,7 @@ class JS8EngineService : Service() {
             txPttGeneration
         }
         Log.w(TAG, "Transmit halted by operator (generation $generation)")
+        endTxProgressStopped(frameWasOnAir = txMonitorWasAudioActive)
         txMonitorActive = false
         txMonitorHandler.removeCallbacks(txMonitorRunnable)
         pttHoldSinceMs = 0L
@@ -3759,6 +3810,7 @@ class JS8EngineService : Service() {
         }
 
         Log.e(TAG, message)
+        endTxProgressStopped(frameWasOnAir = txMonitorWasAudioActive)
         txMonitorActive = false
         txMonitorHandler.removeCallbacks(txMonitorRunnable)
         engine?.stopTransmit()
@@ -4465,7 +4517,7 @@ class JS8EngineService : Service() {
         if (ok) {
             updateLastTxMessage(payload, "", submode, currentTxOffsetHz.toDouble())
             broadcastTxState(TX_STATE_QUEUED)
-            startTxMonitor()
+            startTxMonitor(frameTextsFor(payload, callsign, grid, "", submode, callsign.isNotBlank(), forceData = false))
         }
         return ok
     }
@@ -4737,6 +4789,12 @@ class JS8EngineService : Service() {
         const val ACTION_TRANSMIT_MESSAGE = "com.js8call.example.ACTION_TRANSMIT_MESSAGE"
         const val ACTION_TX_STATE = "com.js8call.example.ACTION_TX_STATE"
         const val ACTION_TX_SENT = "com.js8call.example.ACTION_TX_SENT"
+        /** Where the send in progress has got, frame by frame (see [TxProgress]). */
+        const val ACTION_TX_PROGRESS = "com.js8call.example.ACTION_TX_PROGRESS"
+        const val EXTRA_TX_FRAME_TEXTS = "tx_frame_texts"
+        const val EXTRA_TX_FRAMES_STARTED = "tx_frames_started"
+        const val EXTRA_TX_FRAME_ON_AIR = "tx_frame_on_air"
+        const val EXTRA_TX_STOPPED = "tx_stopped"
         const val ACTION_RADIO_FREQUENCY = "com.js8call.example.ACTION_RADIO_FREQUENCY"
         const val ACTION_MESSAGE_RECEIVED = "com.js8call.example.ACTION_MESSAGE_RECEIVED"
         const val ACTION_QUEUE_TX = "com.js8call.example.ACTION_QUEUE_TX"

@@ -16,6 +16,7 @@
 
 #include "js8core/engine.hpp"
 #include "js8core/protocol/varicode.hpp"
+#include "own_frame_text.hpp"
 #include "js8core/dsp/resampler.hpp"
 #include "js8core/android/audio_oboe.hpp"
 #include "js8core/android/logger_android.hpp"
@@ -49,6 +50,7 @@ JNIEXPORT void JNICALL Java_com_js8call_core_JS8Engine_nativeSetTxReady(JNIEnv*,
 JNIEXPORT void JNICALL Java_com_js8call_core_JS8Engine_nativeSetTimeDriftMs(JNIEnv*, jobject, jlong, jlong);
 JNIEXPORT jlong JNICALL Java_com_js8call_core_JS8Engine_nativeGetTimeDriftMs(JNIEnv*, jobject, jlong);
 JNIEXPORT jint JNICALL Java_com_js8call_core_JS8Engine_nativeCountFrames(JNIEnv*, jclass, jstring, jstring, jstring, jstring, jint);
+JNIEXPORT jobjectArray JNICALL Java_com_js8call_core_JS8Engine_nativeFrameTexts(JNIEnv*, jclass, jstring, jstring, jstring, jstring, jint, jboolean, jboolean);
 }
 
 // Number of frames a message will need on air (no engine instance required).
@@ -69,6 +71,49 @@ JNIEXPORT jint JNICALL Java_com_js8call_core_JS8Engine_nativeCountFrames(
   } catch (...) {
     return -1;
   }
+}
+
+// The text each frame of a message carries on air, in order: framed exactly as a
+// send with the same arguments, then read back the way a receiver unpacks each
+// frame (see own_frame_text.hpp). Null if the text can't be framed.
+JNIEXPORT jobjectArray JNICALL Java_com_js8call_core_JS8Engine_nativeFrameTexts(
+    JNIEnv* env, jclass, jstring mycall, jstring mygrid, jstring selected, jstring text, jint submode,
+    jboolean force_identify, jboolean force_data) {
+  auto str = [env](jstring value) {
+    if (!value) return std::string();
+    const char* chars = env->GetStringUTFChars(value, nullptr);
+    std::string out = chars ? chars : "";
+    if (chars) env->ReleaseStringUTFChars(value, chars);
+    return out;
+  };
+  std::vector<std::string> texts;
+  try {
+    auto const frames = js8core::protocol::varicode::build_message_frames(
+        str(mycall), str(mygrid), str(selected), str(text), force_identify == JNI_TRUE,
+        force_data == JNI_TRUE, submode, nullptr);
+    texts = js8tactical::own_frame_texts(frames);
+    if (frames.empty() || texts.size() != frames.size()) return nullptr;
+  } catch (...) {
+    return nullptr;
+  }
+  jclass string_class = env->FindClass("java/lang/String");
+  if (!string_class) return nullptr;
+  jobjectArray out = env->NewObjectArray(static_cast<jsize>(texts.size()), string_class, nullptr);
+  env->DeleteLocalRef(string_class);
+  if (!out) return nullptr;
+  for (std::size_t i = 0; i < texts.size(); ++i) {
+    // Frame text is plain ASCII; anything else is dropped rather than handed to
+    // NewStringUTF, which would abort on invalid modified UTF-8.
+    std::string ascii;
+    for (char c : texts[i]) {
+      if (static_cast<unsigned char>(c) < 0x80 && c != '\0') ascii += c;
+    }
+    jstring value = env->NewStringUTF(ascii.c_str());
+    if (!value) return nullptr;
+    env->SetObjectArrayElement(out, static_cast<jsize>(i), value);
+    env->DeleteLocalRef(value);
+  }
+  return out;
 }
 
 // Global JavaVM reference for callbacks
@@ -1079,7 +1124,9 @@ int js8_register_natives(JavaVM* vm, JNIEnv* env) {
      (void*)Java_com_js8call_core_JS8Engine_nativeGetTimeDriftMs},
     {"nativeIsRunning", "(J)Z", (void*)Java_com_js8call_core_JS8Engine_nativeIsRunning},
     {"nativeCountFrames", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)I",
-     (void*)Java_com_js8call_core_JS8Engine_nativeCountFrames}
+     (void*)Java_com_js8call_core_JS8Engine_nativeCountFrames},
+    {"nativeFrameTexts", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZZ)[Ljava/lang/String;",
+     (void*)Java_com_js8call_core_JS8Engine_nativeFrameTexts}
   };
 
   int num_methods = sizeof(methods) / sizeof(methods[0]);

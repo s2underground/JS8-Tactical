@@ -58,4 +58,14 @@ PARITY="$BUILD/jsc-codeword-parity"
   -o "$PARITY"
 "$PARITY"
 
+echo "==> running the Sending bar's frame text test"
+OWN_FRAMES="$BUILD/own-frame-text-test"
+"$CXX" -std=c++20 -O2 -pthread \
+  -I "$CORE/include" \
+  -I "$ROOT/adapters/android/jni" \
+  "$ROOT/tools/own_frame_text_test.cpp" \
+  "$BUILD/libjs8core.a" \
+  -o "$OWN_FRAMES"
+"$OWN_FRAMES"
+
 echo "==> core tests passed"

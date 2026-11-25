@@ -58,6 +58,9 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     data class Live(val sender: String?, val laneHz: Float, val frames: Int, val text: String, val color: Int)
 
+    /** Our own send in progress, frame by frame. */
+    data class Sending(val progress: com.js8call.example.service.TxProgress, val laneHz: Float)
+
     /** A station placed on the map at the centre of its grid square. */
     data class MapStation(
         val call: String, val grid: String, val position: LatLon, val color: Int, val lastHeardMs: Long, val snr: Int,
@@ -129,6 +132,9 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     val thread: LiveData<List<ThreadItem>> = _thread
     private val _live = MutableLiveData<Live?>(null)
     val live: LiveData<Live?> = _live
+    private val _sending = MutableLiveData<Sending?>(null)
+    /** What is going out on air now and what is still to go (null when not sending). */
+    val sending: LiveData<Sending?> = _sending
     private val _markers = MutableLiveData<List<Marker>>(emptyList())
     val markers: LiveData<List<Marker>> = _markers
 
@@ -261,15 +267,22 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                                 txSpans += intent.getFloatExtra(JS8EngineService.EXTRA_TX_ON_AIR_HZ, 0f) to (now..Long.MAX_VALUE)
                                 while (txSpans.size > 12) txSpans.removeAt(0)
                             }
-                            JS8EngineService.TX_STATE_FINISHED, JS8EngineService.TX_STATE_FAILED -> closeTxSpan(now)
+                            JS8EngineService.TX_STATE_FINISHED, JS8EngineService.TX_STATE_FAILED -> {
+                                closeTxSpan(now)
+                                _sending.value = null
+                            }
                         }
                     }
+                    JS8EngineService.ACTION_TX_PROGRESS -> onTxProgress(intent)
                     JS8EngineService.ACTION_RADIO_FREQUENCY -> {
                         val hz = intent.getLongExtra(JS8EngineService.EXTRA_RADIO_FREQUENCY_HZ, 0L)
                         if (hz > 0) setDialFrequency(hz)
                     }
-                    JS8EngineService.ACTION_ENGINE_STATE ->
-                        setListening(intent.getStringExtra(JS8EngineService.EXTRA_STATE) == JS8EngineService.STATE_RUNNING)
+                    JS8EngineService.ACTION_ENGINE_STATE -> {
+                        val running = intent.getStringExtra(JS8EngineService.EXTRA_STATE) == JS8EngineService.STATE_RUNNING
+                        if (!running) _sending.value = null
+                        setListening(running)
+                    }
                 }
             } catch (e: Exception) {
                 // One bad frame must never take the traffic picture down.
@@ -290,6 +303,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                 addAction(JS8EngineService.ACTION_DECODE)
                 addAction(JS8EngineService.ACTION_TX_SENT)
                 addAction(JS8EngineService.ACTION_TX_STATE)
+                addAction(JS8EngineService.ACTION_TX_PROGRESS)
                 addAction(JS8EngineService.ACTION_RADIO_FREQUENCY)
                 addAction(JS8EngineService.ACTION_ENGINE_STATE)
             },
@@ -766,6 +780,31 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Something this station transmitted. */
+    /**
+     * The service's frame-by-frame account of our send. A send cut short keeps
+     * what did go out (whole frames only; a frame cut mid-air is not counted),
+     * marked as stopped, so the thread shows what other stations could have copied.
+     */
+    private fun onTxProgress(intent: android.content.Intent) {
+        val frames = intent.getStringArrayExtra(JS8EngineService.EXTRA_TX_FRAME_TEXTS)?.toList() ?: return
+        val progress = com.js8call.example.service.TxProgress(
+            frames,
+            intent.getIntExtra(JS8EngineService.EXTRA_TX_FRAMES_STARTED, 0),
+            intent.getBooleanExtra(JS8EngineService.EXTRA_TX_FRAME_ON_AIR, false),
+        )
+        val freq = intent.getFloatExtra(JS8EngineService.EXTRA_TX_SENT_FREQ, 0f)
+        if (intent.getBooleanExtra(JS8EngineService.EXTRA_TX_STOPPED, false)) {
+            _sending.value = null
+            val sent = progress.sentText.trim()
+            if (progress.done > 0 && sent.isNotEmpty()) {
+                val note = getApplication<Application>().getString(com.js8call.example.R.string.traffic_tx_stopped_note, progress.done, progress.total)
+                addOutgoing("$sent $note", freq)
+            }
+            return
+        }
+        _sending.value = Sending(progress, freq)
+    }
+
     fun addOutgoing(text: String, frequency: Float) {
         val now = System.currentTimeMillis()
         if (historyPending) { pendingLive += { record(TrafficHistory.Entry.Sent(now, frequency, text)); addOutgoingAt(text, frequency, now) }; return }
