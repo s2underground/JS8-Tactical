@@ -227,9 +227,9 @@ class JS8EngineService : Service() {
     private var txMonitorActive = false
     private var txMonitorWasAudioActive = false
     /** The text each frame of the send in progress carries (display form), for the "Sending" bar. */
-    private var txFrameTexts: List<String> = emptyList()
+    @Volatile private var txFrameTexts: List<String> = emptyList()
     /** Frames of the send in progress whose audio has started. */
-    private var txFramesStarted = 0
+    @Volatile private var txFramesStarted = 0
     // Drifted clock at the send's first audio; 0 until it goes on air
     @Volatile private var txSentStartMs = 0L
     private val pttStateLock = Any()
@@ -3517,6 +3517,7 @@ class JS8EngineService : Service() {
             Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 putExtra(MainActivity.EXTRA_RESTART_RECEIVER, true)
+                putExtra(MainActivity.EXTRA_RESTART_TOKEN, MainActivity.newRestartToken(this@JS8EngineService))
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

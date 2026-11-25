@@ -22,6 +22,7 @@ import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.NavigationUI
 import androidx.navigation.ui.setupWithNavController
+import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.snackbar.Snackbar
@@ -162,6 +163,31 @@ class MainActivity : AppCompatActivity() {
         const val ACTION_PROCESS_TX_QUEUE = "com.js8call.example.ACTION_PROCESS_TX_QUEUE"
         /** Launched from the "receiver was closed" notification: start listening again. */
         const val EXTRA_RESTART_RECEIVER = "restart_receiver"
+        /** Proves a restart request came from our own notification (see [newRestartToken]). */
+        const val EXTRA_RESTART_TOKEN = "restart_receiver_token"
+        private const val PREF_RESTART_TOKEN = "restart_receiver_token"
+
+        /**
+         * A one-time token for the "restart the receiver" notification. MainActivity is exported
+         * (it's the launcher), so any app could send it the restart extra and start the receiver,
+         * after which heartbeats, auto-replies and scheduled reports can transmit. Only a request
+         * carrying the token from our own notification is honoured. Kept in the app's private
+         * preferences so it survives Android closing the app, which is when the notification is
+         * used.
+         */
+        fun newRestartToken(context: android.content.Context): String {
+            val token = java.util.UUID.randomUUID().toString()
+            PreferenceManager.getDefaultSharedPreferences(context).edit(commit = true) { putString(PREF_RESTART_TOKEN, token) }
+            return token
+        }
+
+        /** Whether [token] is the current one; it is used up either way. */
+        private fun takeRestartToken(context: android.content.Context, token: String?): Boolean {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            val expected = prefs.getString(PREF_RESTART_TOKEN, null)
+            if (expected != null) prefs.edit { remove(PREF_RESTART_TOKEN) }
+            return expected != null && token != null && java.security.MessageDigest.isEqual(expected.toByteArray(), token.toByteArray())
+        }
     }
 
     private val prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
@@ -264,7 +290,11 @@ class MainActivity : AppCompatActivity() {
         intent ?: return
         if (intent.getBooleanExtra(EXTRA_RESTART_RECEIVER, false)) {
             intent.removeExtra(EXTRA_RESTART_RECEIVER)
-            if (com.js8call.example.ui.RadioControls.needsMicPermission(this)) {
+            val token = intent.getStringExtra(EXTRA_RESTART_TOKEN)
+            intent.removeExtra(EXTRA_RESTART_TOKEN)
+            if (!takeRestartToken(this, token)) {
+                android.util.Log.w("MainActivity", "Ignored a receiver restart request that didn't come from our notification")
+            } else if (com.js8call.example.ui.RadioControls.needsMicPermission(this)) {
                 checkPermissions()
             } else {
                 com.js8call.example.ui.RadioControls.start(this, monitorViewModel)
