@@ -35,6 +35,7 @@ double now_ms() {
 std::string to_string(JNIEnv * env, jstring s) {
     if (!s) return {};
     const char * c = env->GetStringUTFChars(s, nullptr);
+    if (!c) return {};  // out of memory: an exception is pending for the caller
     std::string out(c);
     env->ReleaseStringUTFChars(s, c);
     return out;
@@ -155,7 +156,13 @@ Java_com_js8call_llm_LlamaBridge_nativeGenerate(JNIEnv * env, jclass, jlong h, j
     for (auto & v : s->stats) v = 0;
 
     const std::string system = to_string(env, jsystem);
-    const std::string user = to_string(env, juser);
+    // The user text quotes what was heard on the air. The prompt is tokenized with special
+    // tokens enabled (the chat template needs them), so break up anything in it that reads as a
+    // control token ("<|im_start|>"…): a station can't steer the summary that way.
+    std::string user = to_string(env, juser);
+    for (std::size_t at = user.find("<|"); at != std::string::npos; at = user.find("<|", at + 3)) {
+        user.insert(at + 1, " ");
+    }
     llama_chat_message msgs[2] = {{"system", system.c_str()}, {"user", user.c_str()}};
     const char * tmpl = llama_model_chat_template(s->model, nullptr);
     std::vector<char> buf(system.size() + user.size() + 1024);

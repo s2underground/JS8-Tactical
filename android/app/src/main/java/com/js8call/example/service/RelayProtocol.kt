@@ -154,7 +154,9 @@ object RelayProtocol {
     }
 
     /** JS8Call's 16-bit checksum of [input], as the 3 characters sent on the air. */
-    fun checksum16(input: String): String = pack16Bits(crc16Kermit(input.toByteArray(Charsets.US_ASCII)))
+    // ISO-8859-1, not US-ASCII: the JS8 dictionary has single Latin-1 characters (¡ ¿ À …), and the
+    // sender's checksum covers those bytes. US-ASCII turned them into "?" and failed intact messages.
+    fun checksum16(input: String): String = pack16Bits(crc16Kermit(input.toByteArray(Charsets.ISO_8859_1)))
 
     fun checksum16Valid(checksum: String, input: String): Boolean = checksum16(input) == checksum
 

@@ -66,4 +66,19 @@ class DiagnosticsPrivacyTest {
         val s = "dial 7.078 MHz, offset 1500 Hz, dt 0.12, build 1.2.0-alpha.5, SM-X356B, Android 14, 300 Hz hum"
         assertEquals(s, scrub(s))
     }
+
+    // Second audit (N8): free message text can't be scrubbed by pattern, so only its length stays.
+    @Test fun messageTextBecomesItsLength() {
+        val log = "D/JS8EngineService: Decoded: MEET JOHN AT THE BRIDGE (SNR: -12 dB)\n" +
+            "I/JS8Engine_Native: DECODED: SNR=-12 dB, freq=1500.0 Hz, text='HELLO MARY', raw='ABC123', type=1\n" +
+            "I/JS8EngineService: TX request: text='MEET ME', directed='', submode=0\n" +
+            "I/JS8EngineService: Auto HB ACK: 'W1ABC HEARTBEAT SNR -10'"
+        val out = DiagnosticsPrivacy.redactMessageText(log)
+        for (word in listOf("JOHN", "BRIDGE", "MARY", "ABC123", "MEET ME", "HEARTBEAT SNR")) assertFalse(word, out.contains(word))
+        assertTrue(out.contains("Decoded: [23 chars] (SNR: -12 dB)"))
+        assertTrue(out.contains("text='[10 chars]', raw='[6 chars]', type=1"))
+        assertTrue(out.contains("TX request: text='[7 chars]'"))
+        // The whole scrub does it too.
+        assertFalse(scrub(log).contains("JOHN"))
+    }
 }

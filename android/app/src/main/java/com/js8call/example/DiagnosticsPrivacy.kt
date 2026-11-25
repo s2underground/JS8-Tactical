@@ -44,6 +44,22 @@ object DiagnosticsPrivacy {
     private val EMAIL = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
 
     /** The report with personal details replaced. [myCall] and [myGrid] are the operator's own. */
+    /**
+     * Message text the app logs (what was sent and heard) becomes its length only: free text can
+     * hold names, places and report details no pattern can recognise (second audit, N8). The
+     * log lines stay, so timing and flow can still be followed.
+     */
+    fun redactMessageText(report: String): String {
+        var t = QUOTED_TEXT.replace(report) { m -> "${m.groupValues[1]}='[${m.groupValues[2].length} chars]'" }
+        t = DECODED_LINE.replace(t) { m -> "${m.groupValues[1]}[${m.groupValues[2].length} chars]${m.groupValues[3]}" }
+        return t
+    }
+
+    /** text='…', raw='…', payloadText='…' and similar in the app's and the engine's log lines. */
+    private val QUOTED_TEXT = Regex("\\b(text|raw|payload|reply|ack|message|body)='([^'\\n]*)'", RegexOption.IGNORE_CASE)
+    /** "Decoded: … (SNR: -12 dB)" and "Sending Heartbeat: … at 1500Hz" style lines. */
+    private val DECODED_LINE = Regex("(Decoded: |Auto HB ACK: )([^\\n]*?)( \\(SNR: [^\\n]*\\)|$)", RegexOption.MULTILINE)
+
     fun scrub(report: String, myCall: String, myGrid: String): String {
         val labels = LinkedHashMap<String, String>()
         val me = base(myCall)
@@ -52,7 +68,7 @@ object DiagnosticsPrivacy {
             val b = base(call)
             return labels.getOrPut(b) { "STATION-${labels.values.count { it != MY_LABEL } + 1}" }
         }
-        var t = report
+        var t = redactMessageText(report)
         // Emails first (they contain @ and dots the other patterns would split), keeping the app's own address.
         t = EMAIL.replace(t) { m -> if (m.value.equals("js8tactical@proton.me", true)) m.value else "[EMAIL]" }
         t = MAC.replace(t) { m -> "XX:XX:XX:XX:XX:${m.groupValues[1].uppercase()}" }

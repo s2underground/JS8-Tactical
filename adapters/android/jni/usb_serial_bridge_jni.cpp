@@ -25,9 +25,19 @@ struct BridgeState {
 
 BridgeState g_bridge;
 
+// A copy of the registration for one call. It holds its own global reference to the bridge, so
+// another thread re-registering or unregistering (which deletes the registry's reference)
+// can't pull the object out from under the call in progress (second audit, N10).
 struct BridgeSnapshot {
   JavaVM* jvm = nullptr;
+  JNIEnv* env = nullptr;
   jobject bridge = nullptr;
+  BridgeSnapshot() = default;
+  BridgeSnapshot(BridgeSnapshot const&) = delete;
+  BridgeSnapshot& operator=(BridgeSnapshot const&) = delete;
+  ~BridgeSnapshot() {
+    if (env && bridge) env->DeleteGlobalRef(bridge);
+  }
   jmethodID open = nullptr;
   jmethodID read = nullptr;
   jmethodID write = nullptr;
@@ -48,7 +58,10 @@ bool snapshot_bridge(BridgeSnapshot& out) {
     return false;
   }
   out.jvm = g_bridge.jvm;
-  out.bridge = g_bridge.bridge;
+  out.env = get_env(g_bridge.jvm);
+  if (!out.env) return false;
+  out.bridge = out.env->NewGlobalRef(g_bridge.bridge);
+  if (!out.bridge) return false;
   out.open = g_bridge.open;
   out.read = g_bridge.read;
   out.write = g_bridge.write;

@@ -277,10 +277,10 @@ object CrashReporter {
         val sb = StringBuilder()
         sb.append("JS8-Tactical ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.GIT_SHA}) · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}\n")
         sb.append("Report made ${stamp(System.currentTimeMillis())}\n\n")
-        sb.append("Personal details removed: callsigns are MY-STATION / STATION-n, grids and addresses masked.\n\n")
+        sb.append("Personal details removed: callsigns are MY-STATION / STATION-n; grids, positions and addresses masked; message text replaced by its length.\n\n")
         sb.append("== Setup (no callsign or grid)\n")
         // Every setting except ones that identify the operator or their team.
-        val private = Regex("(?i)call|grid|info|status_message|group|roster|host|sent_uids|location|lat|lon")
+        val private = Regex("(?i)call|grid|info|status|group|roster|host|sent_uids|location|lat|lon|token")
         // Each section is guarded: one that fails says why and the rest of the report still comes out.
         section(sb) {
             p.all.toSortedMap().forEach { (k, v) ->

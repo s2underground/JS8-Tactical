@@ -181,12 +181,16 @@ class MainActivity : AppCompatActivity() {
             return token
         }
 
-        /** Whether [token] is the current one; it is used up either way. */
+        /**
+         * Whether [token] is the current one; used up when it matches. A wrong one leaves it in
+         * place, so another app can't use up the notification's token (second audit, I-b).
+         */
         private fun takeRestartToken(context: android.content.Context, token: String?): Boolean {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            val expected = prefs.getString(PREF_RESTART_TOKEN, null)
-            if (expected != null) prefs.edit { remove(PREF_RESTART_TOKEN) }
-            return expected != null && token != null && java.security.MessageDigest.isEqual(expected.toByteArray(), token.toByteArray())
+            val expected = prefs.getString(PREF_RESTART_TOKEN, null) ?: return false
+            val ok = token != null && java.security.MessageDigest.isEqual(expected.toByteArray(), token.toByteArray())
+            if (ok) prefs.edit { remove(PREF_RESTART_TOKEN) }
+            return ok
         }
     }
 
