@@ -91,7 +91,9 @@ object AutoReply {
             "SNR?", "?" -> formatSnr(snr).takeIf { it.isNotEmpty() }?.let { "$prefix SNR $it" }
             "INFO?" -> me.info.trim().takeIf { it.isNotEmpty() }?.let { "$prefix INFO $it" }
             "STATUS?" -> me.status.trim().takeIf { it.isNotEmpty() }?.let { "$prefix STATUS $it" }
-            "GRID?" -> me.grid.trim().uppercase().takeIf { it.isNotEmpty() }?.let { "$prefix GRID $it" }
+            // Only the 4-character square goes on the air (project rule, as heartbeats do): GPS
+            // fills the setting to 8 characters, a position to within a few hundred metres.
+            "GRID?" -> me.grid.trim().uppercase().take(4).takeIf { it.length == 4 }?.let { "$prefix GRID $it" }
             "HEARING?" -> heard.recent(exclude).takeIf { it.isNotEmpty() }?.let { "$prefix HEARING ${it.joinToString(" ")}" }
             "AGN?" -> me.lastTx.trimEnd().takeIf { it.isNotBlank() }
             else -> null

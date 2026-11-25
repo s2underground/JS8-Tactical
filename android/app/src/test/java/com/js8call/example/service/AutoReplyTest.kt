@@ -94,6 +94,13 @@ class AutoReplyTest {
     }
 
     @Test
+    fun gridRepliesNeverGiveMoreThanTheSquare() {
+        val gps = me.copy(grid = "fn42ab12")
+        assertEquals("W2XYZ: K1ABC GRID FN42", AutoReply.directedReply(q("K1ABC: W2XYZ GRID?"), -8, gps, heard))
+        assertEquals("N3QRS>K1ABC GRID FN42", AutoReply.relayedReply("GRID?", "N3QRS>K1ABC", -15, gps, heard))
+    }
+
+    @Test
     fun sendsNothingItHasNoAnswerFor() {
         val bare = AutoReply.Station("W2XYZ")
         listOf("INFO?", "STATUS?", "GRID?", "AGN?").forEach { cmd ->
