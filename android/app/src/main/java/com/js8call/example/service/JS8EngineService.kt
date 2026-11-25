@@ -251,6 +251,10 @@ class JS8EngineService : Service() {
     )
     private var callsignWarningShown = false
     private var lastTxMessage: String = ""
+    /** The last message the operator sent (automatic replies don't count): what AGN? replays. */
+    private var lastOperatorTxMessage: String = ""
+    /** One automatic AGN? replay per station per 10 minutes (see [ReplayGuard]). */
+    private val agnReplayGuard = ReplayGuard()
     private var lastTxDirected: String = ""
     private var lastTxSubmode: Int = SUBMODE_NORMAL
     private var lastTxFrequencyHz: Double = DEFAULT_AUDIO_FREQUENCY_HZ
@@ -3336,6 +3340,7 @@ class JS8EngineService : Service() {
         val txDelaySec = intent.getDoubleExtra(EXTRA_TX_DELAY_S, 0.0)
         val forceIdentify = intent.getBooleanExtra(EXTRA_TX_FORCE_IDENTIFY, false)
         val forceData = intent.getBooleanExtra(EXTRA_TX_FORCE_DATA, false)
+        val automatic = intent.getBooleanExtra(EXTRA_TX_AUTOMATIC, false)
         val effectiveForceIdentify = forceIdentify || callsign.isNotBlank()
         val payloadText = applyGridIfHeartbeat(text, grid)
 
@@ -3377,6 +3382,8 @@ class JS8EngineService : Service() {
             if (!isHeartbeatTraffic(text)) heartbeatHandler.post { scheduleHeartbeat(false) }
             else TxOffsets.heartbeatSent(this, submode)
             updateLastTxMessage(payloadText, directed, submode, audioFrequencyHz)
+            // AGN? replays what the operator sent, never a relay forward or another auto-reply.
+            if (!automatic && !isHeartbeatTraffic(text)) lastOperatorTxMessage = lastTxMessage
             broadcastTxState(TX_STATE_QUEUED)
             startTxMonitor(frameTextsFor(payloadText, callsign, grid, directed, submode, effectiveForceIdentify, forceData))
         } else {
@@ -4076,6 +4083,10 @@ class JS8EngineService : Service() {
         }
         // MSG auto-ACK is handled in maybeHandleIncomingMessage after the full message is received.
         val reply = AutoReply.directedReply(directed, snr, me) { exclude -> getRecentHeardCallsigns(exclude, HEARD_LIMIT) } ?: return
+        if (directed.command.uppercase() == "AGN?" && !agnReplayGuard.allow(directed.from, System.currentTimeMillis())) {
+            Log.i(TAG, "AGN? from ${directed.from} again within 10 min: not replayed automatically (it shows in Traffic)")
+            return
+        }
         Log.i(TAG, "Auto ${directed.command.uppercase()} reply to ${directed.from}")
         broadcastQueueTx(reply, null, priority = 1)
     }
@@ -4086,7 +4097,7 @@ class JS8EngineService : Service() {
         info = prefs.getString(PREF_MY_INFO, "").orEmpty(),
         status = prefs.getString(PREF_MY_STATUS, "").orEmpty(),
         grid = prefs.getString("grid", "").orEmpty(),
-        lastTx = lastTxMessage,
+        lastTx = lastOperatorTxMessage,
     )
 
     private fun handleRelayFrame(text: String, snr: Int, mode: Int, freq: Float, type: Int) {
@@ -4289,6 +4300,11 @@ class JS8EngineService : Service() {
         // No check for a transmission in progress: the queue waits for a free slot.
         val callsign = getConfiguredCallsign() ?: return false
         val me = autoReplyStation(callsign, PreferenceManager.getDefaultSharedPreferences(this))
+        val asksAgain = payload.trimStart().split(Regex("\\s+"), limit = 2).firstOrNull().orEmpty().uppercase() == "AGN?"
+        if (asksAgain && !agnReplayGuard.allow(relayPath.substringAfterLast('>'), System.currentTimeMillis())) {
+            Log.i(TAG, "Relayed AGN? from $relayPath again within 10 min: not replayed automatically")
+            return true
+        }
         val reply = AutoReply.relayedReply(payload, relayPath, snr, me) { exclude -> getRecentHeardCallsigns(exclude, HEARD_LIMIT) }
             ?: return false
         return sendRelayMessage(reply, submode)
@@ -4626,6 +4642,8 @@ class JS8EngineService : Service() {
         const val EXTRA_TX_DELAY_S = "tx_delay_s"
         const val EXTRA_TX_FORCE_IDENTIFY = "tx_force_identify"
         const val EXTRA_TX_FORCE_DATA = "tx_force_data"
+        /** The send is an automatic reply (queued by the engine, not the operator). */
+        const val EXTRA_TX_AUTOMATIC = "tx_automatic"
         const val EXTRA_TX_STATE = "tx_state"
         const val EXTRA_TX_REFUSED = "tx_refused"
         const val EXTRA_TX_ON_AIR_HZ = "tx_on_air_hz"
