@@ -236,6 +236,8 @@ class JS8EngineService : Service() {
     private var pttShuttingDown = false
     @Volatile private var txPttFailed = false
     @Volatile private var txSessionActive = false
+        // On-device AI waits while this is set (see RadioGate): the radio gets the CPU first.
+        set(value) { field = value; com.js8call.example.ai.RadioGate.sending = value }
     @Volatile private var txAudioActive = false
     @Volatile private var trusdxTxIntentActive = false
     private var scoRoutingActive = false
@@ -255,6 +257,8 @@ class JS8EngineService : Service() {
     private var lastOperatorTxMessage: String = ""
     /** One automatic AGN? replay per station per 10 minutes (see [ReplayGuard]). */
     private val agnReplayGuard = ReplayGuard()
+    /** One answer per asker, group and query per 15 minutes while the auto-reply safeguard is on. */
+    private val groupReplyGuard = ReplayGuard(windowMs = 15 * 60_000L)
     private var lastTxDirected: String = ""
     private var lastTxSubmode: Int = SUBMODE_NORMAL
     private var lastTxFrequencyHz: Double = DEFAULT_AUDIO_FREQUENCY_HZ
@@ -715,6 +719,7 @@ class JS8EngineService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         emergencyUnkeyHook = null
+        com.js8call.example.ai.RadioGate.sending = false
         Log.i(TAG, "Service destroyed")
         (getSystemService(AUDIO_SERVICE) as AudioManager)
             .unregisterAudioDeviceCallback(audioDeviceCallback)
@@ -4104,11 +4109,12 @@ class JS8EngineService : Service() {
 
     private fun isSubscribedGroup(target: String): Boolean {
         if (!target.startsWith("@")) return false
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val groupsStr = prefs.getString("my_groups", "") ?: ""
-        val groups = groupsStr.split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }
-        return groups.contains(target.uppercase())
+        return myGroups(PreferenceManager.getDefaultSharedPreferences(this)).contains(target.uppercase())
     }
+
+    /** The groups the operator joined (Settings → My Groups), upper-case. */
+    private fun myGroups(prefs: android.content.SharedPreferences): List<String> =
+        (prefs.getString("my_groups", "") ?: "").split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }
 
     private fun maybeHandleAutoReply(text: String, snr: Int, mode: Int) {
         if (!isAutoreplyEnabled()) return
@@ -4139,7 +4145,21 @@ class JS8EngineService : Service() {
             return
         }
         // MSG auto-ACK is handled in maybeHandleIncomingMessage after the full message is received.
-        val reply = AutoReply.directedReply(directed, snr, me) { exclude -> getRecentHeardCallsigns(exclude, HEARD_LIMIT) } ?: return
+        val heard = AutoReply.Heard { exclude -> getRecentHeardCallsigns(exclude, HEARD_LIMIT) }
+        val groupReply = AutoReply.groupReply(directed, snr, me, myGroups(prefs), heard)
+        if (groupReply != null) {
+            // Desktop answers group queries with no limit; with the safeguard on we answer each
+            // asker's same query to the same group once per 15 min (desktop's @ALLCALL spacing).
+            val safeguard = prefs.getBoolean(com.js8call.example.ui.TransmitViewModel.PREF_AUTO_REPLY_SAFEGUARD, true)
+            if (safeguard && !groupReplyGuard.allow(AutoReply.groupReplyKey(directed), System.currentTimeMillis())) {
+                Log.i(TAG, "Group ${directed.command.uppercase()} from ${directed.from} to ${directed.to} again within 15 min: not answered")
+                return
+            }
+            Log.i(TAG, "Auto ${directed.command.uppercase()} reply to ${directed.from} (asked ${directed.to})")
+            broadcastQueueTx(groupReply, null, priority = 1)
+            return
+        }
+        val reply = AutoReply.directedReply(directed, snr, me, heard) ?: return
         if (directed.command.uppercase() == "AGN?" && !agnReplayGuard.allow(directed.from, System.currentTimeMillis())) {
             Log.i(TAG, "AGN? from ${directed.from} again within 10 min: not replayed automatically (it shows in Traffic)")
             return

@@ -8,12 +8,14 @@ import com.js8call.example.util.CallsignValidator
 /**
  * Automatic replies: text from anyone on the air decides whether this station transmits.
  *
- * Checks: never answers its own frames or a group; only answers frames addressed to it; a
- * reply is addressed back to the asker (or is the last transmission, for AGN?); SNR text is
- * always plain "+NN"/"-NN"; nothing throws.
+ * Checks: never answers its own frames; the direct path only answers frames addressed to it;
+ * the group path only answers groups it joined (never @ALLCALL or @HB), only the desktop set of
+ * queries and never AGN?; a reply is addressed back to the asker (or is the last transmission,
+ * for AGN?); SNR text is always plain "+NN"/"-NN"; nothing throws.
  */
 object AutoReplyFuzz {
     private const val ME = "W2XYZ"
+    private val GROUPS = listOf("@GHOSTNET", "@ALLCALL", "@HB")
 
     @JvmStatic
     fun fuzzerTestOneInput(d: FuzzedDataProvider) {
@@ -44,6 +46,17 @@ object AutoReplyFuzz {
                 if (c.command.uppercase() == "HEARING?" && r.startsWith(hearingPrefix)) {
                     check(c.from.trim().uppercase() !in r.removePrefix(hearingPrefix).split(' ')) { "told the asker it hears the asker: '$r'" }
                 }
+            }
+        }
+
+        RelayProtocol.parseDirectedCommand(text)?.let { c ->
+            AutoReply.groupReply(c, snr, me, GROUPS, heard)?.let { r ->
+                val to = c.to.trim().uppercase()
+                check(to == "@GHOSTNET") { "answered a group not joined (or @ALLCALL/@HB): '$text'" }
+                check(c.command.trim().uppercase() in AutoReply.GROUP_QUERIES) { "answered a group with '${c.command}': '$text'" }
+                check(!CallsignValidator.matches(ME, c.from)) { "answered itself in a group: '$text'" }
+                check(CallsignValidator.isAmateurCallsign(c.from)) { "answered a group sender that isn't a callsign: '$text'" }
+                check(r.startsWith("$ME: ${c.from.trim().uppercase()} ")) { "group reply not to the asker: '$r' for '$text'" }
             }
         }
 
