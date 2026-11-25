@@ -2369,7 +2369,8 @@ class JS8EngineService : Service() {
         }
 
         driftEstimator.record(freqHz, suggestedDriftMs.toLong(), now)
-        val drift = driftEstimator.estimate(now) ?: return
+        val target = driftEstimator.estimate(now, DriftEstimator.MIN_LANES) ?: return
+        val drift = DriftEstimator.step(lastAppliedDriftMs ?: (engine?.timeDriftMs() ?: 0L), target)
         // Re-apply (prefs write, heartbeat reschedule) only when the correction actually moves.
         if (lastAppliedDriftMs?.let { kotlin.math.abs(it - drift) < 5 } == true) return
         lastAppliedDriftMs = drift

@@ -19,11 +19,15 @@ class DriftEstimator(private val windowMs: Long = DEFAULT_WINDOW_MS, private val
         latest[Math.round(freqHz / laneHz)] = Sample(driftMs, now)
     }
 
-    /** The correction to apply now, or null with nothing heard in the window. */
+    /**
+     * The correction to apply now, or null with fewer than [minLanes] lanes heard in the window:
+     * one transmitter, even one using several lanes close together, shouldn't set our clock on
+     * its own (second audit, N11). "Sync once" stays available for a quiet band.
+     */
     @Synchronized
-    fun estimate(now: Long): Long? {
+    fun estimate(now: Long, minLanes: Int = 1): Long? {
         latest.values.removeAll { now - it.atMs > windowMs || it.atMs > now }
-        if (latest.isEmpty()) return null
+        if (latest.isEmpty() || latest.size < minLanes) return null
         val sorted = latest.values.map { it.driftMs }.sorted()
         val mid = sorted.size / 2
         return if (sorted.size % 2 == 1) sorted[mid] else (sorted[mid - 1] + sorted[mid]) / 2
@@ -40,5 +44,13 @@ class DriftEstimator(private val windowMs: Long = DEFAULT_WINDOW_MS, private val
         const val DEFAULT_WINDOW_MS = 10 * 60_000L
         /** Wider than a JS8 signal (50 Hz in Normal), narrower than typical spacing. */
         const val DEFAULT_LANE_HZ = 25f
+        /** Lanes needed before automatic sync moves the clock. */
+        const val MIN_LANES = 3
+        /** Largest single move automatic sync makes; a bigger correction is reached in steps. */
+        const val MAX_STEP_MS = 1_000L
+
+        /** The next correction to apply, moving from [current] toward [target] by at most [MAX_STEP_MS]. */
+        fun step(current: Long, target: Long): Long =
+            current + (target - current).coerceIn(-MAX_STEP_MS, MAX_STEP_MS)
     }
 }

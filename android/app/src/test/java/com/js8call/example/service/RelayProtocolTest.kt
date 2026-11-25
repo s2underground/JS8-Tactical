@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class RelayProtocolTest {
@@ -145,5 +146,14 @@ class RelayProtocolTest {
         assertEquals(listOf("W2XYZ", "K1ABC"), RelayProtocol.pathCallsigns("W2XYZ", "INFO? via k1abc"))
         assertEquals(listOf("W2XYZ"), RelayProtocol.pathCallsigns("W2XYZ", "SNR?"))
         assertEquals(emptyList<String>(), RelayProtocol.pathCallsigns("", "SNR?"))
+    }
+
+    // Second audit (N7): the dictionary's Latin-1 characters are checksummed as the bytes sent.
+    @Test
+    fun checksumCoversLatin1CharactersAsTheirBytes() {
+        val latin1 = RelayProtocol.pack16Bits(RelayProtocol.crc16Kermit(byteArrayOf(0xC0.toByte())))
+        assertEquals(latin1, RelayProtocol.checksum16("\u00C0"))
+        assertNotEquals(RelayProtocol.checksum16("?"), RelayProtocol.checksum16("\u00C0"))
+        assertTrue(RelayProtocol.checksum16Valid(RelayProtocol.checksum16("SE\u00D1OR"), "SE\u00D1OR"))
     }
 }

@@ -121,7 +121,10 @@ class HeldStore private constructor(private val ctx: Context) {
         val s = Held.base(station)
         if (waiting.any { Held.base(it.station) == s && it.id == id }) {
             waiting = waiting.map { if (Held.base(it.station) == s && it.id == id) it.copy(seenMs = now) else it }
-        } else waiting = waiting + Waiting(station, id, now)
+        } else {
+            // Anyone can announce a message for us; keep the newest offers only (second audit, N12).
+            waiting = (waiting + Waiting(station, id, now)).sortedBy { it.seenMs }.takeLast(MAX_WAITING)
+        }
         save()
     }
 
@@ -181,6 +184,8 @@ class HeldStore private constructor(private val ctx: Context) {
         const val KEY_SERVE = "sf_serve_enabled"
         const val KEY_POST_NOTICE = "sf_post_notice_shown"
         private const val DAY_MS = 24 * 3600_000L
+        /** Most offers ("I have a message for you") remembered at once. */
+        private const val MAX_WAITING = 100
 
         // Holds only the application context (see of()), which lives as long as the process.
         @SuppressLint("StaticFieldLeak")

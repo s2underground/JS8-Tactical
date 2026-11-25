@@ -48,4 +48,18 @@ class DriftEstimatorTest {
         e.record(Float.POSITIVE_INFINITY, 5000, 0)
         assertNull(e.estimate(0))
     }
+
+    @Test
+    fun automaticSyncNeedsSeveralLanesAndMovesInSteps() {
+        val e = DriftEstimator()
+        e.record(1500f, 4000, 0); e.record(1525f, 4000, 0)
+        // Two lanes (perhaps one station on two offsets): not enough to move the clock.
+        assertNull(e.estimate(0, DriftEstimator.MIN_LANES))
+        e.record(1550f, 4000, 0)
+        assertEquals(4000L, e.estimate(0, DriftEstimator.MIN_LANES))
+        // A 4 s correction is reached a second at a time.
+        assertEquals(1000L, DriftEstimator.step(0, 4000))
+        assertEquals(-1000L, DriftEstimator.step(0, -4000))
+        assertEquals(350L, DriftEstimator.step(300, 350))
+    }
 }
