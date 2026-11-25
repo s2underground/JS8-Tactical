@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 
 PER_TARGET="${1:-120}"
 [ $# -gt 0 ] && shift
-ALL_TARGETS=(StoreForwardFuzz ReportsFuzz RollupFuzz DiagnosticsPrivacyFuzz RelayProtocolFuzz AutoReplyFuzz)
+ALL_TARGETS=(StoreForwardFuzz ReportsFuzz RollupFuzz DiagnosticsPrivacyFuzz RelayProtocolFuzz AutoReplyFuzz RelayAssemblerFuzz MsgAssemblerFuzz)
 TARGETS=("$@")
 [ ${#TARGETS[@]} -eq 0 ] && TARGETS=("${ALL_TARGETS[@]}")
 
@@ -60,6 +60,8 @@ SOURCES=(
   "$APP/DiagnosticsPrivacy.kt"
   "$APP/service/RelayProtocol.kt"
   "$APP/service/AutoReply.kt"
+  "$APP/service/RelayAssembler.kt"
+  "$APP/service/MsgAssembler.kt"
   "$APP/util/Js8Commands.kt"
   "$APP/util/CallsignValidator.kt"
 )

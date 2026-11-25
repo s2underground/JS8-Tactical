@@ -65,6 +65,17 @@ class AutoReplyTest {
         assertNull(AutoReply.heartbeatAck("K1ABC: W2XYZ SNR?", -10, me))
     }
 
+    @Test
+    fun aSenderThatIsNotACallsignGetsNothing() {
+        // Free text shaped like a heartbeat or a query would otherwise put its words on the air
+        // under our callsign ("W2XYZ: ANY WORDS HERE HEARTBEAT SNR -10").
+        assertNull(AutoReply.heartbeatAck("ANY WORDS HERE: @HB HEARTBEAT FN31", -10, me))
+        assertNull(AutoReply.heartbeatAck("K2X>N3QRS: @HB HEARTBEAT FN31", -10, me))
+        assertNull(AutoReply.directedReply(DirectedCommand("ANY WORDS", "W2XYZ", "SNR?", ""), -8, me, heard))
+        assertNull(AutoReply.directedReply(q("K2X>N3QRS: W2XYZ SNR?"), -8, me, heard))
+        assertNull(AutoReply.directedReply(q("<....>: W2XYZ SNR?"), -8, me, heard))
+    }
+
     // --- Direct queries
 
     @Test

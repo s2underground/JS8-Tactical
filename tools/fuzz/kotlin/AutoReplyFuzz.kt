@@ -29,6 +29,7 @@ object AutoReplyFuzz {
         AutoReply.heartbeatAck(text, snr, me)?.let { ack ->
             val from = RelayProtocol.heartbeatSender(text)!!
             check(!CallsignValidator.matches(ME, from)) { "acked own heartbeat: '$text'" }
+            check(CallsignValidator.isAmateurCallsign(from)) { "acked a sender that isn't a callsign: '$text'" }
             check(ack.startsWith("$ME: ")) { "ack not from us: '$ack'" }
         }
 
@@ -37,8 +38,9 @@ object AutoReplyFuzz {
                 check(!c.to.startsWith("@")) { "answered a group: '$text'" }
                 check(CallsignValidator.matches(ME, c.to)) { "answered a frame for someone else: '$text'" }
                 check(!CallsignValidator.matches(ME, c.from)) { "answered itself: '$text'" }
-                check(r == "LAST" || r.startsWith("$ME: ${c.from} ")) { "reply not to the asker: '$r' for '$text'" }
-                val hearingPrefix = "$ME: ${c.from} HEARING "
+                check(CallsignValidator.isAmateurCallsign(c.from)) { "answered a sender that isn't a callsign: '$text'" }
+                check(r == "LAST" || r.startsWith("$ME: ${c.from.trim().uppercase()} ")) { "reply not to the asker: '$r' for '$text'" }
+                val hearingPrefix = "$ME: ${c.from.trim().uppercase()} HEARING "
                 if (c.command.uppercase() == "HEARING?" && r.startsWith(hearingPrefix)) {
                     check(c.from.trim().uppercase() !in r.removePrefix(hearingPrefix).split(' ')) { "told the asker it hears the asker: '$r'" }
                 }
