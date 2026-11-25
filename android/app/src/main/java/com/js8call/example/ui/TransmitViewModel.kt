@@ -119,11 +119,13 @@ class TransmitViewModel internal constructor(application: Application) : Android
         val receiving = txQueue.any { it.priority > 0 } && runCatching {
             com.js8call.example.ui.traffic.TrafficViewModel.of(getApplication()).messageInProgress(now)
         }.getOrDefault(false)
-        val next = txQueue.firstOrNull {
+        val pick = TxQueueRules.pickNext(txQueue, autoAheadOfOperator) {
             (it.dialHz == null || dial == null || com.js8call.example.nets.NetSwitcher.sameDial(it.dialHz, dial)) && !(receiving && it.priority > 0)
         }
         if (receiving) retrySoon()
-        next ?: return
+        pick ?: return
+        autoAheadOfOperator = pick.autoAheadOfOperator
+        val next = pick.message
         // Keep this entry tied to the eventual TX result even if a higher-priority one is queued meanwhile.
         beginTransmission(next)
         Log.d(TAG, "Sending to service: text='${next.text}' directed=${next.directed}")
@@ -180,6 +182,8 @@ class TransmitViewModel internal constructor(application: Application) : Android
     // Failed thread sends by message id, kept for Retry
     private val failedMessages = mutableMapOf<Long, TransmitMessage>()
     private val sendOrder = Mutex()
+    /** Automatic replies sent in a row while an operator message waited (see [TxQueueRules]). */
+    private var autoAheadOfOperator = 0
     private val repository by lazy { MessageRepository.getInstance(getApplication()) }
 
     /**
