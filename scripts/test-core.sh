@@ -78,4 +78,12 @@ JNI_TEXT="$BUILD/jni-text-test"
   -o "$JNI_TEXT"
 "$JNI_TEXT"
 
+echo "==> running the RTL-SDR receiver (SSB DSP) test"
+SSB_RX="$BUILD/ssb-rx-test"
+"$CXX" -std=c++17 -O2 -Wall \
+  -I "$ROOT/android/sdr/src/main/cpp" \
+  "$ROOT/android/sdr/src/test/cpp/ssb_rx_test.cpp" \
+  -o "$SSB_RX"
+"$SSB_RX"
+
 echo "==> core tests passed"

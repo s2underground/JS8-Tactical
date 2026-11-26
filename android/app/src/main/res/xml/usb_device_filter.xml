@@ -14,6 +14,13 @@
     <!-- CH340/CH341 -->
     <usb-device vendor-id="6790" />
 
+    <!-- RTL-SDR dongles (RTL2832U: RTL-SDR Blog V3/V4 and most generic ones), receive only -->
+    <usb-device vendor-id="3034" product-id="10296" />
+    <usb-device vendor-id="3034" product-id="10290" />
+
+    <!-- Airspy HF+ (Discovery, Dual Port), receive only -->
+    <usb-device vendor-id="1003" product-id="32780" />
+
     <!-- CDC ACM (generic) -->
     <usb-device class="2" />
 </resources>

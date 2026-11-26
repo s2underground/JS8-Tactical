@@ -87,6 +87,10 @@ class JS8EngineService : Service() {
     private var qmxDirectSerial: QmxDirectSerial? = null
     private var qmxCatSession: QmxCatSession? = null
     private var uvProSession: UvProSession? = null
+    /** SDR receiver (rig types rtl_sdr and airspy_hf, issue #54): receive only. */
+    private var sdrSession: SdrSession? = null
+    @Volatile private var sdrConnected = false
+    private val sdrWorkersActive = java.util.concurrent.atomic.AtomicInteger(0)
     @Volatile private var trusdxInitInProgress: Boolean = false
     @Volatile private var engineStartGeneration: Int = 0
     @Volatile private var engineStartInProgress: Boolean = false
@@ -389,6 +393,11 @@ class JS8EngineService : Service() {
         }
         if (key == PREF_LOG_MESSAGES) {
             updateMessageLogging()
+        }
+        if ((key == PREF_RTLSDR_DIRECT_SAMPLING || key == PREF_RTLSDR_PPM || key == PREF_RTLSDR_GAIN) &&
+            isSdrMode() && currentDialHz > 0) {
+            // Retune in place with the new sampling mode, correction or gain.
+            setFrequency(currentDialHz)
         }
         if (key in RIG_SETTING_KEYS) {
             // Rig control is only set up when the receiver starts: restart it so the change is used
@@ -928,6 +937,13 @@ class JS8EngineService : Service() {
                 stopSelf()
                 return
             }
+            if (sdrWorkersActive.get() > 0) {
+                Log.w(TAG, "Ignoring engine start while the SDR is still closing")
+                broadcastError("The SDR is still closing. Please try again.")
+                broadcastEngineState(STATE_STOPPED)
+                stopSelf()
+                return
+            }
             if (uvproWorkersActive.get() > 0) {
                 Log.w(TAG, "Ignoring engine start while UV-Pro cleanup is still active")
                 broadcastError("UV-Pro Bluetooth is still disconnecting. Please try again.")
@@ -946,7 +962,7 @@ class JS8EngineService : Service() {
                 return
             }
 
-            if (rigControlMode == "trusdx_serial" || rigControlMode == "qmx_serial" || rigControlMode == "btech_uvpro") {
+            if (rigControlMode == "trusdx_serial" || rigControlMode == "qmx_serial" || rigControlMode == "btech_uvpro" || isSdrMode()) {
                 return
             }
             nextGeneration
@@ -1081,6 +1097,11 @@ class JS8EngineService : Service() {
                     broadcastAudioDevice(UVPRO_AUDIO_NAME)
                     broadcastEngineState(STATE_RUNNING)
                     broadcastProcessTxQueue()
+                } else if (isSdrMode()) {
+                    // Audio comes from the dongle; receive only, so no queued sends to start.
+                    Log.i(TAG, "SDR receiver active: ${sdrSession?.description.orEmpty()}")
+                    broadcastAudioDevice(sdrSession?.kind?.label ?: "SDR")
+                    broadcastEngineState(STATE_RUNNING)
                 } else {
                     // Start audio capture with selected device (if any)
                     scoRestartAttempts = 0
@@ -1135,6 +1156,15 @@ class JS8EngineService : Service() {
                 }
             }.start()
         }
+        if (isSdrMode()) {
+            val failed = sdrSession
+            sdrSession = null
+            sdrConnected = false
+            if (failed != null) {
+                sdrWorkersActive.incrementAndGet()
+                Thread { try { failed.stop() } finally { sdrWorkersActive.decrementAndGet() } }.start()
+            }
+        }
         if (rigControlMode == "btech_uvpro") {
             // A fresh session for the next start, so this stop cannot close it.
             val failedSession = uvProSession
@@ -1184,8 +1214,69 @@ class JS8EngineService : Service() {
             "trusdx_serial" -> initializeTruSdxControl(generation)
             "qmx_serial" -> initializeQmxControl(generation)
             "btech_uvpro" -> initializeUvProControl(generation)
+            "rtl_sdr", "airspy_hf" -> initializeSdr(generation, rigType)
             else -> Log.w(TAG, "Unknown rig type: $rigType")
         }
+    }
+
+    private fun sdrSettings(): SdrSession.Settings {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val ds = prefs.getString(PREF_RTLSDR_DIRECT_SAMPLING, "0")?.toIntOrNull() ?: 0
+        val ppm = prefs.getString(PREF_RTLSDR_PPM, "0")?.trim()?.toIntOrNull()?.coerceIn(-500, 500) ?: 0
+        val gain = prefs.getString(PREF_RTLSDR_GAIN, "")?.trim()?.toDoubleOrNull()
+        return SdrSession.Settings(ds, ppm, gain?.let { (it * 10).toInt().coerceIn(0, 600) } ?: -1)
+    }
+
+    private fun sdrDialHz(): Long {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        return currentDialHz.takeIf { it > 0 } ?: prefs.getString("last_frequency", "")?.toLongOrNull() ?: 7_078_000L
+    }
+
+    /** An SDR dongle is the receiver: rig type rtl_sdr or airspy_hf. Receive only. */
+    private fun isSdrMode() = rigControlMode == "rtl_sdr" || rigControlMode == "airspy_hf"
+
+    private fun initializeSdr(generation: Int, rigType: String) {
+        val kind = if (rigType == "airspy_hf") SdrSession.Kind.AIRSPY_HF else SdrSession.Kind.RTL_SDR
+        Log.i(TAG, "Initializing ${kind.label} receiver")
+        sdrConnected = false
+        val session = SdrSession(applicationContext, kind, object : SdrSession.Listener {
+            override fun onRxAudio(samples: ShortArray, count: Int, sampleRateHz: Int) {
+                engine?.submitAudioRaw(samples, count, sampleRateHz, System.nanoTime())
+            }
+
+            override fun onLost(message: String) {
+                mainHandler.post {
+                    if (!isSdrMode()) return@post
+                    sdrConnected = false
+                    broadcastError(message)
+                }
+            }
+        })
+        sdrSession = session
+        val dial = sdrDialHz()
+        val settings = sdrSettings()
+        sdrWorkersActive.incrementAndGet()
+        Thread {
+            val opened = try {
+                session.start(dial, settings)
+            } catch (error: Throwable) {
+                Log.e(TAG, "${kind.label} start failed", error)
+                false
+            }
+            mainHandler.post {
+                sdrWorkersActive.decrementAndGet()
+                if (!isCurrentEngineStart(generation)) {
+                    if (opened) Thread { session.stop() }.start()
+                } else if (opened) {
+                    sdrConnected = true
+                    currentDialHz = dial
+                    rigCtlErrorShown = false
+                    startEngine(generation)
+                } else {
+                    failEngineStart(generation, session.lastError ?: "The ${kind.label} could not be started.")
+                }
+            }
+        }.start()
     }
 
     private fun initializeUvProControl(generation: Int) {
@@ -2130,6 +2221,10 @@ class JS8EngineService : Service() {
             val shutdownTruSdx = trusdxSerialSession
             val shutdownQmx = qmxCatSession
             val shutdownUvPro = uvProSession
+            val shutdownSdr = sdrSession
+            sdrSession = null
+            sdrConnected = false
+            if (shutdownSdr != null) sdrWorkersActive.incrementAndGet()
             val shutdownNetwork = rigCtlClient
             // Try to unkey whenever a rig was in use, not only when its link is flagged up: a link
             // marked down after an error may still reach a keyed radio. A dead link only costs a
@@ -2188,6 +2283,7 @@ class JS8EngineService : Service() {
                                 "trusdx_serial" -> shutdownTruSdx?.setPtt(false) == true
                                 "qmx_serial" -> shutdownQmx?.setPtt(false) == true
                                 "btech_uvpro" -> shutdownUvPro?.setPtt(false) == true
+                                "rtl_sdr", "airspy_hf" -> true // no transmitter
                                 else -> false
                             }
                         } catch (t: Throwable) {
@@ -2220,6 +2316,7 @@ class JS8EngineService : Service() {
                     rigTeardownStep("TruSDX stop") { shutdownTruSdx?.stop() }
                     rigTeardownStep("QMX stop") { shutdownQmx?.stop() }
                     rigTeardownStep("UV-Pro stop") { shutdownUvPro?.stop() }
+                    rigTeardownStep("SDR stop") { shutdownSdr?.stop() }
                     // Not before the release: hamlib sends it through these
                     rigTeardownStep("USB serial unregister") { shutdownUsb?.unregisterNative() }
                     rigTeardownStep("Bluetooth serial unregister") { shutdownBluetooth?.unregisterNative() }
@@ -2229,6 +2326,7 @@ class JS8EngineService : Service() {
                     Log.i(TAG, "Rig control torn down")
                 } finally {
                     if (shutdownMode == "btech_uvpro") uvproWorkersActive.decrementAndGet()
+                    if (shutdownSdr != null) sdrWorkersActive.decrementAndGet()
                     if (shutdownMode != "none") rigTeardownPending = false
                 }
             }
@@ -2637,6 +2735,10 @@ class JS8EngineService : Service() {
             }
             if (rigControlMode == "btech_uvpro") {
                 broadcastAudioDevice(UVPRO_AUDIO_NAME)
+                return
+            }
+            if (isSdrMode()) {
+                broadcastAudioDevice(sdrSession?.kind?.label ?: "SDR")
                 return
             }
 
@@ -3250,6 +3352,11 @@ class JS8EngineService : Service() {
     private fun heartbeatOffsetHz(submode: Int): Float = TxOffsets.heartbeatFor(this, submode)
 
     private fun sendHeartbeat() {
+        if (isSdrMode()) {
+            Log.i(TAG, "Skipping heartbeat: the SDR is receive only")
+            scheduleHeartbeat(false)
+            return
+        }
         // Don't key up over a long message that's still coming in (we'd lose its frames).
         if (runCatching { com.js8call.example.ui.traffic.TrafficViewModel.of(applicationContext).messageInProgress(System.currentTimeMillis()) }.getOrDefault(false)) {
             Log.i(TAG, "Skipping heartbeat: a message is coming in")
@@ -3359,6 +3466,16 @@ class JS8EngineService : Service() {
         val text = intent.getStringExtra(EXTRA_TX_TEXT)?.trim().orEmpty()
         if (text.isEmpty()) {
             broadcastError("Empty TX message")
+            broadcastTxState(TX_STATE_FAILED, refused = true)
+            return
+        }
+        if (isSdrMode()) {
+            // No transmitter: the send is dropped, not held (it could never go).
+            if (intent.getBooleanExtra(EXTRA_TX_AUTOMATIC, false)) {
+                Log.i(TAG, "Automatic send dropped: the SDR is receive only")
+            } else {
+                broadcastError(getString(R.string.rtlsdr_receive_only))
+            }
             broadcastTxState(TX_STATE_FAILED, refused = true)
             return
         }
@@ -4500,6 +4617,7 @@ class JS8EngineService : Service() {
             "trusdx_serial" -> trusdxConnected
             "qmx_serial" -> qmxConnected
             "btech_uvpro" -> uvproConnected
+            "rtl_sdr", "airspy_hf" -> sdrConnected
             else -> false
         }
     }
@@ -4532,6 +4650,7 @@ class JS8EngineService : Service() {
             "trusdx_serial" -> trusdxSerialSession?.setPtt(enabled) == true
             "qmx_serial" -> qmxCatSession?.setPtt(enabled) == true
             "btech_uvpro" -> uvProSession?.setPtt(enabled) == true
+            "rtl_sdr", "airspy_hf" -> !enabled
             else -> false
         }
     }
@@ -4570,10 +4689,16 @@ class JS8EngineService : Service() {
                 "trusdx_serial" -> trusdxSerialSession?.setFrequency(frequencyHz) == true
                 "qmx_serial" -> qmxCatSession?.setFrequency(frequencyHz) == true
                 "btech_uvpro" -> false
+                "rtl_sdr", "airspy_hf" -> sdrSession?.tune(frequencyHz, sdrSettings()) == true
                 else -> false
             }
 
             mainHandler.post {
+                if (success && isSdrMode()) {
+                    // No CAT to report the dial back: the tuned frequency is the dial.
+                    currentDialHz = frequencyHz
+                    broadcastRadioFrequency(frequencyHz)
+                }
                 if (success) {
                     Log.i(TAG, "Frequency set to $frequencyHz Hz")
                 } else {
@@ -4583,6 +4708,7 @@ class JS8EngineService : Service() {
                         "trusdx_serial" -> "TruSDX serial CAT command failed"
                         "qmx_serial" -> "QMX CAT command failed"
                         "btech_uvpro" -> "UV-Pro frequency is set on the radio"
+                        "rtl_sdr", "airspy_hf" -> "the SDR can't tune to ${frequencyHz / 1000} kHz"
                         else -> ""
                     }
                     if (detail.isNotBlank()) {
@@ -4763,6 +4889,9 @@ class JS8EngineService : Service() {
         const val PREF_HEARTBEAT_INTERVAL = "heartbeat_interval"
         const val PREF_TIME_SYNC_AUTO = "time_sync_auto"
         const val PREF_TIME_DRIFT_MS = "time_drift_ms"
+        const val PREF_RTLSDR_DIRECT_SAMPLING = "rtlsdr_direct_sampling"
+        const val PREF_RTLSDR_PPM = "rtlsdr_ppm"
+        const val PREF_RTLSDR_GAIN = "rtlsdr_gain"
         const val PREF_LOG_MESSAGES = "log_messages_to_file"
         const val RIG_MODE_USB = "USB"
         const val RIG_MODE_PKTUSB = "PKTUSB"
@@ -4781,6 +4910,7 @@ class JS8EngineService : Service() {
         const val TRUSDX_AUDIO_SERIAL_NAME = "TruSDX Serial"
         const val TRUSDX_AUDIO_SPEAKER_NAME = "TruSDX Speaker"
         const val UVPRO_AUDIO_ID = -2003
+        const val RTLSDR_AUDIO_ID = -2004
         const val UVPRO_AUDIO_NAME = "UV-Pro Bluetooth"
         private const val TRUSDX_RX_FRAME_QUEUE_MAX = 512
         private const val TRUSDX_RX_WATCHDOG_INTERVAL_MS = 1200L

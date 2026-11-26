@@ -18,4 +18,5 @@ dependencyResolutionManagement {
 rootProject.name = "JS8Call-Android"
 include(":js8core-lib")
 include(":llm")
+include(":sdr")
 include(":app")

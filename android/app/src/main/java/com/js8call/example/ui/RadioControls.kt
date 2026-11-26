@@ -93,7 +93,7 @@ object RadioControls {
 
     /** True when starting needs the microphone permission first (serial-audio rigs don't). */
     fun needsMicPermission(context: Context): Boolean =
-        !AudioDevices.usesSerialAudio(context) &&
+        !AudioDevices.usesSerialAudio(context) && !AudioDevices.usesRtlSdr(context) &&
             ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED
 }

@@ -24,6 +24,20 @@ object AudioDevices {
         PreferenceManager.getDefaultSharedPreferences(context)
             .getString("rig_type", "none") == "trusdx_serial"
 
+    /** True when an SDR dongle (RTL-SDR, Airspy HF+) is the receiver: audio over USB, no microphone. */
+    fun usesRtlSdr(context: Context): Boolean = sdrLabel(context) != null
+
+    /** "RTL-SDR" or "Airspy HF+" when one is the receiver, else null. */
+    fun sdrLabel(context: Context): String? {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        if (!prefs.getBoolean("rig_control_enabled", false)) return null
+        return when (prefs.getString("rig_type", "none")) {
+            "rtl_sdr" -> "RTL-SDR"
+            "airspy_hf" -> "Airspy HF+"
+            else -> null
+        }
+    }
+
     /** The display name for a capture device, or null for types not offered. */
     fun nameFor(device: AudioDeviceInfo): String? = when (device.type) {
         AudioDeviceInfo.TYPE_BUILTIN_MIC -> "Internal Microphone"
@@ -111,6 +125,9 @@ object AudioDevices {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         if (prefs.getBoolean("rig_control_enabled", false) && prefs.getString("rig_type", "none") == "btech_uvpro") {
             return listOf(Device(JS8EngineService.UVPRO_AUDIO_ID, JS8EngineService.UVPRO_AUDIO_NAME))
+        }
+        if (usesRtlSdr(context)) {
+            return listOf(Device(JS8EngineService.RTLSDR_AUDIO_ID, sdrLabel(context) ?: "SDR"))
         }
         if (usesSerialAudio(context)) {
             return listOf(

@@ -209,6 +209,35 @@
         </PreferenceCategory>
 
         <PreferenceCategory
+            app:title="@string/settings_rtlsdr_category"
+            app:dependency="rig_control_enabled"
+            app:iconSpaceReserved="false">
+
+            <ListPreference
+                app:key="rtlsdr_direct_sampling"
+                app:title="@string/settings_rtlsdr_direct_sampling"
+                app:entries="@array/rtlsdr_direct_sampling_entries"
+                app:entryValues="@array/rtlsdr_direct_sampling_values"
+                app:defaultValue="0"
+                app:useSimpleSummaryProvider="true"
+                app:iconSpaceReserved="false" />
+
+            <EditTextPreference
+                app:key="rtlsdr_ppm"
+                app:title="@string/settings_rtlsdr_ppm"
+                app:summary="@string/settings_rtlsdr_ppm_summary"
+                app:defaultValue="0"
+                app:iconSpaceReserved="false" />
+
+            <EditTextPreference
+                app:key="rtlsdr_gain"
+                app:title="@string/settings_rtlsdr_gain"
+                app:summary="@string/settings_rtlsdr_gain_summary"
+                app:defaultValue=""
+                app:iconSpaceReserved="false" />
+        </PreferenceCategory>
+
+        <PreferenceCategory
             app:title="@string/settings_qmx_category"
             app:dependency="rig_control_enabled"
             app:iconSpaceReserved="false">
