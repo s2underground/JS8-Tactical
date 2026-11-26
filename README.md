@@ -62,6 +62,38 @@ If you find a problem, please report it. Security problems: see [SECURITY.md](SE
    when Android asks.
 3. New versions install over the old one; settings and logs are kept.
 
+### Updates with Obtainium
+
+[Obtainium](https://github.com/ImranR98/Obtainium) installs apps straight from their GitHub
+releases and tells you when a new version is out, so you don't have to check the Releases page.
+
+[<img src="docs/images/badge_obtainium.png" alt="Get it on Obtainium" height="48">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.s2underground.js8tactical%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fs2underground%2FJS8-Tactical%22%2C%22author%22%3A%22S2%20Underground%22%2C%22name%22%3A%22JS8-Tactical%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22filterReleaseTitlesByRegEx%5C%22%3A%5C%22%5EJS8-Tactical%20v%3F%5B0-9%5D%5C%22%2C%5C%22versionDetection%5C%22%3Atrue%7D%22%7D)
+
+The button adds JS8-Tactical to Obtainium with the right settings. It goes through Obtainium's
+redirect page (apps.obtainium.imranr.dev), which has its own analytics. To add it by hand
+instead, in Obtainium tap **Add App** and:
+
+- **App source URL:** `https://github.com/s2underground/JS8-Tactical`
+- **Include prereleases:** on. Every release so far is marked pre-release (alpha), so without
+  this Obtainium finds nothing.
+- **Filter release titles by regular expression:** `^JS8-Tactical v?[0-9]`. This skips the
+  repository's other releases (*Latest test build*, the propagation data and the build cache).
+
+### Check that the app is genuine
+
+Every release and test build is signed with the same key. Its SHA-256 certificate fingerprint is:
+
+```
+com.s2underground.js8tactical
+AA:58:1D:27:25:C7:5F:08:5A:D4:23:1A:E0:A8:F3:0F:1B:0A:8A:D7:41:D8:B1:28:B3:E6:28:C0:14:4D:10:8B
+```
+
+[AppVerifier](https://github.com/soupslurpr/AppVerifier) (which works with Obtainium) checks an
+installed or downloaded app against it: copy both lines and AppVerifier compares them. On a
+computer, `apksigner verify --print-certs JS8-Tactical-<version>.apk` shows the same SHA-256.
+Android itself refuses an update signed with a different key, so once the first install checks
+out, later updates can't be swapped.
+
 ## Reporting bugs
 
 Open an [issue](../../issues/new/choose), or send a diagnostic report from the app
@@ -150,10 +182,13 @@ JS8-Tactical is free software under the GNU General Public License v3 (see [LICE
   Native (BSD 2-clause), llama.cpp (MIT), the SBC codec from HTCommander (Apache 2.0),
   AndroidX and Material Components (Apache 2.0). Map data © OpenStreetMap contributors (ODbL),
   served by OpenFreeMap. Optional AI models: Qwen2.5 (Apache 2.0).
+- The "Get it on Obtainium" badge is from the [Obtainium](https://github.com/ImranR98/Obtainium)
+  project (GPL-3.0).
 
 Ideas from the community: syncing the clock from GPS was suggested by doodlecomms
 ([issue #52](https://github.com/s2underground/JS8-Tactical/issues/52)), after their
-[GPS UTC Clock](https://github.com/doodlecomms/gps_utc_clock) app.
+[GPS UTC Clock](https://github.com/doodlecomms/gps_utc_clock) app, and installing with Obtainium
+by the same author ([issue #53](https://github.com/s2underground/JS8-Tactical/issues/53)).
 
 The upstream README, with the history of JS8Call, is kept in
 [docs/UPSTREAM-JS8ANDROID-README.md](docs/UPSTREAM-JS8ANDROID-README.md).
