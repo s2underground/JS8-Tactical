@@ -1,7 +1,8 @@
 # Builds callgrid.bin (US amateur callsign -> approximate 4-character grid, issue #55) from the FCC
 # ULS amateur licence file and the US Census ZCTA gazetteer, both public domain. Runs on PRs that
-# touch the builder, and by hand to refresh the data. The output is an artifact to review and
-# commit to android/app/src/main/assets/; the app build itself never downloads anything.
+# touch the builder (build and check only), and by hand on master to refresh the data: then the
+# file, its stats and input checksums go to the "callgrid-data" release, to be reviewed and
+# committed to android/app/src/main/assets/ in a PR. The app build itself never downloads anything.
 name: Callsign grid data
 
 on:
@@ -61,3 +62,27 @@ jobs:
           name: callgrid
           path: ${{ runner.temp }}/out/
           retention-days: 30
+
+  # Puts the file on the "callgrid-data" release. Write access, but no build code runs here.
+  publish:
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: callgrid
+          path: callgrid
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view callgrid-data >/dev/null 2>&1 || gh release create callgrid-data --prerelease \
+            --title "Callsign grid data" \
+            --notes "Approximate grid squares for US amateur callsigns (callsign and 4-character grid only), from FCC ULS licence data and the US Census ZCTA gazetteer (public domain). Not an app release: reviewed and committed to the app's assets."
+          gh release upload callgrid-data callgrid/callgrid.bin callgrid/callgrid.bin.sha256 callgrid/stats.json callgrid/inputs.sha256 --clobber
+          gh release edit callgrid-data --notes "Built $(date -u +%Y-%m-%d) by run #${GITHUB_RUN_NUMBER} from ${GITHUB_SHA::8}. Approximate grid squares for US amateur callsigns (callsign and 4-character grid only), from FCC ULS licence data and the US Census ZCTA gazetteer (public domain). Not an app release: reviewed and committed to the app's assets."

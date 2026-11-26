@@ -77,7 +77,7 @@ instead, in Obtainium tap **Add App** and:
 - **Include prereleases:** on. Every release so far is marked pre-release (alpha), so without
   this Obtainium finds nothing.
 - **Filter release titles by regular expression:** `^JS8-Tactical v?[0-9]`. This skips the
-  repository's other releases (*Latest test build*, the propagation data and the build cache).
+  repository's other releases (*Latest test build*, the data releases and the build cache).
 
 ### Check that the app is genuine
 
