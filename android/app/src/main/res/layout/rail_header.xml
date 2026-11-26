@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App name at the top of the tablet navigation rail, in the space beside the Traffic top bar
+     that was empty, so the top bar keeps its width for the radio controls. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rail_title"
+    android:layout_width="wrap_content"
+    android:layout_height="52dp"
+    android:contentDescription="@string/app_name"
+    android:gravity="center"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:importantForAccessibility="no"
+        android:text="@string/rail_title_top"
+        android:textColor="@color/tac_text"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:importantForAccessibility="no"
+        android:letterSpacing="0.04"
+        android:text="@string/rail_title_bottom"
+        android:textColor="@color/tac_text_dim"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+</LinearLayout>

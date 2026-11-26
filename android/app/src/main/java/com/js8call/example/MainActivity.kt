@@ -227,6 +227,16 @@ class MainActivity : AppCompatActivity() {
         navController = navHostFragment.navController
 
         bottomNav.setupWithNavController(navController)
+        // Tablets: the app name sits at the top of the rail. Test builds: long-press it (as the
+        // old top-bar title) to load sample traffic.
+        if (BuildConfig.DEBUG) {
+            (bottomNav as? com.google.android.material.navigationrail.NavigationRailView)?.headerView
+                ?.setOnLongClickListener {
+                    trafficViewModel.loadDemo()
+                    android.widget.Toast.makeText(this, R.string.traffic_demo_loaded, android.widget.Toast.LENGTH_SHORT).show()
+                    true
+                }
+        }
         // Back on the first screen sends the app to the background instead of closing it:
         // closing stops the receiver, which is never what a stray Back press in the field means.
         // (Stop the receiver with its switch, or Stop in the notification.)

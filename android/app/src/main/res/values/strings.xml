@@ -344,6 +344,8 @@
     <string name="traffic_queued">Queued</string>
     <string name="traffic_queued_n">Queued %1$d copies</string>
     <string name="traffic_send_x3">Send ×3</string>
+    <string name="rail_title_top" translatable="false">JS8</string>
+    <string name="rail_title_bottom" translatable="false">TACTICAL</string>
     <string name="traffic_demo_loaded">Sample traffic loaded (test build)</string>
     <string name="traffic_clear_selection">Everyone</string>
     <string name="traffic_toggle_autoreply">AUTO-REPLY</string>

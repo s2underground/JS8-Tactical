@@ -9,6 +9,7 @@
     <!-- Tap or long-press: send again, edit, or copy (TrafficFragment.showSentActions). -->
     <LinearLayout
         android:id="@+id/out_card"
+        tools:ignore="UselessParent"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="end"
