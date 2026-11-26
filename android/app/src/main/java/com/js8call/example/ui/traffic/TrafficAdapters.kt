@@ -87,6 +87,7 @@ class ThreadAdapter(
     private val showSender: () -> Boolean,
     private val onRequestResend: (sender: String) -> Unit,
     private val onShowRaw: (TrafficViewModel.ThreadItem.Incoming) -> Unit,
+    private val onOutgoing: (TrafficViewModel.ThreadItem.Outgoing) -> Unit = {},
 ) : ListAdapter<TrafficViewModel.ThreadItem, RecyclerView.ViewHolder>(Diff) {
 
     class InHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -107,6 +108,7 @@ class ThreadAdapter(
         val to: TextView = view.findViewById(R.id.out_to)
         val time: TextView = view.findViewById(R.id.out_time)
         val body: TextView = view.findViewById(R.id.out_body)
+        val card: View = view.findViewById(R.id.out_card)
     }
 
     override fun getItemViewType(position: Int) =
@@ -189,6 +191,8 @@ class ThreadAdapter(
 
     private fun bindOut(h: OutHolder, item: TrafficViewModel.ThreadItem.Outgoing) {
         val ctx = h.itemView.context
+        h.card.setOnClickListener { onOutgoing(item) }
+        h.card.setOnLongClickListener { onOutgoing(item); true }
         h.to.text = if (item.to != null) ctx.getString(R.string.traffic_you_to, item.to) else ctx.getString(R.string.traffic_you)
         h.time.text = zuluTime(item.sentMs)
         h.body.text = item.text

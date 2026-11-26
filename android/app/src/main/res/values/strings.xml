@@ -291,6 +291,14 @@
     <string name="traffic_all">All traffic</string>
     <string name="traffic_empty">Nothing heard yet.\nSwitch the Receiver on (top of this screen).</string>
     <string name="traffic_empty_listening">Listening. Messages will appear here as they are decoded.</string>
+    <string name="traffic_empty_outbox">Nothing sent yet.\nMessages you send show here (heartbeats left out); tap one to copy it or send it again.</string>
+    <string name="traffic_outbox_title">Sent %1$s</string>
+    <string name="traffic_outbox_send_again">Send again</string>
+    <string name="traffic_outbox_edit">Edit and send</string>
+    <string name="traffic_outbox_copy">Copy text</string>
+    <string name="traffic_outbox_copied">Copied</string>
+    <string name="traffic_outbox_stopped">This send was stopped part-way; sending again sends only the part that went out. Use Edit and send to complete it.</string>
+    <string name="traffic_marked_read">All marked as read</string>
     <string name="traffic_empty_station">No messages from %1$s yet.\nHeartbeats only update the station list.</string>
     <string name="traffic_receiving_short">RX…</string>
     <string name="traffic_unknown_sender">Unknown at +%1$d Hz</string>

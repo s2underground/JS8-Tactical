@@ -31,6 +31,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
 
 /**
  * The main operating screen: waterfall strip with station markers, stations
@@ -254,6 +256,8 @@ class TrafficFragment : Fragment() {
             m.add(0, 6, 2, "Heartbeat offset… (${com.js8call.example.ui.HeartbeatOffsetDialog.summary(requireContext())})")
             m.add(0, 4, 3, "Raw decodes, clock and audio details")
             m.add(0, 5, 4, "Inbox (stored messages)")
+            m.add(0, 11, 4, "Outbox (messages you sent)")
+            m.add(0, 12, 4, "Mark all as read")
             m.add(0, 7, 5, "Reports (saved and scheduled)")
             m.add(0, 10, 5, "Nets (Net Switcher schedule)")
             m.add(0, 9, 6, "Library (guides)")
@@ -272,6 +276,8 @@ class TrafficFragment : Fragment() {
                     8 -> (activity as? com.js8call.example.MainActivity)?.confirmExit()
                     9 -> com.js8call.example.ui.library.AppLinks.open(this, "library")
                     10 -> com.js8call.example.ui.library.AppLinks.open(this, "nets")
+                    11 -> traffic.select(TrafficViewModel.OUTBOX)
+                    12 -> markAllRead()
                 }
                 renderToggles()
                 true
@@ -467,6 +473,7 @@ class TrafficFragment : Fragment() {
             showSender = { traffic.selected.value.let { it == TrafficViewModel.ALL || it?.startsWith("@") == true } },
             onRequestResend = { sender -> requestResend(sender) },
             onShowRaw = { item -> showRaw(item) },
+            onOutgoing = { item -> showSentActions(item) },
         )
         threadList.layoutManager = LinearLayoutManager(requireContext()).apply { stackFromEnd = true }
         threadList.adapter = thread
@@ -610,6 +617,43 @@ class TrafficFragment : Fragment() {
         // AGN? asks the sender to repeat their last message.
         transmit.queueThreadMessage(sender, "AGN?")
         Snackbar.make(requireView(), getString(R.string.traffic_resend_queued, sender), Snackbar.LENGTH_SHORT).show()
+    }
+
+    /** Every unread count in the list, and every stored message in the inbox, marked read. */
+    private fun markAllRead() {
+        traffic.markAllRead()
+        val repo = com.js8call.example.data.MessageRepository.getInstance(requireContext().applicationContext)
+        viewLifecycleOwner.lifecycleScope.launch { runCatching { repo.markAllAsRead() } }
+        Snackbar.make(requireView(), R.string.traffic_marked_read, Snackbar.LENGTH_SHORT).show()
+    }
+
+    /** A sent message (Outbox or any thread): send it again, edit it first, or copy it. */
+    private fun showSentActions(item: TrafficViewModel.ThreadItem.Outgoing) {
+        val text = OutboxText.resendText(item.raw)
+        if (text.isEmpty()) return
+        val stopped = OutboxText.wasStopped(item.raw)
+        val message = if (stopped) "$text\n\n${getString(R.string.traffic_outbox_stopped)}" else text
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(getString(R.string.traffic_outbox_title, zuluTime(item.sentMs)))
+            .setMessage(message)
+            .setPositiveButton(R.string.traffic_outbox_send_again) { _, _ ->
+                if (!readyToSend()) return@setPositiveButton
+                // The text as it was queued already carries its address (or relay path).
+                transmit.queueManualMessage(text)
+                Snackbar.make(requireView(), getString(R.string.traffic_queued), Snackbar.LENGTH_SHORT).show()
+            }
+            .setNeutralButton(R.string.traffic_outbox_copy) { _, _ ->
+                val cm = requireContext().getSystemService(android.content.ClipboardManager::class.java)
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText("JS8 message", text))
+                // Android 13+ shows its own copy confirmation.
+                if (android.os.Build.VERSION.SDK_INT < 33) Snackbar.make(requireView(), R.string.traffic_outbox_copied, Snackbar.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.traffic_outbox_edit) { _, _ ->
+                // Edit in All traffic, where the text keeps its own address instead of gaining another.
+                traffic.select(TrafficViewModel.ALL)
+                traffic.requestCompose(text)
+            }
+            .show()
     }
 
     private fun showRaw(item: TrafficViewModel.ThreadItem.Incoming) {
@@ -894,6 +938,7 @@ class TrafficFragment : Fragment() {
         return when {
             !running && key == TrafficViewModel.ALL -> getString(R.string.traffic_empty)
             key == TrafficViewModel.ALL -> getString(R.string.traffic_empty_listening)
+            key == TrafficViewModel.OUTBOX -> getString(R.string.traffic_empty_outbox)
             else -> getString(R.string.traffic_empty_station, key)
         }
     }

@@ -120,6 +120,12 @@ class MessageRepository(context: Context) {
         }
     }
 
+    suspend fun markAllAsRead() {
+        withContext(Dispatchers.IO) {
+            messageDao.markAllAsRead()
+        }
+    }
+
     suspend fun markMessageAsRead(messageId: Long) {
         withContext(Dispatchers.IO) {
             messageDao.markMessageAsRead(messageId)

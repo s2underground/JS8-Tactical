@@ -51,7 +51,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     sealed class ThreadItem(val timeMs: Long) {
         class Incoming(val message: RolledMessage, val color: Int) : ThreadItem(message.lastHeardMs)
-        class Outgoing(val to: String?, val text: String, val sentMs: Long, val laneHz: Float) : ThreadItem(sentMs)
+        /** [raw] is the text as it was queued (relay form and all), for copying and sending again. */
+        class Outgoing(val to: String?, val text: String, val sentMs: Long, val laneHz: Float, val raw: String = text) : ThreadItem(sentMs)
     }
 
     data class Marker(val label: String, val hz: Float, val color: Int)
@@ -816,7 +817,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         // A relay we sent ("RELAY>TARGET>TEXT") belongs in the target's thread.
         relayPattern.matchEntire(text.trim().uppercase())?.let { m ->
             val (relay, target, body) = m.destructured
-            outgoing += ThreadItem.Outgoing(target, "via $relay: ${body.trim()}", sentMs, frequency)
+            outgoing += ThreadItem.Outgoing(target, "via $relay: ${body.trim()}", sentMs, frequency, text.trim())
             if (!replaying) requestPublish()
             return
         }
@@ -825,7 +826,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val body = if (header != null) text.substring(minOf(header.headerLength, text.length)).trim() else text.trim()
         val shownTo = to ?: firstToken(text)?.takeIf { it.startsWith("@") || looksLikeCall(it) }
         val shownBody = if (to == null && shownTo != null) text.trim().removePrefix(shownTo).trim() else body
-        outgoing += ThreadItem.Outgoing(shownTo, shownBody.ifEmpty { text.trim() }, sentMs, frequency)
+        outgoing += ThreadItem.Outgoing(shownTo, shownBody.ifEmpty { text.trim() }, sentMs, frequency, text.trim())
         if (!replaying) requestPublish()
     }
 
@@ -857,6 +858,16 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     fun setInboxUnread(count: Int) {
         if (count == inboxUnread) return
         inboxUnread = count
+        publish()
+    }
+
+    /**
+     * Clears every unread count in the list (stations, groups, tags): everything heard up to now
+     * counts as read. The inbox's stored messages are marked read by the caller (message database).
+     */
+    fun markAllRead() {
+        lastViewedMs.clear()
+        viewedBaselineMs = System.currentTimeMillis()
         publish()
     }
 
@@ -1007,6 +1018,12 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             detail = "Stored messages (MSG) sent to you or your groups",
             lastHeardMs = 0L, unread = inboxUnread, selected = selectedKey == INBOX, receiving = false,
         )
+        val sent = outgoing.filterNot { OutboxText.isHeartbeat(it.raw) }
+        val outboxRow = StationRow(
+            key = OUTBOX, label = "Outbox", isGroup = true, color = ACCENT,
+            detail = if (sent.isEmpty()) "Messages you send (not heartbeats)" else "${sent.size} sent · tap one to copy or resend",
+            lastHeardMs = 0L, unread = 0, selected = selectedKey == OUTBOX, receiving = false,
+        )
         val watchRow = StationRow(
             key = WATCH, label = "+ Watch a group or #tag", isGroup = true, color = ACCENT,
             detail = "e.g. @GHOSTNET, #SITREP", lastHeardMs = 0L, unread = 0, selected = false, receiving = false,
@@ -1023,18 +1040,20 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
             lastHeardMs = messages.maxOfOrNull { it.lastHeardMs } ?: 0L,
             unread = 0, selected = selectedKey == ALL, receiving = false,
         )
-        _stations.value = listOf(allRow, inboxRow, teamRow) + groupRows + tagRows + watchRow + stationRows
+        _stations.value = listOf(allRow, inboxRow, outboxRow, teamRow) + groupRows + tagRows + watchRow + stationRows
 
         // Thread for the selection.
         val key = selectedKey
         val incoming = when {
             key == ALL -> messages
+            key == OUTBOX -> emptyList()
             key.startsWith("@") -> messages.filter { it.recipient == key }
             key.startsWith("#") -> messages.filter { hasTag(it, key) }
             else -> messages.filter { it.sender == key || it.recipient == key }
         }.map { ThreadItem.Incoming(it, colorFor(it.sender)) }
         val mine = when {
             key == ALL -> outgoing
+            key == OUTBOX -> sent
             key.startsWith("#") -> outgoing.filter { Regex("(^|\\s)" + Regex.escape(key) + "(\\s|$|:)").containsMatchIn(it.text.uppercase()) }
             else -> outgoing.filter { it.to == key }
         }
@@ -1278,6 +1297,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         const val WATCH = "§WATCH"
         /** Station-list row that opens the stored-message inbox. */
         const val INBOX = "§INBOX"
+        /** Station-list row that shows what this station sent (heartbeats left out). */
+        const val OUTBOX = "§OUTBOX"
         private const val TICK_MS = 5_000L
         private val relayPattern = Regex("""^([A-Z0-9/]+)>([A-Z0-9/@]+)>(.*)$""")
         /** Waterfall tags disappear after this long without hearing the station. */
