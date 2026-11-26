@@ -24,6 +24,12 @@ object AudioDevices {
         PreferenceManager.getDefaultSharedPreferences(context)
             .getString("rig_type", "none") == "trusdx_serial"
 
+    /** True when an RTL-SDR dongle is the receiver: its audio comes over USB, no microphone. */
+    fun usesRtlSdr(context: Context): Boolean {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        return prefs.getBoolean("rig_control_enabled", false) && prefs.getString("rig_type", "none") == "rtl_sdr"
+    }
+
     /** The display name for a capture device, or null for types not offered. */
     fun nameFor(device: AudioDeviceInfo): String? = when (device.type) {
         AudioDeviceInfo.TYPE_BUILTIN_MIC -> "Internal Microphone"
@@ -111,6 +117,9 @@ object AudioDevices {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         if (prefs.getBoolean("rig_control_enabled", false) && prefs.getString("rig_type", "none") == "btech_uvpro") {
             return listOf(Device(JS8EngineService.UVPRO_AUDIO_ID, JS8EngineService.UVPRO_AUDIO_NAME))
+        }
+        if (usesRtlSdr(context)) {
+            return listOf(Device(JS8EngineService.RTLSDR_AUDIO_ID, com.js8call.example.service.RtlSdrSession.AUDIO_NAME))
         }
         if (usesSerialAudio(context)) {
             return listOf(

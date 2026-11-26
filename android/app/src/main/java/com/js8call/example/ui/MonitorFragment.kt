@@ -354,7 +354,7 @@ class MonitorFragment : Fragment() {
         val state = viewModel.status.value?.state
         if (state == EngineState.RUNNING || state == EngineState.STARTING) return
 
-        val skipMicPermission = AudioDevices.usesSerialAudio(requireContext())
+        val skipMicPermission = AudioDevices.usesSerialAudio(requireContext()) || AudioDevices.usesRtlSdr(requireContext())
 
         // Check permission
         if (!skipMicPermission && !hasAudioPermission()) {

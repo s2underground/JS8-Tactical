@@ -139,6 +139,7 @@ dependencies {
     // JS8Call core library
     implementation(project(":js8core-lib"))
     implementation(project(":llm"))
+    implementation(project(":sdr"))
 
     // AndroidX
     implementation("androidx.core:core-ktx:1.12.0")

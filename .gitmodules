@@ -5,3 +5,11 @@
 	path = vendor/llama.cpp
 	url = https://github.com/ggml-org/llama.cpp
 	shallow = true
+[submodule "vendor/libusb"]
+	path = vendor/libusb
+	url = https://github.com/libusb/libusb.git
+	shallow = true
+[submodule "vendor/rtl-sdr"]
+	path = vendor/rtl-sdr
+	url = https://github.com/osmocom/rtl-sdr.git
+	shallow = true
