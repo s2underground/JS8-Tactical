@@ -6,12 +6,16 @@
     android:paddingHorizontal="16dp"
     android:paddingVertical="5dp">
 
+    <!-- Tap or long-press: send again, edit, or copy (TrafficFragment.showSentActions). -->
     <LinearLayout
+        android:id="@+id/out_card"
+        tools:ignore="UselessParent"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="end"
         android:layout_marginStart="96dp"
         android:background="@drawable/bg_card_out"
+        android:foreground="?attr/selectableItemBackground"
         android:orientation="vertical"
         android:paddingHorizontal="16dp"
         android:paddingVertical="10dp">
