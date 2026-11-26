@@ -57,83 +57,118 @@
         android:textStyle="bold"
         tools:text="RX" />
 
-    <!-- Band / dial frequency; tap to change. -->
-    <TextView
-        android:id="@+id/status_frequency"
-        android:layout_width="wrap_content"
-        android:layout_height="40dp"
-        android:layout_marginStart="10dp"
-        android:background="?attr/selectableItemBackground"
-        android:contentDescription="@string/monitor_radio_frequency"
-        android:drawableEnd="@drawable/ic_arrow_drop_down"
-        android:drawableTint="@color/tac_text_dim"
-        android:fontFamily="monospace"
-        android:gravity="center_vertical"
-        android:paddingHorizontal="6dp"
-        android:textColor="@color/tac_text"
-        android:textSize="14sp"
-        tools:text="40m · 7.078" />
-
-    <Space
+    <!-- Frequency and the toggles scroll sideways when the bar is too narrow (display zoom,
+         large font, a long net name), so the menu button is never pushed off the edge: the
+         menu holds Exit and Settings. -->
+    <HorizontalScrollView
+        android:id="@+id/status_scroll"
         android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none">
 
-    <TextView
-        android:id="@+id/toggle_interference"
-        android:layout_width="wrap_content"
-        android:layout_height="32dp"
-        android:layout_marginEnd="8dp"
-        android:background="@drawable/bg_pill_warn"
-        android:gravity="center"
-        android:paddingHorizontal="10dp"
-        android:text="@string/interference_pill"
-        android:textColor="@color/tac_ground"
-        android:textSize="12sp"
-        android:textStyle="bold"
-        android:visibility="gone" />
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-    <TextView
-        android:id="@+id/toggle_nets"
-        android:layout_width="wrap_content"
-        android:layout_height="32dp"
-        android:layout_marginEnd="8dp"
-        android:background="@drawable/bg_pill_off"
-        android:gravity="center"
-        android:paddingHorizontal="10dp"
-        android:text="@string/traffic_toggle_nets"
-        android:textColor="@color/tac_text_dim"
-        android:textSize="12sp"
-        android:textStyle="bold"
-        android:visibility="gone" />
+            <!-- Band / dial frequency; tap to change. -->
+            <TextView
+                android:id="@+id/status_frequency"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_marginStart="10dp"
+                android:background="?attr/selectableItemBackground"
+                android:contentDescription="@string/monitor_radio_frequency"
+                android:drawableEnd="@drawable/ic_arrow_drop_down"
+                android:drawableTint="@color/tac_text_dim"
+                android:fontFamily="monospace"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="6dp"
+                android:textColor="@color/tac_text"
+                android:textSize="14sp"
+                tools:text="40m · 7.078" />
 
-    <TextView
-        android:id="@+id/toggle_autoreply"
-        android:layout_width="wrap_content"
-        android:layout_height="32dp"
-        android:layout_marginEnd="8dp"
-        android:background="@drawable/bg_pill_off"
-        android:gravity="center"
-        android:paddingHorizontal="10dp"
-        android:text="@string/traffic_toggle_autoreply"
-        android:textColor="@color/tac_text_dim"
-        android:textSize="12sp"
-        android:textStyle="bold"
-        android:visibility="gone" />
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
 
-    <TextView
-        android:id="@+id/toggle_screen"
-        android:layout_width="wrap_content"
-        android:layout_height="32dp"
-        android:layout_marginEnd="8dp"
-        android:background="@drawable/bg_pill_off"
-        android:gravity="center"
-        android:paddingHorizontal="10dp"
-        android:text="@string/traffic_toggle_screen"
-        android:textColor="@color/tac_text_dim"
-        android:textSize="12sp"
-        android:textStyle="bold"
-        android:visibility="gone" />
+            <TextView
+                android:id="@+id/toggle_interference"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_pill_warn"
+                android:gravity="center"
+                android:paddingHorizontal="10dp"
+                android:text="@string/interference_pill"
+                android:textColor="@color/tac_ground"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/toggle_nets"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_pill_off"
+                android:gravity="center"
+                android:paddingHorizontal="10dp"
+                android:text="@string/traffic_toggle_nets"
+                android:textColor="@color/tac_text_dim"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/toggle_autoreply"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_pill_off"
+                android:gravity="center"
+                android:paddingHorizontal="10dp"
+                android:text="@string/traffic_toggle_autoreply"
+                android:textColor="@color/tac_text_dim"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/toggle_screen"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_pill_off"
+                android:gravity="center"
+                android:paddingHorizontal="10dp"
+                android:text="@string/traffic_toggle_screen"
+                android:textColor="@color/tac_text_dim"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/status_digest"
+                android:visibility="gone"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_pill_off"
+                android:contentDescription="@string/nav_digest"
+                android:gravity="center"
+                android:minWidth="48dp"
+                android:paddingHorizontal="10dp"
+                android:text="@string/nav_digest"
+                android:textColor="@color/tac_text_dim"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </HorizontalScrollView>
 
     <TextView
         android:id="@+id/status_clock"
@@ -156,19 +191,4 @@
         app:icon="@drawable/ic_more_vert"
         app:iconTint="@color/tac_text" />
 
-    <TextView
-        android:id="@+id/status_digest"
-        android:visibility="gone"
-        android:layout_width="wrap_content"
-        android:layout_height="32dp"
-        android:layout_marginEnd="8dp"
-        android:background="@drawable/bg_pill_off"
-        android:contentDescription="@string/nav_digest"
-        android:gravity="center"
-        android:minWidth="48dp"
-        android:paddingHorizontal="10dp"
-        android:text="@string/nav_digest"
-        android:textColor="@color/tac_text_dim"
-        android:textSize="12sp"
-        android:textStyle="bold" />
 </LinearLayout>
