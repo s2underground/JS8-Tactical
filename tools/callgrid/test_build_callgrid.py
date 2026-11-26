@@ -49,6 +49,13 @@ with tempfile.TemporaryDirectory() as d:
                    "06111\t0\t0\t0\t0\t41.687\t-72.730\n"
                    "37027\t0\t0\t0\t0\t36.000\t-86.800\n"
                    "37010\t0\t0\t0\t0\t36.400\t-87.100\n")
+    # The 2025 gazetteer is pipe-delimited, with an extra GEOIDFQ column.
+    zcta_pipe = os.path.join(d, "zcta_pipe.zip")
+    with zipfile.ZipFile(zcta_pipe, "w") as z:
+        z.writestr("2025_Gaz_zcta_national.txt", "GEOID|GEOIDFQ|ALAND|AWATER|ALAND_SQMI|AWATER_SQMI|INTPTLAT|INTPTLONG\n"
+                   "06111|860Z200US06111|0|0|0|0|41.687|-72.730\n")
+    exact_p, _ = b.load_zcta(zcta_pipe)
+    check(exact_p == {"06111": (41.687, -72.730)}, f"pipe gazetteer {exact_p}")
     records, stats = b.build(fcc, zcta)
     check(stats["active"] == 4, f"active {stats}")
     check(len(records) == 3, f"records {records}")

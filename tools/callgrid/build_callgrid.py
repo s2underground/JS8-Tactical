@@ -118,8 +118,12 @@ def load_zcta(path: str):
         if not name:
             sys.exit("no .txt in the ZCTA file")
         with zf.open(name[0]) as raw:
-            reader = csv.reader(io.TextIOWrapper(raw, encoding="utf-8-sig"), delimiter="\t")
-            header = [h.strip().upper() for h in next(reader)]
+            text = io.TextIOWrapper(raw, encoding="utf-8-sig")
+            first = text.readline()
+            # Tab-delimited up to the 2024 gazetteer, pipe-delimited from 2025.
+            delimiter = "|" if first.count("|") > first.count("\t") else "\t"
+            header = [h.strip().upper() for h in first.split(delimiter)]
+            reader = csv.reader(text, delimiter=delimiter)
             try:
                 i_geo, i_lat, i_lon = header.index("GEOID"), header.index("INTPTLAT"), header.index("INTPTLONG")
             except ValueError:

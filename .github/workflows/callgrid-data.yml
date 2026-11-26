@@ -44,6 +44,7 @@ jobs:
 
       - name: Build callgrid.bin
         run: |
+          set -o pipefail
           mkdir -p "$RUNNER_TEMP/out"
           python3 -I tools/callgrid/build_callgrid.py \
             --fcc "$RUNNER_TEMP/in/l_amat.zip" --zcta "$RUNNER_TEMP/in/zcta.zip" \
