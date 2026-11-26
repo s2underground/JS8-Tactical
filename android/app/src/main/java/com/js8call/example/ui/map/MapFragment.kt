@@ -189,7 +189,7 @@ class MapFragment : Fragment() {
             PropertyFactory.circleRadius(6f),
             PropertyFactory.circleColor(color),
             PropertyFactory.circleOpacity(Expression.switchCase(approx, Expression.literal(0.15f), Expression.literal(1f))),
-            PropertyFactory.circleStrokeColor(Expression.switchCase(approx, color, Expression.color(android.graphics.Color.parseColor(halo)))),
+            PropertyFactory.circleStrokeColor(Expression.switchCase(approx, color, Expression.toColor(Expression.literal(halo)))),
             PropertyFactory.circleStrokeWidth(Expression.switchCase(approx, Expression.literal(2f), Expression.literal(1.5f))),
         ))
         st.addLayer(SymbolLayer(L_STATION_LABELS, S_STATIONS).withProperties(
