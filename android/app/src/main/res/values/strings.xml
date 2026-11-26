@@ -26,6 +26,11 @@
     <string name="monitor_telemetry_power">%1$.1f dB · %2$s</string>
     <string name="monitor_menu_audio_device">Audio device</string>
     <!-- Sync clock from GPS (GpsTimeSyncDialog); idea from doodlecomms' GPS UTC Clock, issue #52 -->
+    <!-- Approximate grids from FCC licence data (issue #55) -->
+    <string name="map_grid_approx">≈%1$s (from licence address, approximate)</string>
+    <string name="settings_category_map">Map</string>
+    <string name="settings_licence_grids">Approximate locations from licence data</string>
+    <string name="settings_licence_grids_summary">US stations that send no grid are placed at their FCC licence address\'s grid square, shown as a hollow ring marked ≈. Often right, sometimes not (portable, PO box, old address). Never sent on the air or to ATAK.</string>
     <string name="gps_time_title">Sync clock from GPS</string>
     <string name="gps_time_menu">Sync clock from GPS</string>
     <string name="settings_time_sync_gps_summary">Off-grid with no stations heard yet: read the time from a GPS fix and set the app\'s time correction. No internet needed.</string>

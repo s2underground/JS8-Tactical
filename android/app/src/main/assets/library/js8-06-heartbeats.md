@@ -37,6 +37,8 @@ Knowing who can hear whom is the core skill of HF operating. JS8 gives you sever
 
 This app records all of this. Every station you hear, every report of how others hear you, and every HEARING list feeds the **Prop tab**, which learns how your station actually performs. The **Map** shows where stations are, and the **Team tab** shows whether you can likely reach each member right now.
 
+A US station that never sends a grid can still appear on the Map, as a hollow ring marked **≈**: its grid square is looked up from the address on its FCC licence. That's right most of the time but not always (a portable station, a PO box, an old address), so it's only shown, never used as propagation evidence, sent to ATAK or transmitted. Turn it off under **Settings, Map**. (Suggested by doodlecomms.)
+
 [[app:map|Open the Map]]
 [[app:prop|Open the Prop tab]]
 

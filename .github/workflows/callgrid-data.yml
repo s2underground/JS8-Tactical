@@ -1,0 +1,88 @@
+# Builds callgrid.bin (US amateur callsign -> approximate 4-character grid, issue #55) from the FCC
+# ULS amateur licence file and the US Census ZCTA gazetteer, both public domain. Runs on PRs that
+# touch the builder (build and check only), and by hand on master to refresh the data: then the
+# file, its stats and input checksums go to the "callgrid-data" release, to be reviewed and
+# committed to android/app/src/main/assets/ in a PR. The app build itself never downloads anything.
+name: Callsign grid data
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/callgrid/**'
+      - '.github/workflows/callgrid-data.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test the builder
+        run: python3 -I tools/callgrid/test_build_callgrid.py
+
+      # Downloads are data, kept apart from the repository's scripts.
+      - name: Download FCC and Census data
+        run: |
+          mkdir -p "$RUNNER_TEMP/in"
+          cd "$RUNNER_TEMP/in"
+          curl -fsSL --retry 3 -o l_amat.zip https://data.fcc.gov/download/pub/uls/complete/l_amat.zip
+          for y in 2025 2024 2023; do
+            if curl -fsSL --retry 2 -o zcta.zip "https://www2.census.gov/geo/docs/maps-data/data/gazetteer/${y}_Gazetteer/${y}_Gaz_zcta_national.zip"; then
+              echo "ZCTA gazetteer: $y"; break
+            fi
+            rm -f zcta.zip
+          done
+          test -s zcta.zip
+          sha256sum l_amat.zip zcta.zip | tee inputs.sha256
+          unzip -l l_amat.zip | grep -iE 'HD.dat|EN.dat'
+
+      - name: Build callgrid.bin
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/out"
+          python3 -I tools/callgrid/build_callgrid.py \
+            --fcc "$RUNNER_TEMP/in/l_amat.zip" --zcta "$RUNNER_TEMP/in/zcta.zip" \
+            --out "$RUNNER_TEMP/out/callgrid.bin" --date "$(date -u +%Y%m%d)" | tee "$RUNNER_TEMP/out/stats.json"
+          cp "$RUNNER_TEMP/in/inputs.sha256" "$RUNNER_TEMP/out/"
+          cd "$RUNNER_TEMP/out"
+          sha256sum callgrid.bin | tee callgrid.bin.sha256
+          ls -l callgrid.bin
+          gzip -9 -c callgrid.bin | wc -c | awk '{print "gzip -9 size: " $1}'
+          { echo '### Callsign grid data'; echo '```'; cat stats.json; cat callgrid.bin.sha256 inputs.sha256; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: callgrid
+          path: ${{ runner.temp }}/out/
+          retention-days: 30
+
+  # Puts the file on the "callgrid-data" release. Write access, but no build code runs here.
+  publish:
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: callgrid
+          path: callgrid
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view callgrid-data >/dev/null 2>&1 || gh release create callgrid-data --prerelease \
+            --title "Callsign grid data" \
+            --notes "Approximate grid squares for US amateur callsigns (callsign and 4-character grid only), from FCC ULS licence data and the US Census ZCTA gazetteer (public domain). Not an app release: reviewed and committed to the app's assets."
+          gh release upload callgrid-data callgrid/callgrid.bin callgrid/callgrid.bin.sha256 callgrid/stats.json callgrid/inputs.sha256 --clobber
+          gh release edit callgrid-data --notes "Built $(date -u +%Y-%m-%d) by run #${GITHUB_RUN_NUMBER} from ${GITHUB_SHA::8}. Approximate grid squares for US amateur callsigns (callsign and 4-character grid only), from FCC ULS licence data and the US Census ZCTA gazetteer (public domain). Not an app release: reviewed and committed to the app's assets."

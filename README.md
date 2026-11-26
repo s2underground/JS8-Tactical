@@ -77,7 +77,7 @@ instead, in Obtainium tap **Add App** and:
 - **Include prereleases:** on. Every release so far is marked pre-release (alpha), so without
   this Obtainium finds nothing.
 - **Filter release titles by regular expression:** `^JS8-Tactical v?[0-9]`. This skips the
-  repository's other releases (*Latest test build*, the propagation data and the build cache).
+  repository's other releases (*Latest test build*, the data releases and the build cache).
 
 ### Check that the app is genuine
 
@@ -184,11 +184,15 @@ JS8-Tactical is free software under the GNU General Public License v3 (see [LICE
   served by OpenFreeMap. Optional AI models: Qwen2.5 (Apache 2.0).
 - The "Get it on Obtainium" badge is from the [Obtainium](https://github.com/ImranR98/Obtainium)
   project (GPL-3.0).
+- Approximate grid squares for US stations that send none: from the FCC Universal Licensing
+  System amateur licence data and the US Census Bureau ZCTA gazetteer (both public domain). Only
+  callsign and 4-character grid are kept; see [tools/callgrid](tools/callgrid/build_callgrid.py).
 
 Ideas from the community: syncing the clock from GPS was suggested by doodlecomms
 ([issue #52](https://github.com/s2underground/JS8-Tactical/issues/52)), after their
 [GPS UTC Clock](https://github.com/doodlecomms/gps_utc_clock) app, and installing with Obtainium
-by the same author ([issue #53](https://github.com/s2underground/JS8-Tactical/issues/53)).
+by the same author ([issue #53](https://github.com/s2underground/JS8-Tactical/issues/53)), as was
+placing stations from their licence data ([issue #55](https://github.com/s2underground/JS8-Tactical/issues/55)).
 
 The upstream README, with the history of JS8Call, is kept in
 [docs/UPSTREAM-JS8ANDROID-README.md](docs/UPSTREAM-JS8ANDROID-README.md).
