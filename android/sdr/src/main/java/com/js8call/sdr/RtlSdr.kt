@@ -1,7 +1,5 @@
 package com.js8call.sdr
 
-import java.io.Closeable
-
 /**
  * An RTL-SDR dongle as a JS8 receiver (issue #54): opened from the file descriptor Android's
  * UsbManager gives the app, tuned for a dial frequency, streaming 12 kHz upper-sideband audio.
@@ -10,15 +8,10 @@ import java.io.Closeable
  * Threading: [run] blocks its thread while streaming; [tune] and [cancel] may be called from
  * other threads meanwhile; [close] only once [run] has returned.
  */
-class RtlSdr private constructor(private var handle: Long) : Closeable {
-
-    /** Called on the streaming thread with [count] samples at [SAMPLE_RATE]. The array is reused. */
-    fun interface AudioListener {
-        fun onAudio(samples: ShortArray, count: Int)
-    }
+class RtlSdr private constructor(private var handle: Long) : SdrReceiver {
 
     /** "RTLSDRBlog Blog V4, tuner R828D", from the dongle itself. */
-    fun describe(): String = if (handle != 0L) nativeDescribe(handle) else ""
+    override fun describe(): String = if (handle != 0L) nativeDescribe(handle) else ""
 
     /** True for an RTL-SDR Blog V4: HF through its built-in upconverter, no direct sampling. */
     val hasUpconverter: Boolean get() = handle != 0L && nativeHasUpconverter(handle)
@@ -32,13 +25,13 @@ class RtlSdr private constructor(private var handle: Long) : Closeable {
      * automatic. Returns 0, or a negative step code (-1 can't tune there, -2 sampling mode,
      * -3 frequency).
      */
-    fun tune(dialHz: Long, directSampling: Int = DS_AUTO, ppm: Int = 0, gainTenthsDb: Int = -1): Int =
+    override fun tune(dialHz: Long, directSampling: Int, ppm: Int, gainTenthsDb: Int): Int =
         if (handle != 0L) nativeTune(handle, dialHz, directSampling, ppm, gainTenthsDb) else -1
 
     /** Streams audio to [listener] until [cancel] or the dongle is unplugged. Blocks. */
-    fun run(listener: AudioListener): Int = if (handle != 0L) nativeRun(handle, listener) else -1
+    override fun run(listener: SdrReceiver.AudioListener): Int = if (handle != 0L) nativeRun(handle, listener) else -1
 
-    fun cancel() {
+    override fun cancel() {
         if (handle != 0L) nativeCancel(handle)
     }
 
@@ -49,7 +42,6 @@ class RtlSdr private constructor(private var handle: Long) : Closeable {
     }
 
     companion object {
-        const val SAMPLE_RATE = 12_000
         const val DS_AUTO = 0
         const val DS_OFF = 1
         const val DS_Q = 2
@@ -85,7 +77,7 @@ class RtlSdr private constructor(private var handle: Long) : Closeable {
         @JvmStatic private external fun nativeHasUpconverter(h: Long): Boolean
         @JvmStatic private external fun nativeGains(h: Long): IntArray
         @JvmStatic private external fun nativeTune(h: Long, dialHz: Long, ds: Int, ppm: Int, gainTenthsDb: Int): Int
-        @JvmStatic private external fun nativeRun(h: Long, listener: AudioListener): Int
+        @JvmStatic private external fun nativeRun(h: Long, listener: SdrReceiver.AudioListener): Int
         @JvmStatic private external fun nativeCancel(h: Long)
         @JvmStatic private external fun nativeClose(h: Long)
     }

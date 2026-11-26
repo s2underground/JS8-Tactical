@@ -172,13 +172,15 @@
     <string name="settings_btech_uvpro">BTECH UV-Pro (Bluetooth)</string>
     <!-- RTL-SDR receive (issue #54) -->
     <string name="settings_rtlsdr">RTL-SDR dongle (receive only)</string>
+    <string name="settings_airspyhf">Airspy HF+ (receive only)</string>
+    <string name="settings_airspyhf_hint">Airspy HF+: plug it in (USB OTG adapter if needed), connect an HF antenna to the HF input, and start the receiver. No settings needed.</string>
     <string name="settings_rtlsdr_category">RTL-SDR (receive only)</string>
     <string name="settings_rtlsdr_direct_sampling">HF sampling</string>
     <string name="settings_rtlsdr_ppm">Frequency correction (ppm)</string>
     <string name="settings_rtlsdr_ppm_summary">The dongle\'s crystal error. 0 for TCXO dongles (RTL-SDR Blog V3/V4); a cheap dongle may need tens of ppm.</string>
     <string name="settings_rtlsdr_gain">RF gain (dB)</string>
     <string name="settings_rtlsdr_gain_summary">Blank for automatic. Lower it if strong stations overload the dongle. Not used in direct sampling.</string>
-    <string name="rtlsdr_receive_only">The RTL-SDR is receive only: there\'s no transmitter to send with. Choose a radio under Settings, Radio to transmit.</string>
+    <string name="rtlsdr_receive_only">This SDR is receive only: there\'s no transmitter to send with. Choose a radio under Settings, Radio to transmit.</string>
     <string name="settings_rtlsdr_hint">RTL-SDR: plug the dongle in (USB OTG adapter if needed), connect an HF antenna, and start the receiver. A V3 receives HF through direct sampling; a V4 through its built-in upconverter.</string>
     <string name="settings_btech_uvpro_squelch_hint">Set squelch to 0 on the UV-Pro, or the waterfall stays dark between signals.</string>
     <string name="permission_bluetooth_denied">The UV-Pro needs the Nearby devices permission. Allow it for JS8-Tactical in Android Settings.</string>

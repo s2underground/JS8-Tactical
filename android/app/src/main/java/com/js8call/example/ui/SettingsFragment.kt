@@ -239,6 +239,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
             if (newValue == "rtl_sdr") {
                 view?.let { Snackbar.make(it, R.string.settings_rtlsdr_hint, Snackbar.LENGTH_LONG).show() }
             }
+            if (newValue == "airspy_hf") {
+                view?.let { Snackbar.make(it, R.string.settings_airspyhf_hint, Snackbar.LENGTH_LONG).show() }
+            }
             if (newValue == "btech_uvpro" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.BLUETOOTH_CONNECT) !=
                 PackageManager.PERMISSION_GRANTED

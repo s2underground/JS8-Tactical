@@ -125,6 +125,38 @@ int main() {
     CHECK(rms > 0.03 && rms < 0.3 && peak < 32767, "AGC amp %.4f -> rms %.3f peak %d", amp, rms, peak);
   }
 
+  // Airspy HF+ path: float IQ at 192 kS/s, 24 kHz offset.
+  {
+    auto tones = [](const std::vector<std::pair<double, double>>& t, double seconds) {
+      const size_t n = static_cast<size_t>(seconds * AIRSPY_RATE);
+      std::vector<float> out(n * 2);
+      for (size_t k = 0; k < n; ++k) {
+        double i = 0, q = 0;
+        for (auto [f, a] : t) { const double ph = 2 * M_PI * f * k / AIRSPY_RATE; i += a * std::cos(ph); q += a * std::sin(ph); }
+        out[2 * k] = static_cast<float>(i);
+        out[2 * k + 1] = static_cast<float>(q);
+      }
+      return out;
+    };
+    SsbReceiver rx;
+    std::vector<int16_t> audio;
+    auto iq = tones({{AIRSPY_OFFSET_HZ + 1000.0, 0.001}}, 4.0);
+    rx.process_float(iq.data(), iq.size() / 2, audio);
+    CHECK(audio.size() == 4 * OUTPUT_RATE, "airspy rate: %zu samples for 4 s", audio.size());
+    const double usb = tone_power(audio, 1000, settle);
+    CHECK(db(usb) - db(tone_power(audio, 1500, settle)) > 40, "airspy USB tone");
+
+    SsbReceiver rx2;
+    std::vector<int16_t> a2;
+    // A strong LSB signal, the DC spike, and a station 10 kHz up, against a weak USB one.
+    auto mix = tones({{AIRSPY_OFFSET_HZ + 2000.0, 0.0001}, {AIRSPY_OFFSET_HZ - 1500.0, 0.01}, {0.0, 0.05}, {AIRSPY_OFFSET_HZ + 10000.0, 0.05}}, 4.0);
+    rx2.process_float(mix.data(), mix.size() / 2, a2);
+    const double want = tone_power(a2, 2000, settle);
+    double worst = 0;
+    for (double f = 100; f < 5900; f += 50) if (std::fabs(f - 2000) > 100) worst = std::max(worst, tone_power(a2, f, settle));
+    CHECK(db(want) - db(worst) > 20, "airspy: weak USB %.1f dB vs worst other %.1f dB", db(want), db(worst));
+  }
+
   // Processing time: 10 s of IQ should take far less than 10 s.
   {
     SsbReceiver rx;

@@ -62,7 +62,11 @@ Settings, under **RTL-SDR (receive only)**:
 - **Frequency correction (ppm):** 0 for TCXO dongles like the Blog V3 and V4. A cheap dongle can be tens of ppm off; if stations decode only at the edges, adjust this.
 - **RF gain:** blank for automatic. If strong local stations swamp the waterfall, set a lower number. Direct sampling (V3 on HF) doesn't use it.
 
-Anything you try to send says the RTL-SDR is receive only, and heartbeats and automatic replies are skipped. To transmit, choose your radio again under **Settings, Radio**.
+# Airspy HF+
+The **Airspy HF+** (Discovery or Dual Port) is a much better HF receiver than an RTL-SDR, and needs no settings: choose **Rig Type: Airspy HF+ (receive only)**, connect the antenna to its HF input, plug it in with the OTG adapter and start the receiver. It covers every HF band up to 10 m (its HF input stops at 31 MHz, so not 6 m), with its own automatic gain.
 
-> NOTE: RTL-SDR support was suggested by doodlecomms. It's new: if your dongle doesn't work, please send a diagnostic report.
+# Receive only
+With either dongle, anything you try to send says the SDR is receive only, and heartbeats and automatic replies are skipped. To transmit, choose your radio again under **Settings, Radio**.
+
+> NOTE: SDR support was suggested by doodlecomms. It's new: if your dongle doesn't work, please send a diagnostic report.
 

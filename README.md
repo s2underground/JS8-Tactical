@@ -131,6 +131,7 @@ QMX and truSDX over USB serial, RTS/DTR PTT, and the BTECH UV-Pro over Bluetooth
 with an OTG adapter, connect an HF antenna, and choose Settings → Radio → Rig Type → *RTL-SDR
 dongle*. An RTL-SDR Blog V3 receives HF through direct sampling (best below 14.4 MHz; the bands
 above work as mirrored signals, with more interference); a V4 through its built-in upconverter.
+An **Airspy HF+** (Discovery or Dual Port) works the same way: Rig Type → *Airspy HF+*.
 Suggested by doodlecomms ([issue #54](https://github.com/s2underground/JS8-Tactical/issues/54)).
 
 **Xiegu X6100 / X6200:** use the radio's DEV port with a USB-A to USB-C cable and the OTG
@@ -190,8 +191,9 @@ JS8-Tactical is free software under the GNU General Public License v3 (see [LICE
   served by OpenFreeMap. Optional AI models: Qwen2.5 (Apache 2.0).
 - The "Get it on Obtainium" badge is from the [Obtainium](https://github.com/ImranR98/Obtainium)
   project (GPL-3.0).
-- RTL-SDR receive: [librtlsdr](https://gitea.osmocom.org/sdr/rtl-sdr) (osmocom, GPL-2.0-or-later)
-  and [libusb](https://libusb.info) (LGPL-2.1-or-later), built from source as submodules.
+- SDR receive: [librtlsdr](https://gitea.osmocom.org/sdr/rtl-sdr) (osmocom, GPL-2.0-or-later),
+  [libairspyhf](https://github.com/airspy/airspyhf) (Airspy, BSD-3-Clause) and
+  [libusb](https://libusb.info) (LGPL-2.1-or-later), built from source as submodules.
 - Approximate grid squares for US stations that send none: from the FCC Universal Licensing
   System amateur licence data and the US Census Bureau ZCTA gazetteer (both public domain). Only
   callsign and 4-character grid are kept; see [tools/callgrid](tools/callgrid/build_callgrid.py).

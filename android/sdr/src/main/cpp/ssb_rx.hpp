@@ -1,10 +1,12 @@
-// SSB (upper sideband) receiver for an RTL-SDR: 8-bit IQ at 960 kS/s in, 12 kHz audio out.
-// Plain C++ with no Android or librtlsdr dependency, so the host tests (src/test/cpp) cover it.
+// SSB (upper sideband) receiver for an SDR, 12 kHz audio out. Two inputs:
+//  - RTL-SDR: 8-bit IQ at 960 kS/s, tuned TUNE_OFFSET_HZ (60 kHz) below the dial;
+//  - Airspy HF+: float IQ at 192 kS/s, tuned AIRSPY_OFFSET_HZ (24 kHz) below the dial.
+// Plain C++ with no Android or driver dependency, so the host tests (src/test/cpp) cover it.
 //
-// The dongle is tuned TUNE_OFFSET_HZ away from the dial so the wanted passband sits well clear
-// of the dongle's DC spike; mixing brings the dial to 0 Hz. Then three FIR decimators
-// (/5, /4, /4) take 960 kHz to 12 kHz complex, and a complex filter keeps 0..3300 Hz (the upper
-// sideband) before the real part becomes the audio. A slow AGC sets the level for the decoder.
+// The offset keeps the wanted passband clear of the device's DC spike; mixing brings the dial
+// to 0 Hz. FIR decimators (/5 for the RTL-SDR only, then /4, /4) take it to 12 kHz complex, and
+// a complex filter keeps 0..3300 Hz (the upper sideband) before the real part becomes the audio.
+// A slow AGC sets the level for the decoder.
 //
 // Direct sampling (an RTL-SDR Blog V3 on HF) above half the 28.8 MHz ADC clock sees the band as
 // an alias, mirrored: `inverted` conjugates the IQ so upper sideband stays upper sideband.
@@ -25,6 +27,8 @@ constexpr int INPUT_RATE = 960000;
 constexpr int OUTPUT_RATE = 12000;
 constexpr int TUNE_OFFSET_HZ = 60000;
 constexpr uint32_t DEFAULT_XTAL_HZ = 28800000;
+constexpr int AIRSPY_RATE = 192000;
+constexpr int AIRSPY_OFFSET_HZ = 24000;
 
 // Where to tune the dongle for a dial frequency, and how to read what comes back.
 struct TuningPlan {
@@ -127,9 +131,26 @@ class SsbReceiver {
         d2_(4, lowpass_taps(41, 8000, INPUT_RATE / 5)),
         d3_(4, lowpass_taps(31, 4500, INPUT_RATE / 20)),
         ssb_(1, lowpass_taps(191, SSB_CENTER_HZ, OUTPUT_RATE)) {
+    static_assert(INPUT_RATE / 5 == AIRSPY_RATE, "the Airspy input joins after the first stage");
     for (int i = 0; i < MIX_LEN; ++i) {
       const double a = -2 * M_PI * TUNE_OFFSET_HZ * i / INPUT_RATE;
       mix_[i] = {static_cast<float>(std::cos(a)), static_cast<float>(std::sin(a))};
+    }
+    for (int i = 0; i < AIRSPY_MIX_LEN; ++i) {
+      const double a = -2 * M_PI * AIRSPY_OFFSET_HZ * i / AIRSPY_RATE;
+      mix_a_[i] = {static_cast<float>(std::cos(a)), static_cast<float>(std::sin(a))};
+    }
+  }
+
+  // Interleaved float I/Q at AIRSPY_RATE (the Airspy HF+), tuned AIRSPY_OFFSET_HZ below the
+  // dial. Joins the RTL-SDR chain after its first decimator. Appends 16-bit audio at OUTPUT_RATE.
+  void process_float(const float* iq, size_t complex_count, std::vector<int16_t>& out) {
+    for (size_t k = 0; k < complex_count; ++k) {
+      const std::complex<float> x = std::complex<float>(iq[2 * k], iq[2 * k + 1]) * mix_a_[mix_a_pos_];
+      mix_a_pos_ = (mix_a_pos_ + 1) % AIRSPY_MIX_LEN;
+      std::complex<float> b, c;
+      if (!d2_.push(x, b) || !d3_.push(b, c)) continue;
+      out.push_back(audio_sample(c));
     }
   }
 
@@ -153,13 +174,15 @@ class SsbReceiver {
 
   void reset() {
     d1_.reset(); d2_.reset(); d3_.reset(); ssb_.reset();
-    mix_pos_ = 0; ssb_phase_ = 0; level_ = 0; gain_ = INITIAL_GAIN;
+    mix_pos_ = 0; mix_a_pos_ = 0; ssb_phase_ = 0; level_ = 0; gain_ = INITIAL_GAIN;
   }
 
   float gain() const { return gain_; }
 
  private:
   static constexpr int MIX_LEN = INPUT_RATE / TUNE_OFFSET_HZ;  // 16: the offset tone's period
+  static constexpr int AIRSPY_MIX_LEN = AIRSPY_RATE / AIRSPY_OFFSET_HZ;  // 8
+  static_assert(AIRSPY_RATE % AIRSPY_OFFSET_HZ == 0, "offset must divide the sample rate");
   static constexpr int SSB_ROT_LEN = 80;  // 1650 Hz at 12 kHz repeats exactly every 80 samples
   static_assert(INPUT_RATE % TUNE_OFFSET_HZ == 0, "offset must divide the sample rate");
   static constexpr float INITIAL_GAIN = 20.0f;
@@ -188,7 +211,9 @@ class SsbReceiver {
 
   Decimator d1_, d2_, d3_, ssb_;
   std::array<std::complex<float>, MIX_LEN> mix_{};
+  std::array<std::complex<float>, AIRSPY_MIX_LEN> mix_a_{};
   int mix_pos_ = 0;
+  int mix_a_pos_ = 0;
   int ssb_phase_ = 0;
   float level_ = 0;
   float gain_ = INITIAL_GAIN;

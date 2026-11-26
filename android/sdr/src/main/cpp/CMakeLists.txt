@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.22)
 project(js8sdr LANGUAGES C CXX)
 
-# RTL-SDR receive (issue #54). libusb (LGPL-2.1+) and librtlsdr (osmocom, GPL-2.0+) are vendored
-# as submodules at <repo>/vendor/libusb and <repo>/vendor/rtl-sdr and built static, here.
+# SDR receive (issue #54). libusb (LGPL-2.1+), librtlsdr (osmocom, GPL-2.0+) and libairspyhf
+# (Airspy, BSD-3-Clause) are vendored as submodules under <repo>/vendor and built static, here.
 set(REPO ${CMAKE_CURRENT_LIST_DIR}/../../../../..)
 set(LIBUSB ${REPO}/vendor/libusb)
 set(RTLSDR ${REPO}/vendor/rtl-sdr)
+set(AIRSPYHF ${REPO}/vendor/airspyhf/libairspyhf/src)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,5 +40,11 @@ target_compile_definitions(rtlsdr PUBLIC rtlsdr_STATIC)
 target_compile_options(rtlsdr PRIVATE -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-function-declaration)
 target_link_libraries(rtlsdr PUBLIC usb1 log)
 
-add_library(js8sdr SHARED sdr_jni.cpp)
-target_link_libraries(js8sdr rtlsdr android log)
+# libairspyhf, unmodified: it opens from an Android file descriptor itself (airspyhf_open_fd).
+add_library(airspyhf STATIC ${AIRSPYHF}/airspyhf.c ${AIRSPYHF}/iqbalancer.c)
+target_include_directories(airspyhf PUBLIC ${AIRSPYHF})
+target_compile_options(airspyhf PRIVATE -Wno-unused-parameter -Wno-sign-compare -Wno-unused-variable)
+target_link_libraries(airspyhf PUBLIC usb1 m log)
+
+add_library(js8sdr SHARED sdr_jni.cpp airspy_jni.cpp)
+target_link_libraries(js8sdr rtlsdr airspyhf android log)
