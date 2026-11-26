@@ -2135,6 +2135,11 @@ class JS8EngineService : Service() {
             // marked down after an error may still reach a keyed radio. A dead link only costs a
             // timeout here, on the TX thread.
             val shouldReleasePtt = rigControlMode != "none"
+            // Retries and the "may still be transmitting" warning only when this app could have
+            // keyed the radio: a key command went out with no confirmed release since. Field
+            // report (build 324): a receiver restart with no rig model picked yet retried for
+            // ~7 s, raised a false PTT-stuck alarm, and the restart was dropped behind it.
+            val couldBeKeyed = synchronized(pttStateLock) { rigPttAsserted || rigPttMaybeKeyed }
             if (shutdownMode == "btech_uvpro") uvproWorkersActive.incrementAndGet()
 
             createRigTransports()
@@ -2191,7 +2196,7 @@ class JS8EngineService : Service() {
                         }
                         var released = releaseOnce()
                         for (waitMs in longArrayOf(250, 500, 1_000, 2_000, 3_000)) {
-                            if (released) break
+                            if (released || !couldBeKeyed) break
                             Log.w(TAG, "PTT release failed during shutdown; trying again in $waitMs ms")
                             Thread.sleep(waitMs)
                             released = releaseOnce()
@@ -2203,6 +2208,8 @@ class JS8EngineService : Service() {
                                 rigPttReleaseFailures = 0
                             }
                             mainHandler.post { clearPttStuckWarning() }
+                        } else if (!couldBeKeyed) {
+                            Log.i(TAG, "PTT release not confirmed during shutdown; the radio was not keyed")
                         } else {
                             Log.e(TAG, "Unable to confirm PTT release during shutdown")
                             // The receiver is stopping, so nothing will try again: tell the operator.
