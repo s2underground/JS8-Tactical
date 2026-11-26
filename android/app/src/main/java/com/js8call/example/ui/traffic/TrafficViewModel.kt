@@ -67,6 +67,8 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val call: String, val grid: String, val position: LatLon, val color: Int, val lastHeardMs: Long, val snr: Int,
         /** Band labels ("40m") it was heard on; empty if not known (heard before bands were kept). */
         val bands: Set<String> = emptySet(),
+        /** The grid is a guess from the FCC licence address (the station sent none): show it as such. */
+        val approx: Boolean = false,
     )
 
     /** A received report with a location. */
@@ -597,6 +599,10 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
 
     /** Band [call] was on when we last heard it (the dial we were on then), else the band we're on now. */
     /** The band [call] was last heard on; null when not known (never guessed from where we are now). */
+    /** Approximate grid from the FCC licence data, for a station that never sent one (or null). */
+    private fun approxGrid(call: String): String? =
+        if (call in demoCalls || demoBand != null) null else com.js8call.example.ui.map.LicenceGrids.lookup(getApplication(), call)
+
     private fun bandOf(call: String): String? =
         if (demoBand != null) demoBand?.label
         else Band.forDialHz(heard[call]?.dialHz)?.label
@@ -1001,7 +1007,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
                     key = call, label = call, isGroup = false, color = colorFor(call),
                     detail = listOfNotNull(
                         if (unreadForMe > 0) "► FOR YOU" else null,
-                        h.grid, "+${h.laneHz.toInt()} Hz", "${h.snr} dB",
+                        h.grid ?: approxGrid(call)?.let { "≈$it" }, "+${h.laneHz.toInt()} Hz", "${h.snr} dB",
                     ).joinToString(" · "),
                     lastHeardMs = h.lastHeardMs,
                     unread = fromThem.count { it.lastHeardMs > (lastViewedMs[call] ?: viewedBaselineMs) },
@@ -1071,12 +1077,21 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         fun posOf(call: String): LatLon? = positions.getOrPut(call) {
             (mapMemory.grid(call) ?: heard[call]?.grid)?.let { Geo.maidenheadToLatLon(it) }
         }
+        // Stations heard this session that never sent a grid: placed from the FCC licence address,
+        // marked approximate. Kept out of posOf, so links, propagation and ATAK never use them.
+        val approxStations = heard.mapNotNull { (call, h) ->
+            if (h.grid != null || mapMemory.grid(call) != null || isMe(call) || call in demoCalls) return@mapNotNull null
+            val grid = approxGrid(call) ?: return@mapNotNull null
+            val pos = Geo.maidenheadToLatLon(grid) ?: return@mapNotNull null
+            val band = if (h.dialHz != null) bandOf(call) else null
+            MapStation(call, grid, pos, colorFor(call), h.lastHeardMs, h.snr, setOfNotNull(band), approx = true)
+        }
         _mapData.value = MapData(
             stations = mapMemory.stations().mapNotNull { st ->
                 if (isMe(st.call)) return@mapNotNull null
                 val pos = posOf(st.call) ?: return@mapNotNull null
                 MapStation(st.call, st.grid, pos, colorFor(st.call), st.lastHeardMs, st.snr, st.bands)
-            },
+            } + approxStations,
             links = mapMemory.links().mapNotNull { l ->
                 val pa = posOf(l.a) ?: return@mapNotNull null
                 val pb = posOf(l.b) ?: return@mapNotNull null

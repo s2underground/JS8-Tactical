@@ -183,11 +183,14 @@ class MapFragment : Fragment() {
             PropertyFactory.lineWidth(1.6f),
             PropertyFactory.lineOpacity(0.75f),
         ))
+        // A station placed from its licence address (it sent no grid) is a hollow ring in its colour.
+        val approx = Expression.eq(Expression.get("approx"), Expression.literal(true))
         st.addLayer(CircleLayer(L_STATIONS, S_STATIONS).withProperties(
             PropertyFactory.circleRadius(6f),
             PropertyFactory.circleColor(color),
-            PropertyFactory.circleStrokeColor(halo),
-            PropertyFactory.circleStrokeWidth(1.5f),
+            PropertyFactory.circleOpacity(Expression.switchCase(approx, Expression.literal(0.15f), Expression.literal(1f))),
+            PropertyFactory.circleStrokeColor(Expression.switchCase(approx, color, Expression.color(android.graphics.Color.parseColor(halo)))),
+            PropertyFactory.circleStrokeWidth(Expression.switchCase(approx, Expression.literal(2f), Expression.literal(1.5f))),
         ))
         st.addLayer(SymbolLayer(L_STATION_LABELS, S_STATIONS).withProperties(
             PropertyFactory.textField(Expression.get("label")),
@@ -257,8 +260,9 @@ class MapFragment : Fragment() {
         (st.getSource(S_STATIONS) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(stations.map { s ->
             point(s.position).apply {
                 addStringProperty("id", "s:${s.call}")
-                addStringProperty("label", s.call)
+                addStringProperty("label", if (s.approx) "${s.call} ≈" else s.call)
                 addStringProperty("color", hex(s.color))
+                addBooleanProperty("approx", s.approx)
             }
         }))
         (st.getSource(S_REPORTS) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(reports.map { r ->
@@ -379,7 +383,8 @@ class MapFragment : Fragment() {
                     ?.let { "\n" + getString(R.string.map_heard_on, it.joinToString(", ")) }.orEmpty()
                 body.text = getString(R.string.map_station_body, heard, s.snr) + bandsText +
                     if (workedText.isNotEmpty()) "\n" + workedText else ""
-                meta.text = listOfNotNull(s.grid, me?.let { rangeText(it, s.position) }).joinToString(" · ")
+                val gridText = if (s.approx) getString(R.string.map_grid_approx, s.grid) else s.grid
+                meta.text = listOfNotNull(gridText, me?.let { rangeText(it, s.position) }).joinToString(" · ")
                 open.isVisible = true
             }
             is Selection.ReportPoint -> {

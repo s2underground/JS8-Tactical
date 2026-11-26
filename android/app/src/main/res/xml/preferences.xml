@@ -279,6 +279,19 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory
+        app:title="@string/settings_category_map"
+        app:iconSpaceReserved="false">
+
+        <SwitchPreferenceCompat
+            app:key="map_licence_grids"
+            app:title="@string/settings_licence_grids"
+            app:summary="@string/settings_licence_grids_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
     <!-- ATAK Category -->
     <PreferenceCategory
         app:title="@string/settings_category_atak"
