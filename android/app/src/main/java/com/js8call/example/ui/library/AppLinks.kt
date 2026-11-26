@@ -21,10 +21,17 @@ object AppLinks {
         "reports" to R.id.navigation_reports,
     )
 
-    fun known(target: String) = target in TARGETS
+    /** Not a tab: opens the Sync clock from GPS dialog. */
+    private const val GPS_TIME = "gps-time"
+
+    fun known(target: String) = target in TARGETS || target == GPS_TIME
 
     /** Switch tab if it is on the bar/rail, else navigate to it. */
     fun open(f: Fragment, target: String) {
+        if (target == GPS_TIME) {
+            com.js8call.example.ui.GpsTimeSyncDialog.show(f.childFragmentManager)
+            return
+        }
         val dest = TARGETS[target] ?: return
         // Propagation is a view on the Map tab now.
         if (target == "prop") androidx.preference.PreferenceManager.getDefaultSharedPreferences(f.requireContext()).edit()

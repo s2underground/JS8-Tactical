@@ -25,6 +25,37 @@
     <string name="monitor_telemetry_separator" translatable="false">" · "</string>
     <string name="monitor_telemetry_power">%1$.1f dB · %2$s</string>
     <string name="monitor_menu_audio_device">Audio device</string>
+    <!-- Sync clock from GPS (GpsTimeSyncDialog); idea from doodlecomms' GPS UTC Clock, issue #52 -->
+    <string name="gps_time_title">Sync clock from GPS</string>
+    <string name="gps_time_menu">Sync clock from GPS</string>
+    <string name="settings_time_sync_gps_summary">Off-grid with no stations heard yet: read the time from a GPS fix and set the app\'s time correction. No internet needed.</string>
+    <string name="gps_time_need_permission">Reading GPS time needs location permission. Only the time in the GPS fix is used: your position is not stored, shown or sent.</string>
+    <string name="gps_time_allow">Allow</string>
+    <string name="gps_time_denied">Location permission is off for JS8-Tactical, so GPS time can\'t be read. You can allow it in the app\'s settings, under Permissions, Location.</string>
+    <string name="gps_time_app_settings">App settings</string>
+    <string name="gps_time_gps_off">Location is turned off. Turn it on to read the time from the satellites; it works without internet or cell service.</string>
+    <string name="gps_time_location_settings">Location settings</string>
+    <string name="gps_time_waiting">Waiting for GPS… %1$s\nFixes so far: %2$d of %3$d. %4$s\n\nOutdoors, or by a window with open sky, is fastest. The first fix can take a minute or two.</string>
+    <string name="gps_time_satellites">Satellites in use: %1$d.</string>
+    <string name="gps_time_timed_out">No GPS fix yet (waited %1$s). Try again with a clearer view of the sky.</string>
+    <string name="gps_time_clock_slow">This tablet\'s clock is %1$s behind GPS time.</string>
+    <string name="gps_time_clock_fast">This tablet\'s clock is %1$s ahead of GPS time.</string>
+    <string name="gps_time_clock_right">This tablet\'s clock matches GPS time (within 0.05 s).</string>
+    <string name="gps_time_correction">Time correction: now %1$s; after applying, %2$s.</string>
+    <string name="gps_time_quality">Fix accuracy %1$s · fixes: %2$d, agreeing within %3$s</string>
+    <string name="gps_time_concern_mock">A mock-location app is providing this fix. Its time may be made up: apply only if you trust it.</string>
+    <string name="gps_time_concern_accuracy">The GPS fix is weak (accuracy worse than 100 m, or not given), so its time may be off. Measuring again with a clearer view of the sky is better.</string>
+    <string name="gps_time_concern_disagree">The fixes disagree with each other by more than half a second. Measure again before applying.</string>
+    <string name="gps_time_concern_stale">A fix was more than 10 seconds old when it was read, which shouldn\'t happen. Measure again.</string>
+    <string name="gps_time_concern_large">This changes the time correction by more than 3 seconds. That\'s normal the first time off-grid; if you synced recently, a jump this big deserves a second look (GPS can be jammed or spoofed).</string>
+    <string name="gps_time_note">Applying changes only the app\'s time correction (the same setting as Adjust time drift). The tablet\'s own clock is not changed and nothing is sent on the air. If the tablet\'s clock is set later, for example when internet comes back, sync again or reset the correction.</string>
+    <string name="gps_time_apply">Apply</string>
+    <string name="gps_time_apply_anyway">Apply anyway</string>
+    <string name="gps_time_again">Measure again</string>
+    <string name="gps_time_close">Close</string>
+    <string name="gps_time_cancel">Cancel</string>
+    <string name="gps_time_try_again">Try again</string>
+    <string name="gps_time_applied">Time correction set from GPS: %1$s</string>
     <string name="monitor_menu_time_sync">Sync clock to next decode</string>
     <string name="monitor_menu_time_drift_adjust">Adjust time drift…</string>
     <string name="monitor_menu_time_drift_reset">Reset time drift</string>

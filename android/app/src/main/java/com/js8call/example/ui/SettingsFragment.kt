@@ -348,6 +348,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     /** Settings → Diagnostics: build the report off the main thread, then hand it to a share sheet. */
     private fun setUpDiagnostics() {
+        findPreference<Preference>("time_sync_gps")?.setOnPreferenceClickListener {
+            GpsTimeSyncDialog.show(childFragmentManager)
+            true
+        }
         findPreference<Preference>("diagnostics_last_error")?.setOnPreferenceClickListener {
             val act = activity as? androidx.appcompat.app.AppCompatActivity
             if (act == null || !com.js8call.example.CrashReporter.showLast(act)) {

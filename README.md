@@ -151,5 +151,9 @@ JS8-Tactical is free software under the GNU General Public License v3 (see [LICE
   AndroidX and Material Components (Apache 2.0). Map data © OpenStreetMap contributors (ODbL),
   served by OpenFreeMap. Optional AI models: Qwen2.5 (Apache 2.0).
 
+Ideas from the community: syncing the clock from GPS was suggested by doodlecomms
+([issue #52](https://github.com/s2underground/JS8-Tactical/issues/52)), after their
+[GPS UTC Clock](https://github.com/doodlecomms/gps_utc_clock) app.
+
 The upstream README, with the history of JS8Call, is kept in
 [docs/UPSTREAM-JS8ANDROID-README.md](docs/UPSTREAM-JS8ANDROID-README.md).

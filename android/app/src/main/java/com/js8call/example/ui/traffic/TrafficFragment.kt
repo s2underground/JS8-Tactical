@@ -258,6 +258,7 @@ class TrafficFragment : Fragment() {
             m.add(0, 5, 4, "Inbox (stored messages)")
             m.add(0, 11, 4, "Outbox (messages you sent)")
             m.add(0, 12, 4, "Mark all as read")
+            m.add(0, 13, 4, getString(R.string.gps_time_menu))
             m.add(0, 7, 5, "Reports (saved and scheduled)")
             m.add(0, 10, 5, "Nets (Net Switcher schedule)")
             m.add(0, 9, 6, "Library (guides)")
@@ -278,6 +279,7 @@ class TrafficFragment : Fragment() {
                     10 -> com.js8call.example.ui.library.AppLinks.open(this, "nets")
                     11 -> traffic.select(TrafficViewModel.OUTBOX)
                     12 -> markAllRead()
+                    13 -> com.js8call.example.ui.GpsTimeSyncDialog.show(childFragmentManager)
                 }
                 renderToggles()
                 true
