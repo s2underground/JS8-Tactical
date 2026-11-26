@@ -480,6 +480,12 @@
             app:defaultValue="false"
             app:iconSpaceReserved="false" />
 
+        <Preference
+            app:key="time_sync_gps"
+            app:title="@string/gps_time_menu"
+            app:summary="@string/settings_time_sync_gps_summary"
+            app:iconSpaceReserved="false" />
+
     </PreferenceCategory>
 
     <!-- Diagnostics: a report to send when something goes wrong -->

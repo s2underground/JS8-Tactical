@@ -255,6 +255,10 @@ class MonitorFragment : Fragment() {
                     armTimeSync()
                     true
                 }
+                R.id.action_time_sync_gps -> {
+                    GpsTimeSyncDialog.show(childFragmentManager)
+                    true
+                }
                 R.id.action_time_drift_adjust -> {
                     showTimeDriftDialog()
                     true

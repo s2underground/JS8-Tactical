@@ -43,9 +43,12 @@ Turn the radio's volume **down** to start. Too much audio is the most common pro
 # 4. Set the clock
 JS8 stations take turns in fixed time slots (every 15 seconds in Normal speed). The tablet's clock has to be within about **one second** of real time; at two seconds or more, nothing decodes.
 
-- With internet or GPS, Android usually keeps the clock right by itself.
-- With neither, turn on **Settings, Timing, Auto time sync**. The app then corrects its own clock from the signals it hears, so once one station is decoded, the rest follow.
+- With internet, Android keeps the clock right by itself.
+- Off-grid, use **Sync clock from GPS** (Traffic's ⋮ menu): it reads the time from a GPS fix, no internet needed. Most tablets don't set their own clock from GPS.
+- Once you hear stations, **Settings, Timing, Auto time sync** keeps the app in step with them (it waits until it hears three or more).
 - Traffic's ⋮ menu → **Raw decodes, clock and audio details** has **Sync clock to next decode** and **Adjust time drift** for doing it by hand.
+
+[[app:gps-time|Sync clock from GPS]]
 
 [[app:settings|Open Settings]]
 

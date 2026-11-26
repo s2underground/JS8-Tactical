@@ -12,12 +12,21 @@ Because the receiving software only looks for signals that start at slot boundar
 [[diagram:timeslots|Stations start together at slot boundaries. A clock off by more than about 2 seconds isn't decoded.]]
 
 # Keeping the clock right
-- **With internet or GPS,** Android sets the clock itself. Check that "automatic date and time" is on in the tablet's settings.
-- **With neither,** turn on **Settings, Timing, Auto time sync**. The app then nudges its own clock to match the stations it decodes. Once it decodes anyone, it's in step with the net.
+- **With internet,** Android sets the clock itself. Check that "automatic date and time" is on in the tablet's settings.
+- **With GPS but no internet,** don't count on Android: most tablets never set their clock from GPS, and nothing tells you whether yours did. Use **Sync clock from GPS** (Traffic's ⋮ menu, or Settings, Timing). It reads the time from a fresh GPS fix, shows how far off the tablet's clock is and how good the fix is, and sets the app's time correction when you tap Apply. No internet or cell service needed, and nothing is sent on the air.
+- **Hearing stations,** turn on **Settings, Timing, Auto time sync**. The app then nudges its own clock to match the stations it decodes, once it hears three or more of them. On a quiet band, or as the first station on a net, sync from GPS first.
 - **By hand:** Traffic's ⋮ menu → **Raw decodes, clock and audio details**, then its ⋮ menu: **Sync clock to next decode** and **Adjust time drift**.
 - Another source of exact time: the time stations WWV and WWVH broadcast UTC on 2.5, 5, 10, 15 and 20 MHz (AM), with a tick each second.
 
+[[app:gps-time|Sync clock from GPS]]
+
 [[app:settings|Settings: Timing]]
+
+Good to know about GPS time:
+- A GPS fix carries the time to well under a second, far closer than JS8 needs.
+- Fake-location apps, and GPS jamming or spoofing, can give a wrong time. The app says so when a fix comes from a mock-location app, is weak, or would move the clock by more than 3 seconds, and leaves the decision to you.
+- The correction is kept until you change it. If the tablet's own clock is set later (for example, internet comes back), sync again or reset the correction.
+- Syncing from GPS was suggested by doodlecomms, whose GPS UTC Clock app (github.com/doodlecomms/gps_utc_clock) does it as a separate app.
 
 # Frames
 Each slot carries one **frame**: a small packet of about a dozen characters (it varies, because common words and callsigns are packed tightly). A longer message is cut into several frames sent in back-to-back slots. The first frame carries who it's from and who it's to; the last frame is marked so the receiver knows the message is complete (JS8Call shows this as **♢**).
