@@ -140,6 +140,7 @@ dependencies {
     implementation(project(":js8core-lib"))
     implementation(project(":llm"))
     implementation(project(":sdr"))
+    implementation(project(":voacap"))
 
     // AndroidX
     implementation("androidx.core:core-ktx:1.12.0")

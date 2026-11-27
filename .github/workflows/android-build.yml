@@ -58,6 +58,15 @@ jobs:
       - name: Run js8core tests
         run: ./scripts/test-core.sh
 
+      - name: Install pinned Rust toolchain
+        run: ./scripts/install-rust.sh
+
+      # The VOACAP engine's C entry point (issue #57): refuses data paths and bad input, never
+      # panics across the boundary, predicts a day. No registry is read (--offline --locked).
+      - name: Run VOACAP engine tests
+        working-directory: android/voacap/rust
+        run: cargo test --locked --offline
+
   build:
     name: Build Android
     runs-on: ubuntu-latest
@@ -111,6 +120,10 @@ jobs:
       run: |
         echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
         echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+
+    # The VOACAP engine (android/voacap) is Rust, built by CMake through cargo.
+    - name: Install pinned Rust toolchain
+      run: ./scripts/install-rust.sh
 
     - name: Install Hamlib build dependencies
       run: |

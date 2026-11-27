@@ -542,7 +542,15 @@ class PropagationFragment : Fragment() {
             Locale.US, "%,d km %s on %s: %s · MUF %.1f MHz · best %s · your margin %+.0f dB",
             path.distanceKm.roundToInt(), dir, band.label, verdict, path.medianMufMHz, best.label, margin,
         )
-        Snackbar.make(v, text, Snackbar.LENGTH_LONG).show()
+        val bar = Snackbar.make(v, text, Snackbar.LENGTH_LONG)
+        // VOACAP for the same path: the standard reference, a day at a time (issue #57).
+        if (com.js8call.voacap.Voacap.available()) {
+            bar.duration = 8_000
+            bar.setAction(R.string.voacap_action) {
+                VoacapPath.show(this, me, to, t, p.profile, weather.effective(t), weather.ssnForecast())
+            }
+        }
+        bar.show()
     }
 
     // ------------------------------------------------------------- station profile

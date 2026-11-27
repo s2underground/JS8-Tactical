@@ -1,6 +1,7 @@
 package com.js8call.example.prop
 
 import android.content.Context
+import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import java.net.HttpURLConnection
 import java.net.URL
@@ -58,10 +59,20 @@ class SpaceWeatherRepository(context: Context) {
                 val k = parseKp(get(KP_URL))
                 saveHistory(parseFluxHistory(fluxJson))
                 runCatching { saveForecast(parseOutlook(get(OUTLOOK_URL))) }
+                runCatching { saveSsnForecast(SsnForecast.parse(get(SSN_FORECAST_URL))) }
                 if (sfi != null) save(sfi, k ?: current().kIndex, SOURCE_NOAA) else null
             }.getOrNull()
             done(result)
         }
+    }
+
+    /** NOAA's monthly smoothed sunspot forecast, as last fetched ("yyyy-mm" to SSN). */
+    fun ssnForecast(): Map<String, Double> = SsnForecast.decode(prefs.getString(KEY_SSN_FORECAST, "").orEmpty())
+
+    private fun saveSsnForecast(months: Map<String, Double>) {
+        // A reply with almost nothing in it is a broken one: keep what we had.
+        if (months.size < 12) return
+        prefs.edit { putString(KEY_SSN_FORECAST, SsnForecast.encode(months)) }
     }
 
     fun forecast(): List<ForecastDay> =
@@ -127,12 +138,15 @@ class SpaceWeatherRepository(context: Context) {
         private const val KEY_SOURCE = "swx_source"
         private const val KEY_FORECAST = "swx_forecast"
         private const val KEY_HISTORY = "swx_history"
+        private const val KEY_SSN_FORECAST = "swx_ssn_forecast"
         private const val DEFAULT_SFI = 140f
         private const val DEFAULT_K = 2f
         private const val STALE_MS = 36 * 3_600_000L
         private const val FLUX_URL = "https://services.swpc.noaa.gov/json/f107_cm_flux.json"
         private const val KP_URL = "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json"
         private const val OUTLOOK_URL = "https://services.swpc.noaa.gov/text/27-day-outlook.txt"
+        /** Monthly smoothed sunspot forecast, for VOACAP (about 20 KB). */
+        private const val SSN_FORECAST_URL = "https://services.swpc.noaa.gov/json/solar-cycle/predicted-solar-cycle.json"
         private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
         fun dateKey(ms: Long): String {

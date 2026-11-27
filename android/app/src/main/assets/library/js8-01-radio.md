@@ -47,6 +47,8 @@ The ionosphere changes all the time, which is why a band that worked at noon can
 
 You don't have to memorise this. The **Prop tab** predicts which band works for which distance at which time, and it learns from what your own station hears.
 
+For a second opinion, tap any point on the Prop tab's map, then **VOACAP** in the message that appears. VOACAP is the standard HF prediction program (from the Voice of America and NTIA/ITS) that most operators know. It shows a whole day for every band on that path, as the chance the path is open by hour (UTC), for your power and JS8 speed. It runs on the phone with no internet. It is a monthly average, so the Prop tab's own chart, which also learns from recent traffic, is usually closer for today. Set the noise where you are (city, residential, rural, remote) with **Noise…**: it moves the answer a lot.
+
 [[app:prop|Open the Prop tab]]
 
 # Kinds of signals

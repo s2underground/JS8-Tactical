@@ -194,6 +194,13 @@ JS8-Tactical is free software under the GNU General Public License v3 (see [LICE
 - SDR receive: [librtlsdr](https://gitea.osmocom.org/sdr/rtl-sdr) (osmocom, GPL-2.0-or-later),
   [libairspyhf](https://github.com/airspy/airspyhf) (Airspy, BSD-3-Clause) and
   [libusb](https://libusb.info) (LGPL-2.1-or-later), built from source as submodules.
+- VOACAP predictions (Prop tab): [hfcast](https://github.com/jonathanmcsweet/hfcast-engine), a Rust port of
+  VOACAP by Jonathan McSweet (Apache-2.0), built from source as a submodule. VOACAP is the Voice of America
+  Coverage Analysis Program by NTIA/ITS, maintained by Greg Hand; its Linux port voacapl is by J.A. Watson
+  (CC0). Its coefficient data come from NTIA/ITS and from CCIR Reports 322 and 340, which the ITU publishes
+  for implementers free from copyright assertions (see the submodule's NOTICE). No endorsement by NTIA/ITS
+  or the US Government is implied. The monthly sunspot forecast is NOAA SWPC's (public domain). Credit to
+  doodlecomms, who suggested it in issue #57.
 - Approximate grid squares for US stations that send none: from the FCC Universal Licensing
   System amateur licence data and the US Census Bureau ZCTA gazetteer (both public domain). Only
   callsign and 4-character grid are kept; see [tools/callgrid](tools/callgrid/build_callgrid.py).
