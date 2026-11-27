@@ -93,10 +93,23 @@ def minimum_days():
     return [dt.date(y, mo, d) for y in (2019, 2020) for mo in range(1, 13) for d in (5, 20)]
 
 
+def unseen_days(today):
+    """Days no fit has used, for comparing models fairly: the 5th and 20th of each month in
+    2021-2023 (the rising solar cycle, between the two fitted periods) plus the days since the
+    last "recent" pull (2026-11-18)."""
+    out = [dt.date(y, mo, d) for y in (2021, 2022, 2023) for mo in range(1, 13) for d in (5, 20)]
+    day = dt.date(2026, 11, 19)
+    while day < today:
+        out.append(day)
+        day += dt.timedelta(days=1)
+    return out
+
+
 def main(out_dir, day_set="recent"):
     os.makedirs(out_dir, exist_ok=True)
     today = dt.datetime.now(dt.timezone.utc).date()
-    for day in (minimum_days() if day_set == "minimum" else days(today)):
+    chosen = {"minimum": minimum_days, "unseen": lambda: unseen_days(today)}.get(day_set, lambda: days(today))()
+    for day in chosen:
         d0 = f"{day} 00:00:00"
         d1 = f"{day + dt.timedelta(days=1)} 00:00:00"
         for name, q in QUERIES.items():
