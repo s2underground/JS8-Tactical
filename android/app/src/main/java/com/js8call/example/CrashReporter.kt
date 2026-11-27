@@ -297,18 +297,18 @@ object CrashReporter {
         sb.append("== Past crash/ANR reports (each shown once, oldest first)\n")
         section(sb) {
             val past = File(ctx.filesDir, ARCHIVE).takeIf { it.exists() }?.readText().orEmpty()
-            sb.append(if (past.isBlank()) "(none)\n" else distinctReports(past).takeLast(48_000)).append('\n')
+            sb.append(if (past.isBlank()) "(none)\n" else com.js8call.example.util.tailLines(distinctReports(past), 48_000)).append('\n')
         }
         val drops = runCatching { com.js8call.example.service.UsbDropouts.text(ctx) }.getOrElse { "(could not read: ${failure(it)})" }
         sb.append("== Audio and USB devices\n")
             .append(runCatching { com.js8call.example.ui.AudioDevices.diagnostics(ctx) }.getOrElse { "(could not list: ${failure(it)})\n" }).append('\n')
-        sb.append("== Radio USB dropouts\n").append(if (drops.isBlank()) "(none recorded)\n" else drops.takeLast(12_000)).append('\n')
+        sb.append("== Radio USB dropouts\n").append(if (drops.isBlank()) "(none recorded)\n" else com.js8call.example.util.tailLines(drops, 12_000)).append('\n')
         val echoes = runCatching { com.js8call.example.ui.traffic.OwnEchoLog.text(ctx) }.getOrElse { "(could not read: ${failure(it)})" }
-        sb.append("== Own transmissions heard back (sent vs heard offset)\n").append(if (echoes.isBlank()) "(none decoded)\n" else echoes.takeLast(8_000)).append('\n')
+        sb.append("== Own transmissions heard back (sent vs heard offset)\n").append(if (echoes.isBlank()) "(none decoded)\n" else com.js8call.example.util.tailLines(echoes, 8_000)).append('\n')
         sb.append("== Interference watch\n").append(runCatching { com.js8call.example.interference.Interference.diagnostics() }.getOrElse { "(could not check: ${it.message})\n" }).append('\n')
         sb.append("== AI status\n").append(runCatching { com.js8call.example.ai.AiWork.diagnostics(ctx) }.getOrElse { "(could not check: ${it.message})\n" }).append('\n')
         val ai = runCatching { com.js8call.example.ai.AiSpeedLog.text(ctx) }.getOrElse { "(could not read: ${failure(it)})" }
-        if (ai.isNotBlank()) sb.append("== AI speed tests\n").append(ai.takeLast(12_000)).append('\n')
+        if (ai.isNotBlank()) sb.append("== AI speed tests\n").append(com.js8call.example.util.tailLines(ai, 12_000)).append('\n')
         val setAside = runCatching { ctx.filesDir.listFiles { f -> f.name.contains("-set-aside-") }.orEmpty() }.getOrDefault(emptyArray())
         if (setAside.isNotEmpty()) {
             sb.append("== History files set aside after crash loops (names only)\n")
@@ -336,7 +336,7 @@ object CrashReporter {
                 lines.filterNot { noise.containsMatchIn(it) }.toList().takeLast(4000).joinToString("\n")
             }
         }.getOrElse { "(log unavailable: ${it.message})" }
-        sb.append(log.takeLast(220_000))
+        sb.append(com.js8call.example.util.tailLines(log, 220_000))
         // Callsigns (own and heard), grids, Bluetooth/IP/email addresses out before it can be shared.
         return runCatching {
             DiagnosticsPrivacy.scrub(sb.toString(), p.getString("callsign", "").orEmpty(), p.getString("grid", "").orEmpty())

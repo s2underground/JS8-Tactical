@@ -260,7 +260,7 @@ class MapFragment : Fragment() {
         (st.getSource(S_STATIONS) as? GeoJsonSource)?.setGeoJson(FeatureCollection.fromFeatures(stations.map { s ->
             point(s.position).apply {
                 addStringProperty("id", "s:${s.call}")
-                addStringProperty("label", if (s.approx) "${s.call} ≈" else s.call)
+                addStringProperty("label", MapGlyphs.safe(if (s.approx) "${s.call} ~" else s.call))
                 addStringProperty("color", hex(s.color))
                 addBooleanProperty("approx", s.approx)
             }
@@ -270,7 +270,7 @@ class MapFragment : Fragment() {
                 addStringProperty("id", "r:${r.id}")
                 val jam = r.report.type == Reports.JAM
                 val tag = if (jam) listOfNotNull("JAM", r.report.values["F"]).joinToString(" ") else r.report.type.tag
-                addStringProperty("label", listOfNotNull(tag, r.sender).joinToString(" · "))
+                addStringProperty("label", MapGlyphs.safe(listOfNotNull(tag, r.sender).joinToString(" · ")))
                 addStringProperty("color", reportColor(r.report))
                 addStringProperty("kind", if (jam) "jam" else "report")
                 addNumberProperty("opacity", JamReports.opacity(now - r.timeMs))
@@ -287,7 +287,7 @@ class MapFragment : Fragment() {
             Feature.fromGeometry(LineString.fromLngLats(greatCircle(l.aPos, l.bPos))).apply {
                 addStringProperty("color", l.snr?.let { snrColor(it) } ?: "#9AA4B2")
                 addNumberProperty("opacity", if (l.confirmed) 0.8f else 0.45f)
-                addStringProperty("label", l.snr?.let { snrText(it) } ?: "")
+                addStringProperty("label", MapGlyphs.safe(l.snr?.let { snrText(it) } ?: ""))
             }
         }))
         (st.getSource(S_ME) as? GeoJsonSource)?.setGeoJson(

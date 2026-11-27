@@ -174,6 +174,15 @@
     <string name="settings_rtlsdr">RTL-SDR dongle (receive only)</string>
     <string name="settings_airspyhf">Airspy HF+ (receive only)</string>
     <string name="settings_airspyhf_hint">Airspy HF+: plug it in (USB OTG adapter if needed), connect an HF antenna to the HF input, and start the receiver. No settings needed.</string>
+    <string name="sdr_offer_picker">%1$s: use it as the receiver…</string>
+    <string name="sdr_offer_title">Use the %1$s?</string>
+    <string name="sdr_offer_text">The %1$s is a receiver, not a sound card, so it isn\'t listed as an audio input. Using it switches Rig control to the %1$s: receive only, nothing can be sent until you switch back. Your radio\'s settings are kept, and you can go back from this same audio list or in Settings › Rig control.</string>
+    <string name="sdr_offer_use">Use it</string>
+    <string name="sdr_offer_not_now">Not now</string>
+    <string name="sdr_back_picker">Back to the radio (%1$s)…</string>
+    <string name="sdr_back_title">Back to the radio?</string>
+    <string name="sdr_back_text">Switch Rig control back to %1$s and the audio input you used with it. The receiver restarts on its own.</string>
+    <string name="sdr_back_switch">Switch back</string>
     <string name="settings_rtlsdr_category">RTL-SDR (receive only)</string>
     <string name="settings_rtlsdr_direct_sampling">HF sampling</string>
     <string name="settings_rtlsdr_ppm">Frequency correction (ppm)</string>

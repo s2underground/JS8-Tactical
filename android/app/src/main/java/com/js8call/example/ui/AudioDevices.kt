@@ -224,19 +224,39 @@ object AudioDevices {
         val devices = list(context)
         val current = selected(context, devices)
         val checked = devices.indexOf(current)
+        // An SDR is a receiver, not a sound card: offer the switch here, where people look for
+        // it (field report, build 342), and the way back to the radio afterwards.
+        val sdrLabel = sdrLabel(context)
+        val offer = if (sdrLabel == null) SdrOffer.attached(context) else null
+        val back = if (sdrLabel != null) SdrOffer.previousSetup(context) else null
+        val extra = when {
+            offer != null -> context.getString(R.string.sdr_offer_picker, offer.label)
+            back != null -> context.getString(R.string.sdr_back_picker, back)
+            else -> null
+        }
+        val names = devices.map { it.name } + listOfNotNull(extra)
+        val refresh = { onSelected(selected(context)) }
 
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.monitor_menu_audio_device)
-            .setSingleChoiceItems(devices.map { it.name }.toTypedArray(), checked) { dialog, which ->
+            .setSingleChoiceItems(names.toTypedArray(), checked) { dialog, which ->
                 dialog.dismiss()
-                val device = devices[which]
-                select(context, device, engineRunning)
-                onSelected(device)
+                when {
+                    which < devices.size -> {
+                        val device = devices[which]
+                        select(context, device, engineRunning)
+                        onSelected(device)
+                    }
+                    offer != null -> SdrOffer.confirm(context, offer, refresh)
+                    else -> SdrOffer.confirmBack(context, refresh)
+                }
             }
             .show()
     }
 
-    private const val PREF_SELECTED_ID = "last_audio_device_id"
+    /** Where the chosen input's ID is kept. */
+    const val PREF_SELECTED_ID_KEY = "last_audio_device_id"
+    private const val PREF_SELECTED_ID = PREF_SELECTED_ID_KEY
     /** The chosen device's name, to find a USB sound card again after it reconnects with a new ID. */
     const val PREF_SELECTED_NAME = "last_audio_device_name"
     private const val DEFAULT_DEVICE_ID = -1
