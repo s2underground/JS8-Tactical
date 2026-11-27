@@ -215,6 +215,10 @@ class MainActivity : AppCompatActivity() {
         }
         setContentView(R.layout.activity_main)
         if (savedInstanceState == null) CrashReporter.showIfPending(this)
+        // Once per app version, with a model downloaded: can the AI engine run isolated here?
+        if (savedInstanceState == null && com.js8call.example.ai.AiModels.enabled(this)) {
+            window.decorView.postDelayed({ if (!isFinishing) com.js8call.example.ai.IsolationProbe.runOnce(this) }, 5_000)
+        }
         // First run: Listener / Operator / Net control (sets the Start-here guide).
         if (savedInstanceState == null) window.decorView.post {
             if (!isFinishing) com.js8call.example.ui.onboarding.RoleChooser.showIfFirstRun(this)
