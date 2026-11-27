@@ -14,6 +14,7 @@ class RigCtlClient(
     private var socket: Socket? = null
     private var reader: BufferedReader? = null
     private var writer: BufferedWriter? = null
+    private var replyTimeoutMs = 3000L
 
     @Synchronized
     fun ensureConnected(timeoutMs: Int = 3000): Boolean {
@@ -32,8 +33,9 @@ class RigCtlClient(
             newSocket.connect(InetSocketAddress(host, port), timeoutMs)
             newSocket.soTimeout = timeoutMs
             socket = newSocket
-            reader = BufferedReader(InputStreamReader(newSocket.getInputStream()))
-            writer = BufferedWriter(OutputStreamWriter(newSocket.getOutputStream()))
+            reader = BufferedReader(InputStreamReader(newSocket.getInputStream(), Charsets.UTF_8))
+            writer = BufferedWriter(OutputStreamWriter(newSocket.getOutputStream(), Charsets.UTF_8))
+            replyTimeoutMs = timeoutMs.toLong()
             true
         } catch (e: Exception) {
             android.util.Log.e("RigCtlClient", "Failed to connect to $host:$port - ${e.javaClass.simpleName}: ${e.message}")
@@ -77,7 +79,8 @@ class RigCtlClient(
             out.write(line)
             out.write("\n")
             out.flush()
-            input.readLine()
+            // Bounded: a reply line has a length limit and an overall deadline (BoundedLine).
+            BoundedLine.read(input, System.currentTimeMillis() + replyTimeoutMs)
         } catch (_: Exception) {
             disconnect()
             null

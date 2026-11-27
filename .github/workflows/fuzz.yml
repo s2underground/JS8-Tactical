@@ -1,4 +1,4 @@
-name: Fuzz JS8 decoders
+name: Fuzz JS8 decoders and the VOACAP engine
 
 # Feeds random and malformed frames to the JS8 frame decoders (the code that handles everything
 # received over the air) under AddressSanitizer and UndefinedBehaviorSanitizer. A crash fails the
@@ -12,6 +12,9 @@ on:
       - 'core'
       - 'tools/fuzz/**'
       - 'scripts/fuzz-core.sh'
+      - 'scripts/fuzz-voacap.sh'
+      - 'android/voacap/rust/**'
+      - 'vendor/hfcast-engine'
   workflow_dispatch:
     inputs:
       seconds:
@@ -52,4 +55,40 @@ jobs:
         with:
           name: fuzz-crashes
           path: build/fuzz/crash-*
+          if-no-files-found: ignore
+
+  # The VOACAP engine's C entry points (android/voacap/rust over vendor/hfcast-engine, Rust):
+  # SanitizerCoverage from stable rustc, panics abort (--cfg fuzzing), C harness under ASan.
+  voacap:
+    name: libFuzzer (VOACAP engine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the VOACAP engine
+        run: git submodule update --init --depth 1 vendor/hfcast-engine
+
+      - name: Install clang and the libFuzzer runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-rt-dev
+
+      - name: Install pinned Rust toolchain
+        run: ./scripts/install-rust.sh
+
+      - name: Fuzz
+        env:
+          SECONDS_TO_FUZZ: ${{ github.event.inputs.seconds || '900' }}
+        run: scripts/fuzz-voacap.sh "$SECONDS_TO_FUZZ"
+
+      - name: Keep crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-crashes-voacap
+          path: build/fuzz-voacap/crash-*
           if-no-files-found: ignore
