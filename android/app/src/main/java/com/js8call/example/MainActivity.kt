@@ -299,9 +299,15 @@ class MainActivity : AppCompatActivity() {
         handleLaunchIntent(intent)
     }
 
-    /** Notification taps: restart the receiver, or open a message thread. */
+    /** Notification taps (restart the receiver, open a message thread) and a plugged-in SDR. */
     private fun handleLaunchIntent(intent: Intent?) {
         intent ?: return
+        // Opened because an SDR dongle was plugged in: offer to make it the receiver.
+        com.js8call.example.ui.SdrOffer.fromIntent(intent)?.let { found ->
+            if (!com.js8call.example.ui.SdrOffer.inUse(this, found)) window.decorView.post {
+                if (!isFinishing) com.js8call.example.ui.SdrOffer.confirm(this, found)
+            }
+        }
         if (intent.getBooleanExtra(EXTRA_RESTART_RECEIVER, false)) {
             intent.removeExtra(EXTRA_RESTART_RECEIVER)
             val token = intent.getStringExtra(EXTRA_RESTART_TOKEN)

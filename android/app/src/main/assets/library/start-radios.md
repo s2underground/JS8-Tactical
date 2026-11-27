@@ -65,6 +65,8 @@ Settings, under **RTL-SDR (receive only)**:
 # Airspy HF+
 The **Airspy HF+** (Discovery or Dual Port) is a much better HF receiver than an RTL-SDR, and needs no settings: choose **Rig Type: Airspy HF+ (receive only)**, connect the antenna to its HF input, plug it in with the OTG adapter and start the receiver. It covers every HF band up to 10 m (its HF input stops at 31 MHz, so not 6 m), with its own automatic gain.
 
+An SDR is a receiver, not a sound card, so it is never listed among the audio inputs by itself. When one is plugged in, the app offers to switch to it (and the audio input list shows a **use it as the receiver** line); afterwards the same list offers the way back to your radio, with its settings as you left them.
+
 # Receive only
 With either dongle, anything you try to send says the SDR is receive only, and heartbeats and automatic replies are skipped. To transmit, choose your radio again under **Settings, Radio**.
 

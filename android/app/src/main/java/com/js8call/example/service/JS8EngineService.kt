@@ -232,6 +232,8 @@ class JS8EngineService : Service() {
     private var rigPttMaybeKeyed = false
     /** Release attempts that have failed in a row (they are retried until one works). */
     private var rigPttReleaseFailures = 0
+    /** Key commands and confirmed releases as the radio saw them (see [PttLedger]). */
+    private val pttLedger = PttLedger()
     private var rigPttDesired = false
     private var rigPttDesiredGeneration = 0
     private var rigPttCommandPending = false
@@ -2234,7 +2236,17 @@ class JS8EngineService : Service() {
             // keyed the radio: a key command went out with no confirmed release since. Field
             // report (build 324): a receiver restart with no rig model picked yet retried for
             // ~7 s, raised a false PTT-stuck alarm, and the restart was dropped behind it.
-            val couldBeKeyed = synchronized(pttStateLock) { rigPttAsserted || rigPttMaybeKeyed }
+            // Field report (build 342): the radio unplugged five minutes after a confirmed release
+            // still retried for ~17 s and raised the "may still be transmitting" alarm. Also ask
+            // the ledger: no key command since the last confirmed release means it can't be keyed.
+            val (flagsSayKeyed, ledgerSaysKeyed) = synchronized(pttStateLock) {
+                (rigPttAsserted || rigPttMaybeKeyed) to pttLedger.keyedSinceRelease()
+            }
+            val couldBeKeyed = flagsSayKeyed && ledgerSaysKeyed
+            if (shouldReleasePtt) {
+                Log.i(TAG, "Shutdown PTT state: flags ${if (flagsSayKeyed) "keyed" else "clear"}, " +
+                    "commands ${if (ledgerSaysKeyed) "keyed" else "clear"} ($pttLedger)")
+            }
             if (shutdownMode == "btech_uvpro") uvproWorkersActive.incrementAndGet()
 
             createRigTransports()
@@ -2298,6 +2310,7 @@ class JS8EngineService : Service() {
                             released = releaseOnce()
                         }
                         if (released) {
+                            pttLedger.releaseConfirmed()
                             synchronized(pttStateLock) {
                                 rigPttAsserted = false
                                 rigPttMaybeKeyed = false
@@ -4643,7 +4656,8 @@ class JS8EngineService : Service() {
     }
 
     private fun setRigPtt(enabled: Boolean): Boolean {
-        return when (rigControlMode) {
+        if (enabled) pttLedger.keySent()
+        val ok = when (rigControlMode) {
             "network" -> rigCtlClient?.setPtt(enabled) == true
             "hamlib_usb" -> hamlibRigControl?.setPtt(enabled) == true
             "rts_ptt" -> setRtsPtt(enabled)
@@ -4653,6 +4667,8 @@ class JS8EngineService : Service() {
             "rtl_sdr", "airspy_hf" -> !enabled
             else -> false
         }
+        if (!enabled && ok) pttLedger.releaseConfirmed()
+        return ok
     }
 
     private fun setRtsPtt(enabled: Boolean): Boolean {
