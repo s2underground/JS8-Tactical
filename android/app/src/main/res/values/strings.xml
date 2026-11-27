@@ -632,6 +632,25 @@
     <string name="prop_src_forecast">NOAA outlook</string>
     <string name="prop_src_recurrence">27-day repeat</string>
     <string name="prop_src_relay">via %1$s %2$s</string>
+    <!-- VOACAP (issue #57) -->
+    <string name="voacap_action">VOACAP</string>
+    <string name="voacap_title">VOACAP prediction</string>
+    <string name="voacap_summary">%1$s km %2$s · %3$s · %4$s · %5$s W · %6$s (%7$d dB) · %8$s noise · isotropic antennas. Monthly median: the chance the path is open on a given day of the month, by UTC hour.</string>
+    <string name="voacap_ssn_noaa">SSN %1$d (NOAA forecast)</string>
+    <string name="voacap_ssn_flux">SSN %1$d (from solar flux; no NOAA forecast saved yet)</string>
+    <string name="voacap_ssn_manual">SSN %1$d (from your solar numbers)</string>
+    <string name="voacap_detail_cell">%1$02d UTC · %2$s: %3$d%% · SNR %4$s dB (JS8) · MUF %5$s MHz</string>
+    <string name="voacap_detail_best">%1$02d UTC (selected time): best %2$s, %3$d%% · SNR %4$s dB (JS8) · MUF %5$s MHz. Tap a cell for any hour and band.</string>
+    <string name="voacap_detail_none">%1$02d UTC · no band open · MUF %2$s MHz</string>
+    <string name="voacap_credit">VOACAP: Voice of America Coverage Analysis Program, by NTIA/ITS, maintained by Greg Hand; Linux port voacapl by J.A. Watson; Rust port hfcast by Jonathan McSweet. No endorsement by NTIA/ITS or the US Government is implied.</string>
+    <string name="voacap_noise_button">Noise…</string>
+    <string name="voacap_noise_title">Noise where you are</string>
+    <string name="voacap_noise_industrial">Industrial / city</string>
+    <string name="voacap_noise_residential">Residential</string>
+    <string name="voacap_noise_rural">Rural</string>
+    <string name="voacap_noise_remote">Remote / quiet</string>
+    <string name="voacap_unavailable">The VOACAP engine isn\'t available in this build.</string>
+    <string name="voacap_failed">VOACAP couldn\'t make this prediction: %1$s</string>
     <string name="prop_station_chip">%1$s W · %2$s · %3$s</string>
     <string name="prop_station_no_antenna">antenna not set</string>
     <string name="prop_station_title">My station</string>

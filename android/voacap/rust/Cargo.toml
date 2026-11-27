@@ -1,0 +1,26 @@
+[package]
+name = "js8voacap"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+license = "GPL-3.0-only"
+publish = false
+description = "C ABI over the hfcast VOACAP port, for JS8-Tactical's Prop tab"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+path = "src/lib.rs"
+
+# hfcast has no dependencies at all, so this build needs no network: `--offline --locked`.
+# The coefficients are compiled in (a phone has no itshfbc tree). See vendor/hfcast-engine/NOTICE
+# and docs/licence.md there for what they are and why they may be carried.
+[dependencies]
+hfcast = { path = "../../../vendor/hfcast-engine", default-features = false, features = ["embedded-coefficients"] }
+
+[profile.release]
+debug = false
+opt-level = 3
+lto = true
+codegen-units = 1
+# Unwinding stays on: every entry point catches panics so none crosses the C boundary.
+panic = "unwind"
