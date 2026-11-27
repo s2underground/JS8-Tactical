@@ -146,9 +146,20 @@
 
     <string name="settings_rig_control">Rig Control</string>
     <string name="settings_rig_control_summary">Enable CAT control</string>
-    <string name="settings_custom_frequency">Custom Frequency (MHz)</string>
-    <string name="settings_custom_frequency_summary">Enter a custom JS8 frequency in MHz</string>
-    <string name="settings_custom_frequency_summary_format">Custom frequency: %1$s MHz</string>
+    <string name="settings_custom_frequency">My frequencies</string>
+    <string name="settings_custom_frequency_summary">Your own frequencies, each with a name (a net, an event, an alternate). They are listed after the presets.</string>
+    <string name="custom_freq_title">My frequencies</string>
+    <string name="custom_freq_empty">None yet. Add any frequency with a name, such as 7.095 Local Net. It appears in the band list after the presets.</string>
+    <string name="custom_freq_add">Add</string>
+    <string name="custom_freq_done">Done</string>
+    <string name="custom_freq_add_title">Add a frequency</string>
+    <string name="custom_freq_edit_title">Edit frequency</string>
+    <string name="custom_freq_mhz_hint">Dial frequency (MHz)</string>
+    <string name="custom_freq_label_hint">Name (e.g. Local Net)</string>
+    <string name="custom_freq_save">Save</string>
+    <string name="custom_freq_delete">Delete</string>
+    <string name="custom_freq_bad">Enter the dial frequency in MHz, e.g. 7.095</string>
+    <string name="custom_freq_button">My frequencies…</string>
     <string name="settings_transmit_mode">Transmit Mode</string>
     <string name="settings_transmit_mode_summary">Set rig mode for JS8 transmissions</string>
     <string name="settings_rig_type">Rig Type</string>

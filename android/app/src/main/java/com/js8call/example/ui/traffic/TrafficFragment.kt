@@ -182,6 +182,10 @@ class TrafficFragment : Fragment() {
                         ).setDuration(8_000).show()
                     }
                 }
+                // The operator's own named frequencies (issue #65).
+                .setNeutralButton(R.string.custom_freq_button) { _, _ ->
+                    com.js8call.example.ui.CustomFrequencies.manage(requireContext()) { renderBand() }
+                }
                 .show()
         }
 

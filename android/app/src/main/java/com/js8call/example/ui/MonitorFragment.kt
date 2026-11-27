@@ -434,7 +434,6 @@ class MonitorFragment : Fragment() {
         val baseValues = resources.getStringArray(R.array.js8_frequency_values)
 
         val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(requireContext())
-        val customFrequencyMhz = prefs.getString("custom_frequency_mhz", "")?.trim().orEmpty()
 
         val rigType = prefs.getString("rig_type", "none")
         val qmxBands = when (prefs.getString("qmx_band_profile", "low")) {
@@ -448,14 +447,13 @@ class MonitorFragment : Fragment() {
         val entries = presetPairs.map { it.first }.toMutableList()
         val values = presetPairs.map { it.second }.toMutableList()
 
-        val customFrequencyHz = customFrequencyMhz.toDoubleOrNull()?.let { mhz ->
-            if (mhz > 0) (mhz * 1_000_000.0).toLong() else null
-        }
-
-        if (customFrequencyHz != null && (rigType != "qmx_serial" || isQmxFrequencySupported(customFrequencyHz, qmxBands))) {
-            entries.add("Custom - ${customFrequencyMhz}MHz")
-            values.add(customFrequencyHz.toString())
-        }
+        // The operator's own frequencies, with their names (issue #65).
+        CustomFrequencies.load(requireContext())
+            .filter { rigType != "qmx_serial" || isQmxFrequencySupported(it.hz, qmxBands) }
+            .forEach { e ->
+                entries.add(CustomFrequencies.bandLabel(e))
+                values.add(e.hz.toString())
+            }
 
         frequencyEntries = entries
         frequencyValues = values

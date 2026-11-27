@@ -100,11 +100,10 @@
         app:title="@string/settings_category_radio"
         app:iconSpaceReserved="false">
 
-        <EditTextPreference
-            app:key="custom_frequency_mhz"
+        <Preference
+            app:key="custom_frequencies_manage"
             app:title="@string/settings_custom_frequency"
             app:summary="@string/settings_custom_frequency_summary"
-            android:inputType="numberDecimal"
             app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
