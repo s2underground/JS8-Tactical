@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       day_set:
-        description: "recent (last 2 years + last week) or minimum (2019-2020 solar minimum)"
+        description: "recent (last 2 years + last week), minimum (2019-2020 solar minimum) or unseen (2021-2023 and days since 2026-11-18: never used in a fit, for model comparisons)"
         default: recent
 
 permissions:
