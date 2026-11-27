@@ -6,18 +6,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsPrivacyTest {
-    private fun scrub(s: String) = DiagnosticsPrivacy.scrub(s, "KQ4BR", "EM96")
+    private fun scrub(s: String) = DiagnosticsPrivacy.scrub(s, "KQ4BR")
 
-    @Test fun ownCallAndGridAnyCaseOrSuffix() {
+    @Test fun ownCallAnyCaseOrSuffix() {
         val out = scrub("KQ4BR: @HB HEARTBEAT EM96\nkq4br/p sent; grid em96ab; VE3/KQ4BR")
         assertFalse(out.contains("KQ4BR", ignoreCase = true))
-        assertFalse(out.contains("EM96", ignoreCase = true))
-        assertEquals("MY-STATION: @HB HEARTBEAT [GRID]\nMY-STATION sent; grid [GRID]; MY-STATION", out)
+        assertEquals("MY-STATION: @HB HEARTBEAT EM96\nMY-STATION sent; grid em96**; MY-STATION", out)
     }
 
     @Test fun otherCallsGetStableLabels() {
         val out = scrub("K9DGY: W9ZOM SNR -10\nW9ZOM: K9DGY ACK\nK9DGY/M heard FN31")
-        assertEquals("STATION-1: STATION-2 SNR -10\nSTATION-2: STATION-1 ACK\nSTATION-1 heard [GRID]", out)
+        assertEquals("STATION-1: STATION-2 SNR -10\nSTATION-2: STATION-1 ACK\nSTATION-1 heard FN31", out)
     }
 
     @Test fun groupsVersionsAndRadioNamesStay() {
@@ -45,8 +44,14 @@ class DiagnosticsPrivacyTest {
     }
 
     // Audit (Nov 25): GPS fills the grid to 8 characters, and reports carry MGRS and coordinates.
-    @Test fun eightCharacterGridsMasked() {
-        assertEquals("grid [GRID] and [GRID]", scrub("grid em96ab12 and FN31pr45"))
+    // Grids keep the 4 characters JS8 transmits; the finer ones are starred.
+    @Test fun gridsCutToFourCharacters() {
+        assertEquals("grid em96**** and FN31****, square EM73", scrub("grid em96ab12 and FN31pr45, square EM73"))
+    }
+
+    // Build 360: the Digirig's USB id 10c4:ea60 came out as 10c4:[GRID].
+    @Test fun usbIdsStay() {
+        assertEquals("usb 10c4:ea60 and 0bda:2838", scrub("usb 10c4:ea60 and 0bda:2838"))
     }
 
     @Test fun mgrsMaskedHoweverWritten() {

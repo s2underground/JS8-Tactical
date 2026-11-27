@@ -98,8 +98,8 @@ out, later updates can't be swapped.
 
 Open an [issue](../../issues/new/choose), or send a diagnostic report from the app
 (Settings → Diagnostics → Share diagnostic report), which is pre-addressed to
-js8tactical@proton.me. A diagnostic report helps most: it has the app version, your settings (without your callsign
-or grid) and the recent log, which includes traffic heard on the air.
+js8tactical@proton.me. A diagnostic report helps most: it has the app version, your settings (without your callsign;
+grid squares cut to 4 characters) and the recent log, which includes traffic heard on the air.
 
 ## What it does
 
