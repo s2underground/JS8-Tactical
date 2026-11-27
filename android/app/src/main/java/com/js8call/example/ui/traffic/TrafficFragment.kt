@@ -441,7 +441,14 @@ class TrafficFragment : Fragment() {
             if (row.isGroup && (row.key.startsWith("@") || row.key.startsWith("#"))) {
                 MaterialAlertDialogBuilder(requireContext())
                     .setTitle("Stop watching ${row.key}?")
-                    .setMessage("It disappears from this list (it comes back if new traffic to it is heard).")
+                    .setMessage(
+                        if (row.key.startsWith("@")) {
+                            "It leaves My Groups and this list, and stays off the list even when traffic to it is heard. " +
+                                "Its messages still show under All. To follow it again: + Watch a group or #tag."
+                        } else {
+                            "It leaves My Groups and this list. Tagged messages still show under All."
+                        }
+                    )
                     .setPositiveButton("Stop watching") { _, _ -> traffic.unwatch(row.key) }
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()

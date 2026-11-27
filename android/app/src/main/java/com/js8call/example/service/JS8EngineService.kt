@@ -4005,6 +4005,7 @@ class JS8EngineService : Service() {
     private fun showPttStuckWarning(failures: Int, stillTrying: Boolean = true) {
         val text = getString(if (stillTrying) R.string.ptt_stuck_text else R.string.ptt_stuck_text_stopped, failures)
         Log.e(TAG, "PTT release failed $failures times in a row: the radio may still be transmitting")
+        pttStuckWarningShown = true
         broadcastError(text)
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
@@ -4032,9 +4033,14 @@ class JS8EngineService : Service() {
     }
 
     private fun clearPttStuckWarning() {
-        Log.i(TAG, "PTT release confirmed after earlier failures")
+        // Every confirmed shutdown release comes here; only say so when a warning was up.
+        if (pttStuckWarningShown) Log.i(TAG, "PTT release confirmed after earlier failures")
+        pttStuckWarningShown = false
         getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID_PTT_STUCK)
     }
+
+    /** The "radio may still be transmitting" warning is showing. */
+    @Volatile private var pttStuckWarningShown = false
 
     /**
      * Operator pressed Stop: end the send now and unkey, whatever state TX is in.
