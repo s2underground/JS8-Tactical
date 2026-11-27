@@ -1,2 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- The AI engine runs isolated: no permissions, no access to the app's files, network,
+             USB, the radio or PTT (LlmService.kt). -->
+        <service
+            android:name="com.js8call.llm.LlmService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":llm" />
+    </application>
+</manifest>

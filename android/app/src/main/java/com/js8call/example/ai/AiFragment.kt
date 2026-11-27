@@ -211,7 +211,7 @@ class AiFragment : Fragment() {
             val sb = StringBuilder()
             var report: String
             try {
-                val session = LlamaBridge.load(AiModels.file(ctx, model).absolutePath, 4096, nThreads)
+                val session = LlamaBridge.load(ctx, AiModels.file(ctx, model), 4096, nThreads)
                 if (session == null) {
                     report = "Model failed to load (${model.name})."
                 } else session.use { s ->
