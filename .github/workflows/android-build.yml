@@ -265,6 +265,21 @@ jobs:
         cp "$APK" "publish/$NAME"
         echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
+    # SBOM (CycloneDX): the libraries Gradle resolved for this APK, the native code built from
+    # source at its commit, and the APK's SHA-256. Published next to the APK and attested with it.
+    # Runs on every debug build (pull requests too), so a broken SBOM shows up before it reaches master.
+    - name: SBOM for the test build
+      if: matrix.build-type == 'debug'
+      env:
+        NAME: ${{ steps.test_file.outputs.name }}
+      run: |
+        (cd android && ./gradlew -q :app:dependencies --configuration debugRuntimeClasspath) > deps.txt
+        VERSION=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
+        if [ -n "$NAME" ]; then APK="publish/$NAME"; OUT="publish/${NAME%.apk}.cdx.json"
+        else APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -1); OUT=sbom-check.cdx.json; fi
+        python3 scripts/sbom.py --apk "$APK" --version "$VERSION-test.$((100 + GITHUB_RUN_NUMBER))" \
+          --gradle-deps deps.txt --out "$OUT"
+
     - name: Upload rolling test build
       if: steps.test_file.outputs.name != ''
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -295,6 +310,9 @@ jobs:
           "$APKSIGNER" verify --print-certs "$NAME" | grep -E 'certificate (DN|SHA-256 digest)'
         ) > "publish/${NAME}.sha256"
         cat "publish/${NAME}.sha256"
+        (cd android && ./gradlew -q :app:dependencies --configuration releaseRuntimeClasspath) > deps.txt
+        python3 scripts/sbom.py --apk "publish/$NAME" --version "$VERSION" --gradle-deps deps.txt \
+          --out "publish/${NAME%.apk}.cdx.json"
         echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
     - name: Upload signed alpha/release files
@@ -346,12 +364,22 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Build provenance (SLSA) for the APK and its SBOM, signed with GitHub's OIDC identity.
+      id-token: write
+      attestations: write
     steps:
       - name: Download test build
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: publish-test-build
           path: publish
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            publish/*.apk
+            publish/*.cdx.json
 
       - name: Publish
         env:
@@ -361,10 +389,10 @@ jobs:
         run: |
           gh release view test-build >/dev/null 2>&1 || gh release create test-build --prerelease --title "Latest test build" --notes "Rolling test build from master."
           # Only the newest test build is kept on the release.
-          for old in $(gh release view test-build --json assets --jq '.assets[].name' | grep '\.apk$'); do
+          for old in $(gh release view test-build --json assets --jq '.assets[].name' | grep -E '\.(apk|cdx\.json)$'); do
             gh release delete-asset test-build "$old" -y
           done
-          gh release upload test-build "publish/$NAME" --clobber
+          gh release upload test-build "publish/$NAME" "publish/${NAME%.apk}.cdx.json" --clobber
           gh release edit test-build --notes "Rolling test build from master. Commit ${GITHUB_SHA::8}, run #${GITHUB_RUN_NUMBER}, built $(date -u +%Y-%m-%dT%H:%MZ)."
 
   # Puts the signed APK and its .sha256 on the release for the tag.
@@ -375,12 +403,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - name: Download release files
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: publish-release
           path: publish
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            publish/*.apk
+            publish/*.cdx.json
 
       - name: Publish
         env:
@@ -391,7 +428,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           PRE=""; case "$TAG" in *alpha*|*beta*|*rc*) PRE="--prerelease";; esac
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" $PRE --title "JS8-Tactical ${TAG}" --notes "Signed build of ${TAG} (commit ${GITHUB_SHA::8})."
-          gh release upload "$TAG" "publish/$NAME" "publish/${NAME}.sha256" --clobber
+          gh release upload "$TAG" "publish/$NAME" "publish/${NAME}.sha256" "publish/${NAME%.apk}.cdx.json" --clobber
 
 #  lint:
 #    name: Lint
