@@ -20,7 +20,7 @@ Treat every received message as unverified, whatever callsign it shows.
 | rigctld connection (TCP, local network) | Whoever runs or spoofs the rigctld server | `RigCtlClient.kt` | Plain TCP with no authentication: a device on the same network could impersonate the radio |
 | USB serial and Bluetooth radio links | Physical access / paired device | Hamlib (C), `UvProSession.kt` | Malformed replies from the radio or a rogue Bluetooth device |
 | Space-weather data (NOAA SWPC), map tiles (OpenFreeMap) | Those servers, over HTTPS only (cleartext HTTP and user-installed certificate authorities are refused) | `SpaceWeatherRepository.kt`, MapLibre | Malformed data from a compromised server |
-| Optional AI model files (Hugging Face, over HTTPS) | The model publisher and host | `AiModels.kt`, llama.cpp GGUF loader (C++) | A tampered model file parsed by native code |
+| Optional AI model files (Hugging Face, over HTTPS) | The model publisher and host | `AiModels.kt` (pinned revision, SHA-256 checked before use), then the llama.cpp GGUF loader (C++) **in an isolated process** (`LlmService`) | A tampered model file parsed by native code: contained by the isolated process |
 
 ## What can make the radio transmit
 
@@ -50,18 +50,29 @@ multicast on the local network, readable by any device on that network).
   with property checks: a message held for one station is only handed to that station, and the
   diagnostics scrub leaves no callsign, grid or IP address behind; unit-test line coverage
   (JaCoCo) reported on every build.
-- Third-party native code is pinned: JS8Core and llama.cpp as git submodules at fixed commits,
-  Hamlib at a fixed commit in the build workflow.
+- Third-party native code is pinned: JS8Core, llama.cpp and the VOACAP engine (hfcast) as git
+  submodules at fixed commits, Hamlib at a fixed commit in the build workflow.
+- Weekly fuzzing of the VOACAP engine's entry points (`scripts/fuzz-voacap.sh`).
+
+## The AI engine runs isolated
+
+llama.cpp (the optional on-device language model) runs in its own process, declared
+`android:isolatedProcess="true"` (`android/llm`, `LlmService`). Android gives that process no
+permissions and its own sandbox: it can't open the app's files, reach the network, USB, the radio
+or PTT, or read the app's settings. The app opens the model file (after its SHA-256 check) and
+hands the engine a read-only descriptor; the engine reads and maps the model through it. Only text
+comes back over Binder, capped in length and stripped of control characters before display. If the
+engine crashes, or a booby-trapped model file takes it over, it stays inside that process: the
+summary shows as unavailable and the receiver keeps running. Checked on a Galaxy Tab Active5 Pro
+(Android 16) before the move: the isolated process could read and map a passed descriptor, could
+not open files by name, and could not list the app's data folder.
 
 ## Known gaps (being worked on)
 
-1. **AI model downloads are not pinned to a checksum.** They come over HTTPS from Hugging Face's
-   `main` branch, so a change upstream would be accepted. Planned: pin a revision and verify the
-   SHA-256 before use.
-2. **Test builds are debuggable**, which lets anyone with USB debugging access to the device read
+1. **Test builds are debuggable**, which lets anyone with USB debugging access to the device read
    the app's data. Release builds are not.
-3. **Android backup is allowed** (`allowBackup`), so app data can be copied by device backup.
-4. **Older lint findings**: about 240 style and performance findings (unused resources, Kotlin
+2. **Android backup is allowed** (`allowBackup`), so app data can be copied by device backup.
+3. **Older lint findings**: about 240 style and performance findings (unused resources, Kotlin
    extension suggestions and similar, none security-related) are recorded in
    `android/app/lint-baseline.xml` and being worked off. New findings fail CI.
-5. **No independent audit yet.** One is planned; the report will be published in this repository.
+4. **No independent audit yet.** One is planned; the report will be published in this repository.

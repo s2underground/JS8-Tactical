@@ -31,6 +31,8 @@ object AiWork {
 
     private val worker = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "ai-work").apply { priority = Thread.MIN_PRIORITY + 1 } }
     private val main = Handler(Looper.getMainLooper())
+    // A Session holds only the application context (to unbind the isolated engine): no leak.
+    @android.annotation.SuppressLint("StaticFieldLeak")
     private var session: LlamaBridge.Session? = null
     private var sessionModel: String? = null
     private var unloadTask: ScheduledFuture<*>? = null
@@ -120,14 +122,13 @@ object AiWork {
     /** Plain-text AI status for the diagnostics report. */
     fun diagnostics(ctx: Context): String = buildString {
         append("enabled = ${AiModels.enabled(ctx)}\n")
-        append("engine = ${if (LlamaBridge.available) "loaded" else "not loaded (${LlamaBridge.loadError ?: "unknown"})"}\n")
+        append("engine = ${if (LlamaBridge.available) "isolated process" else "not available"}${LlamaBridge.loadError?.let { " (last error: $it)" }.orEmpty()}\n")
         append("process ABI = ${if (android.os.Process.is64Bit()) "64-bit" else "32-bit"} · device ${android.os.Build.SUPPORTED_ABIS.joinToString()}\n")
         AiModels.ALL.forEach { m ->
             val f = AiModels.file(ctx, m)
             append("${m.id}: ${if (f.isFile) "${f.length()} bytes" else "no file"} · ready = ${AiModels.ready(ctx, m)}\n")
         }
         append("model used = ${model(ctx)?.id ?: "none"}\n")
-        append("isolation probe = ${IsolationProbe.result(ctx) ?: "not run"}\n")
     }
 
     fun model(ctx: Context): AiModels.Model? {
@@ -246,7 +247,7 @@ object AiWork {
         if (session != null && sessionModel == m.id) return session
         session?.close()
         val threads = minOf(4, Runtime.getRuntime().availableProcessors())
-        session = LlamaBridge.load(AiModels.file(ctx, m).absolutePath, 4096, threads)
+        session = LlamaBridge.load(ctx, AiModels.file(ctx, m), 4096, threads)
         sessionModel = if (session != null) m.id else null
         Log.i(TAG, "model ${m.id} ${if (session != null) "loaded" else "failed to load"}")
         return session

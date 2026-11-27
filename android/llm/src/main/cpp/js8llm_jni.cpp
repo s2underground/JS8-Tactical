@@ -1,11 +1,15 @@
 // JNI bridge to llama.cpp for JS8-Tactical's optional on-device summary.
 // One model + context per handle; generation is synchronous on the caller's thread.
+// Runs only inside LlmService's isolated process: the model arrives as an open file descriptor
+// (an isolated process can't open the app's files by name) and is read through it.
 
 #include <jni.h>
 #include <android/log.h>
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <unistd.h>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -19,6 +23,7 @@
 namespace {
 
 struct Session {
+    FILE * file = nullptr;  // the model file, read (and mapped) through the descriptor passed in
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
     double load_ms = 0;
@@ -90,7 +95,7 @@ bool g_backend = false;
 } // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_js8call_llm_LlamaBridge_nativeLoad(JNIEnv * env, jclass, jstring jpath, jint n_ctx, jint n_threads) {
+Java_com_js8call_llm_LlamaNative_nativeLoadFd(JNIEnv *, jclass, jint fd, jint n_ctx, jint n_threads) {
     if (!g_backend) {
         llama_log_set([](ggml_log_level level, const char * text, void *) {
             // CONT continues the previous line (the loader's progress dots follow an INFO line):
@@ -103,15 +108,22 @@ Java_com_js8call_llm_LlamaBridge_nativeLoad(JNIEnv * env, jclass, jstring jpath,
         llama_backend_init();
         g_backend = true;
     }
+    if (fd < 0) return 0;
+    // Our own copy of the descriptor: the caller closes theirs.
+    const int own = dup(fd);
+    if (own < 0) { LOGE("dup failed"); return 0; }
+    FILE * file = fdopen(own, "rb");
+    if (!file) { close(own); LOGE("fdopen failed"); return 0; }
     auto * s = new Session();
-    const std::string path = to_string(env, jpath);
+    s->file = file;
     const double t0 = now_ms();
 
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = 0;
-    s->model = llama_model_load_from_file(path.c_str(), mp);
+    s->model = llama_model_load_from_file_ptr(s->file, mp);
     if (!s->model) {
-        LOGE("model load failed: %s", path.c_str());
+        LOGE("model load failed");
+        fclose(s->file);
         delete s;
         return 0;
     }
@@ -125,35 +137,36 @@ Java_com_js8call_llm_LlamaBridge_nativeLoad(JNIEnv * env, jclass, jstring jpath,
     if (!s->ctx) {
         LOGE("context init failed");
         llama_model_free(s->model);
+        fclose(s->file);
         delete s;
         return 0;
     }
     s->load_ms = now_ms() - t0;
-    LOGI("loaded %s in %.0f ms (ctx %d, threads %d)", path.c_str(), s->load_ms, n_ctx, n_threads);
+    LOGI("loaded in %.0f ms (ctx %d, threads %d)", s->load_ms, n_ctx, n_threads);
     return reinterpret_cast<jlong>(s);
 }
 
 extern "C" JNIEXPORT jdouble JNICALL
-Java_com_js8call_llm_LlamaBridge_nativeLoadMs(JNIEnv *, jclass, jlong h) {
+Java_com_js8call_llm_LlamaNative_nativeLoadMs(JNIEnv *, jclass, jlong h) {
     return h ? reinterpret_cast<Session *>(h)->load_ms : 0;
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
-Java_com_js8call_llm_LlamaBridge_nativeStats(JNIEnv * env, jclass, jlong h) {
+Java_com_js8call_llm_LlamaNative_nativeStats(JNIEnv * env, jclass, jlong h) {
     jlongArray out = env->NewLongArray(4);
     if (h) env->SetLongArrayRegion(out, 0, 4, reinterpret_cast<Session *>(h)->stats);
     return out;
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_js8call_llm_LlamaBridge_nativeError(JNIEnv * env, jclass, jlong h) {
+Java_com_js8call_llm_LlamaNative_nativeError(JNIEnv * env, jclass, jlong h) {
     return to_jstring(env, h ? reinterpret_cast<Session *>(h)->error : std::string("not loaded"));
 }
 
 // Formats [system, user] with the model's own chat template, then generates up to max_tokens.
 // listener.onToken(String) is called with each new piece of text; returning false stops early.
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_js8call_llm_LlamaBridge_nativeGenerate(JNIEnv * env, jclass, jlong h, jstring jsystem, jstring juser,
+Java_com_js8call_llm_LlamaNative_nativeGenerate(JNIEnv * env, jclass, jlong h, jstring jsystem, jstring juser,
                                                jint max_tokens, jfloat temperature, jobject listener) {
     auto * s = reinterpret_cast<Session *>(h);
     if (!s) return to_jstring(env, "");
@@ -275,10 +288,11 @@ Java_com_js8call_llm_LlamaBridge_nativeGenerate(JNIEnv * env, jclass, jlong h, j
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_js8call_llm_LlamaBridge_nativeFree(JNIEnv *, jclass, jlong h) {
+Java_com_js8call_llm_LlamaNative_nativeFree(JNIEnv *, jclass, jlong h) {
     auto * s = reinterpret_cast<Session *>(h);
     if (!s) return;
     if (s->ctx) llama_free(s->ctx);
     if (s->model) llama_model_free(s->model);
+    if (s->file) fclose(s->file);
     delete s;
 }

@@ -78,14 +78,6 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
-        <!-- Feasibility check for running the AI engine isolated (ai/IsolationProbe.kt): no
-             permissions, no access to the app's files, network or USB. -->
-        <service
-            android:name=".ai.IsolationProbe$Isolated"
-            android:exported="false"
-            android:isolatedProcess="true"
-            android:process=":aiprobe" />
-
     </application>
 
 </manifest>
