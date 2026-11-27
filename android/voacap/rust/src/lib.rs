@@ -10,6 +10,7 @@
 //! - No panic crosses the C boundary: each call is wrapped, and a panic becomes an error.
 
 use std::ffi::{c_char, CStr, CString};
+#[cfg(not(fuzzing))]
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use hfcast::json::{self, Json};
@@ -35,9 +36,79 @@ pub fn run(request: &str) -> Result<String, String> {
         Some(_) => return Err("the data root is fixed; leave \"itshfbc\" out".to_string()),
     }
     fields.insert("itshfbc".to_string(), Json::Str(EMBEDDED_ROOT.to_string()));
+    check_ranges(fields)?;
+    if fields.get("mode").and_then(Json::as_str) == Some("area") {
+        check_area_size(fields)?;
+    }
     let text = req.write();
-    catch_unwind(AssertUnwindSafe(|| hfcast::service::run(&text)))
-        .unwrap_or_else(|_| Err("the prediction engine stopped on an internal error".to_string()))
+    guarded(|| hfcast::service::run(&text))
+}
+
+/// Positions and the month are checked here as well as by the app: fuzzing found that an area run
+/// given a longitude far outside -180..180 indexed past a table in the engine (a panic, caught in
+/// release builds, but no answer either way).
+fn check_ranges(fields: &std::collections::BTreeMap<String, Json>) -> Result<(), String> {
+    let limits: [(&str, f64, f64); 5] = [
+        ("fromLat", -90.0, 90.0),
+        ("toLat", -90.0, 90.0),
+        ("fromLon", -180.0, 180.0),
+        ("toLon", -180.0, 180.0),
+        ("month", 1.0, 12.0),
+    ];
+    for (key, lo, hi) in limits {
+        match fields.get(key) {
+            None => {}
+            Some(Json::Num(n)) if n.is_finite() && *n >= lo && *n <= hi => {}
+            Some(_) => return Err(format!("\"{key}\" must be a number from {lo} to {hi}")),
+        }
+    }
+    if let Some(Json::Num(m)) = fields.get("month") {
+        if m.fract() != 0.0 {
+            return Err("\"month\" must be a whole number".to_string());
+        }
+    }
+    Ok(())
+}
+
+/// The most grid points one area run may cover: the Prop tab's runs are a few thousand, and a
+/// request for more is refused before any work, so a typo (or a fuzzer) can't tie the engine up
+/// for minutes or exhaust memory.
+pub const MAX_AREA_POINTS: f64 = 250_000.0;
+
+fn check_area_size(fields: &std::collections::BTreeMap<String, Json>) -> Result<(), String> {
+    let num = |k: &str| match fields.get(k) {
+        Some(Json::Num(n)) => Some(*n),
+        _ => None,
+    };
+    let (Some(dlat), Some(dlon)) = (num("latStep"), num("lonStep")) else {
+        return Ok(()); // the engine reports the missing field itself
+    };
+    if !(dlat.is_finite() && dlon.is_finite() && dlat > 0.0 && dlon > 0.0) {
+        return Err("\"latStep\" and \"lonStep\" must be positive".to_string());
+    }
+    let (lat_span, lon_span) = match (num("latMin"), num("latMax"), num("lonMin"), num("lonMax")) {
+        (Some(a), Some(b), Some(c), Some(d)) => ((b - a).abs().min(180.0), (d - c).abs().min(360.0)),
+        _ => (180.0, 360.0),
+    };
+    let points = (lat_span / dlat + 1.0) * (lon_span / dlon + 1.0);
+    if !points.is_finite() || points > MAX_AREA_POINTS {
+        return Err(format!("an area run may cover at most {MAX_AREA_POINTS} points"));
+    }
+    Ok(())
+}
+
+/// Runs the engine, turning a panic into an error. Fuzzing builds (`--cfg fuzzing`) let the panic
+/// through, so the fuzzer sees it as the crash it is.
+fn guarded<T>(f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    #[cfg(fuzzing)]
+    {
+        f()
+    }
+    #[cfg(not(fuzzing))]
+    {
+        catch_unwind(AssertUnwindSafe(f))
+            .unwrap_or_else(|_| Err("the prediction engine stopped on an internal error".to_string()))
+    }
 }
 
 /// An area run (VOACAP's coverage map), packed for the phone: a 28-byte header of seven
@@ -103,7 +174,7 @@ pub fn area(request: &str) -> Result<Vec<u8>, String> {
 /// `request` must be null or a NUL-terminated string; `len` and `err` must be valid for writes.
 #[no_mangle]
 pub unsafe extern "C" fn js8voacap_area(request: *const c_char, len: *mut usize, err: *mut *mut c_char) -> *mut u8 {
-    let result = catch_unwind(AssertUnwindSafe(|| {
+    let result = guarded(|| {
         if request.is_null() {
             return Err("no request".to_string());
         }
@@ -111,8 +182,7 @@ pub unsafe extern "C" fn js8voacap_area(request: *const c_char, len: *mut usize,
         let bytes = unsafe { CStr::from_ptr(request) }.to_bytes();
         let text = std::str::from_utf8(bytes).map_err(|_| "request is not UTF-8".to_string())?;
         area(text)
-    }))
-    .unwrap_or_else(|_| Err("the prediction engine stopped on an internal error".to_string()));
+    });
     match result {
         Ok(buf) => {
             let boxed = buf.into_boxed_slice();
@@ -149,20 +219,17 @@ pub unsafe extern "C" fn js8voacap_free_bytes(p: *mut u8, len: usize) {
 /// null or point to a writable `i32`.
 #[no_mangle]
 pub unsafe extern "C" fn js8voacap_run(request: *const c_char, ok: *mut i32) -> *mut c_char {
-    let answer = catch_unwind(AssertUnwindSafe(|| {
-        if request.is_null() {
-            return None;
-        }
+    if request.is_null() {
+        return std::ptr::null_mut();
+    }
+    let result = guarded(|| {
         // SAFETY: non-null, and the caller promises a NUL-terminated string.
         let bytes = unsafe { CStr::from_ptr(request) }.to_bytes();
-        let result = match std::str::from_utf8(bytes) {
+        match std::str::from_utf8(bytes) {
             Ok(text) => run(text),
             Err(_) => Err("request is not UTF-8".to_string()),
-        };
-        Some(result)
-    }))
-    .unwrap_or_else(|_| Some(Err("the prediction engine stopped on an internal error".to_string())));
-    let Some(result) = answer else { return std::ptr::null_mut() };
+        }
+    });
     let (flag, text) = match result {
         Ok(t) => (1, t),
         Err(e) => (0, e),
@@ -231,6 +298,30 @@ mod tests {
         // Some of the world is reachable on 20 m from North Carolina at 15 UTC in November.
         assert!(buf[28..].chunks(2).any(|c| c[1] > 128));
         assert!(area("{\"fromLat\":1}").is_err());
+    }
+
+    #[test]
+    fn refuses_an_area_too_big_to_run() {
+        let req = "{\"mode\":\"area\",\"fromLat\":35.8,\"fromLon\":-78.6,\"month\":11,\"year\":2026,\
+                   \"ssn\":90,\"watts\":20,\"freqsMhz\":[7.078],\"requiredSnrDb\":10,\
+                   \"noiseDbw\":145,\"hour\":15,\"latStep\":0.1,\"lonStep\":0.1}";
+        let err = area(req).unwrap_err();
+        assert!(err.contains("at most"), "{err}");
+        // A small bounded window at the same step is fine.
+        let small = req.replace("\"hour\":15,", "\"hour\":15,\"latMin\":30,\"latMax\":31,\"lonMin\":-80,\"lonMax\":-79,");
+        assert!(area(&small).is_ok());
+        assert!(run(&req.replace("0.1", "-1")).is_err());
+    }
+
+    #[test]
+    fn refuses_positions_off_the_map() {
+        // Found by fuzzing: an area run with fromLon -7826 indexed past a table in the engine.
+        let req = "{\"mode\":\"area\",\"fromLat\":32.8,\"fromLon\":-7826,\"month\":11,\"year\":2026,\
+                   \"ssn\":90,\"watts\":20,\"freqsMhz\":[5.078,14.068],\"requiredSnrDb\":4,\
+                   \"noiseDbw\":145,\"hour\":15,\"latStep\":16,\"lonStep\":15}";
+        assert!(area(req).unwrap_err().contains("fromLon"));
+        assert!(run(&request("").replace("\"month\":11", "\"month\":13")).is_err());
+        assert!(run(&request("").replace("\"toLat\":41.9", "\"toLat\":91")).is_err());
     }
 
     #[test]
