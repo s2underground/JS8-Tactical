@@ -127,6 +127,7 @@ object AiWork {
             append("${m.id}: ${if (f.isFile) "${f.length()} bytes" else "no file"} · ready = ${AiModels.ready(ctx, m)}\n")
         }
         append("model used = ${model(ctx)?.id ?: "none"}\n")
+        append("isolation probe = ${IsolationProbe.result(ctx) ?: "not run"}\n")
     }
 
     fun model(ctx: Context): AiModels.Model? {
