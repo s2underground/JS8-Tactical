@@ -54,5 +54,15 @@ build tools): the "certificate SHA-256 digest" line must match. Each release als
 `.sha256` file with the APK's own checksum and the signer fingerprint. Android itself refuses to
 install an update signed with a different key over an existing install.
 
+Each APK also has a build-provenance attestation, signed by GitHub, that records the workflow run
+and commit it was built from. With the GitHub CLI:
+
+```
+gh attestation verify JS8-Tactical-<version>.apk -R s2underground/JS8-Tactical
+```
+
+The matching `.cdx.json` file is a CycloneDX software bill of materials listing every library and
+native component in that APK, with versions and commits; it is attested the same way.
+
 Rolling test builds from the main repository are signed with the same release key. Builds made
 from forks or pull requests are signed with a public debug key and must not be trusted.

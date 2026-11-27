@@ -53,6 +53,10 @@ multicast on the local network, readable by any device on that network).
 - Third-party native code is pinned: JS8Core, llama.cpp and the VOACAP engine (hfcast) as git
   submodules at fixed commits, Hamlib at a fixed commit in the build workflow.
 - Weekly fuzzing of the VOACAP engine's entry points (`scripts/fuzz-voacap.sh`).
+- Every published APK (releases and the rolling test build) comes with a CycloneDX software bill
+  of materials (`.cdx.json`: the Gradle libraries resolved for that build, the native code built
+  from source at its pinned commit, and the APK's SHA-256), and GitHub signs a build-provenance
+  attestation for both files, tying them to the workflow run and commit that produced them.
 
 ## The AI engine runs isolated
 
@@ -69,10 +73,7 @@ not open files by name, and could not list the app's data folder.
 
 ## Known gaps (being worked on)
 
-1. **Test builds are debuggable**, which lets anyone with USB debugging access to the device read
-   the app's data. Release builds are not.
-2. **Android backup is allowed** (`allowBackup`), so app data can be copied by device backup.
-3. **Older lint findings**: about 240 style and performance findings (unused resources, Kotlin
+1. **Older lint findings**: about 240 style and performance findings (unused resources, Kotlin
    extension suggestions and similar, none security-related) are recorded in
    `android/app/lint-baseline.xml` and being worked off. New findings fail CI.
-4. **No independent audit yet.** One is planned; the report will be published in this repository.
+2. **No independent audit yet.** One is planned; the report will be published in this repository.
