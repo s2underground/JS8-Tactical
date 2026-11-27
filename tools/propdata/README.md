@@ -81,3 +81,43 @@ band are logged so "not heard" counts as evidence; other stations' SNR
 reports and HEARING replies are logged as net paths; NOAA's 27-day outlook and
 a daily flux history are saved whenever online; and `#SWX F:.. K:.. T:..`
 lines let stations pass solar numbers to each other over the air.
+
+## VOACAP compared (issue #57)
+`compare_voacap.py` scores the shipped model and VOACAP (the hfcast port in
+`vendor/hfcast-engine`, run in bulk by `vbatch/`) on the **unseen** day set:
+the 5th and 20th of each month in 2021–2023 plus 2026-11-19 to 26, which no
+fit has used (`prop-data.yml`, `day_set: unseen`). 1,611,285 pairs, 833,626
+heard, 80 days. VOACAP: isotropic antennas, residential noise (145 dBW),
+required SNR 6 dB in 1 Hz (WSPR's −28 dB in 2500 Hz), the month's smoothed
+sunspot number. Ranking quality (weighted AUC, ties as half):
+
+| | All | 160 | 80 | 60 | 40 | 30 | 20 | 17 | 15 | 12 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Ours (as shipped) | 0.810 | 0.813 | 0.801 | 0.714 | 0.783 | 0.801 | 0.796 | 0.804 | 0.818 | 0.816 | 0.792 |
+| Ours + transmitter power | 0.822 | 0.834 | 0.831 | 0.767 | 0.804 | 0.817 | 0.807 | 0.815 | 0.825 | 0.823 | 0.798 |
+| VOACAP, 1 W for all | 0.858 | 0.839 | 0.859 | 0.747 | 0.885 | 0.850 | 0.827 | 0.812 | 0.830 | 0.816 | 0.798 |
+| VOACAP, real power | 0.868 | 0.855 | 0.879 | 0.780 | 0.894 | 0.855 | 0.838 | 0.826 | 0.840 | 0.828 | 0.813 |
+| Rank average of the two | 0.870 | 0.856 | 0.874 | 0.789 | 0.894 | 0.862 | 0.844 | 0.838 | 0.855 | 0.849 | 0.838 |
+
+| By distance (km) | 0–500 | 500–1500 | 1500–3500 | 3500–8000 | 8000+ |
+|---|---|---|---|---|---|
+| Ours + transmitter power | 0.847 | 0.760 | 0.655 | 0.744 | 0.773 |
+| VOACAP, real power | 0.856 | 0.768 | 0.694 | 0.774 | 0.729 |
+| Rank average | 0.859 | 0.769 | 0.674 | 0.795 | 0.793 |
+
+- VOACAP ranks better overall and on every band, most of all 160–30 m (40 m:
+  0.894 against 0.804). Within a distance band the gap is small; most of
+  VOACAP's lead is in how openings change with distance and time of day.
+- Ours is better beyond 8000 km, and calls fewer real openings closed: 6.1 %
+  of receptions fell on paths it scored under 0.10, against 7.9 % for VOACAP.
+- Feeding VOACAP that day's flux in place of the monthly smoothed number made
+  no difference (0.868 both ways). The same held on the 2019–2020 minimum
+  sample, where VOACAP also led (0.855 against 0.809) although ours was fitted
+  on it.
+- A plain rank average of the two is the best of all (0.870, and 0.79 on long
+  haul), so the two fail in different places: a fitted blend is worth trying.
+
+To repeat: `cargo build --release` in `vbatch/`, fetch and unpack
+`wspr-sample-unseen.tar.zst` from the prop-data release, then
+`python3 compare_voacap.py <dir>/wspr-sample vbatch/target/release/vbatch out.json`
+(about 50 minutes on two cores; add `--ours-only` as a fourth argument to skip VOACAP).

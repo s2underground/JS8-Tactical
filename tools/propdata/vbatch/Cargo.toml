@@ -1,0 +1,13 @@
+[package]
+name = "vbatch"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "GPL-3.0-only"
+description = "Batch VOACAP runs (hfcast) for compare_voacap.py"
+
+[dependencies]
+hfcast = { path = "../../../vendor/hfcast-engine", default-features = false, features = ["embedded-coefficients"] }
+
+[profile.release]
+debug = false
