@@ -115,31 +115,17 @@ class SettingsFragment : PreferenceFragmentCompat() {
             false
         }
 
-        val customFrequencyPref = findPreference<EditTextPreference>("custom_frequency_mhz")
-        customFrequencyPref?.setOnBindEditTextListener { editText ->
-            editText.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-        }
-        customFrequencyPref?.setOnPreferenceChangeListener { preference, newValue ->
-            val rawValue = newValue?.toString().orEmpty().trim()
-            val normalizedValue = normalizeFrequencyMhz(rawValue)
-            preference.summary = if (normalizedValue.isBlank()) {
-                getString(R.string.settings_custom_frequency_summary)
-            } else {
-                getString(R.string.settings_custom_frequency_summary_format, normalizedValue)
+        // My frequencies (issue #65): any number, each with a name, listed after the presets.
+        findPreference<Preference>("custom_frequencies_manage")?.let { pref ->
+            fun summarize() {
+                val list = CustomFrequencies.load(requireContext())
+                pref.summary = if (list.isEmpty()) getString(R.string.settings_custom_frequency_summary)
+                else list.joinToString(", ") { CustomFrequencies.bandLabel(it).removeSuffix(" MHz").replace(" - ", " ") }
             }
-            preference.sharedPreferences
-                ?.edit()
-                ?.putString(preference.key, normalizedValue)
-                ?.apply()
-            false
-        }
-        val existingCustom = customFrequencyPref?.text.orEmpty().trim()
-        if (customFrequencyPref != null) {
-            val normalizedExisting = normalizeFrequencyMhz(existingCustom)
-            customFrequencyPref.summary = if (normalizedExisting.isBlank()) {
-                getString(R.string.settings_custom_frequency_summary)
-            } else {
-                getString(R.string.settings_custom_frequency_summary_format, normalizedExisting)
+            summarize()
+            pref.setOnPreferenceClickListener {
+                CustomFrequencies.manage(requireContext()) { summarize() }
+                true
             }
         }
 
@@ -725,17 +711,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
             editor.putString("rig_usb_port_index", "0")
         }
         editor.apply()
-    }
-
-    private fun normalizeFrequencyMhz(value: String): String {
-        val trimmed = value.trim()
-        val parsed = trimmed.toDoubleOrNull() ?: return ""
-        if (parsed <= 0) return ""
-        return if (parsed % 1.0 == 0.0) {
-            parsed.toLong().toString()
-        } else {
-            String.format(Locale.US, "%.4f", parsed).trimEnd('0').trimEnd('.')
-        }
     }
 
     private companion object {

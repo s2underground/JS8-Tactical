@@ -31,8 +31,8 @@ object RadioControls {
         val list = (baseEntries.indices.map { Band(baseEntries[it], baseValues[it].toLongOrNull() ?: 0L) } + GHOSTNET)
             .filter { rigType != "qmx_serial" || qmxBands.any { b -> it.label.removePrefix("GhostNet ").startsWith(b) } }
             .toMutableList()
-        val customMhz = prefs.getString("custom_frequency_mhz", "")?.trim().orEmpty()
-        customMhz.toDoubleOrNull()?.takeIf { it > 0 }?.let { list += Band("Custom - ${customMhz}MHz", (it * 1_000_000.0).toLong()) }
+        // The operator's own frequencies, with their names (issue #65).
+        CustomFrequencies.load(context).forEach { e -> list += Band(CustomFrequencies.bandLabel(e), e.hz) }
         val defaultHz = if (rigType == "qmx_serial") list.firstOrNull()?.hz ?: 14_078_000L else (baseValues.getOrNull(3)?.toLongOrNull() ?: 14_078_000L)
         val saved = prefs.getString("last_frequency", defaultHz.toString())?.toLongOrNull() ?: defaultHz
         val index = list.indexOfFirst { it.hz == saved }.takeIf { it >= 0 } ?: list.indexOfFirst { it.hz == defaultHz }.coerceAtLeast(0)
