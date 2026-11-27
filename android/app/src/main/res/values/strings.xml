@@ -635,6 +635,14 @@
     <string name="prop_src_recurrence">27-day repeat</string>
     <string name="prop_src_relay">via %1$s %2$s</string>
     <!-- VOACAP (issue #57) -->
+    <string name="prop_model_title">Prediction model</string>
+    <string name="prop_model_voacap">Model: VOACAP</string>
+    <string name="prop_model_ours">Model: JS8-Tactical</string>
+    <string name="prop_model_voacap_long">VOACAP: the industry standard (monthly median, isotropic antennas). Scored best on unseen WSPR data.</string>
+    <string name="prop_model_ours_long">JS8-Tactical: fitted to WSPR reports, follows today\'s solar numbers, and learns from what your station hears.</string>
+    <string name="prop_voacap_working">%1$02d UTC: working out the VOACAP map…</string>
+    <string name="prop_voacap_failed">VOACAP couldn\'t make this map; showing the JS8-Tactical model.</string>
+    <string name="prop_voacap_status">VOACAP monthly median · SSN %1$d · %2$s noise · isotropic antennas. For a map that learns from your station, tap the Model chip.</string>
     <string name="voacap_action">VOACAP</string>
     <string name="voacap_title">VOACAP prediction</string>
     <string name="voacap_summary">%1$s km %2$s · %3$s · %4$s · %5$s W · %6$s (%7$d dB) · %8$s noise · isotropic antennas. Monthly median: the chance the path is open on a given day of the month, by UTC hour.</string>

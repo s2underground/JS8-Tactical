@@ -100,14 +100,30 @@
                 tools:text="SFI 142 · K2 · NOAA 2h" />
         </LinearLayout>
 
-        <com.google.android.material.chip.Chip
-            android:id="@+id/prop_station"
-            style="@style/Widget.Material3.Chip.Assist"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            app:chipIcon="@drawable/ic_cell_tower"
-            tools:text="20 W · Normal · Low dipole (NVIS)" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/prop_model"
+                style="@style/Widget.Material3.Chip.Assist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:contentDescription="@string/prop_model_title"
+                tools:text="Model: VOACAP" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/prop_station"
+                style="@style/Widget.Material3.Chip.Assist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                app:chipIcon="@drawable/ic_cell_tower"
+                tools:text="20 W · Normal · Low dipole (NVIS)" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/prop_notice"

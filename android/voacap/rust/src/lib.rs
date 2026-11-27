@@ -40,6 +40,106 @@ pub fn run(request: &str) -> Result<String, String> {
         .unwrap_or_else(|_| Err("the prediction engine stopped on an internal error".to_string()))
 }
 
+/// An area run (VOACAP's coverage map), packed for the phone: a 28-byte header of seven
+/// little-endian f32 (latitude of the first row, row step, rows, longitude of the first column,
+/// column step, columns, bands), then for each row south to north, each column west to east,
+/// each band in request order: reliability as one byte, 0 to 255. Cells the engine left out
+/// stay 0.
+pub fn area(request: &str) -> Result<Vec<u8>, String> {
+    let req = json::parse(request)?;
+    if req.get("mode").and_then(Json::as_str) != Some("area") {
+        return Err("an area request says \"mode\": \"area\"".to_string());
+    }
+    let out = run(request)?;
+    let v = json::parse(&out)?;
+    let num = |k: &str| match v.get(k) {
+        Some(Json::Num(n)) => Ok(*n),
+        _ => Err(format!("area answer has no {k}")),
+    };
+    let (lat0, lat1, dlat) = (num("latMin")?, num("latMax")?, num("latStep")?);
+    let (lon0, lon1, dlon) = (num("lonMin")?, num("lonMax")?, num("lonStep")?);
+    if !(dlat > 0.0 && dlon > 0.0) {
+        return Err("area answer has no grid step".to_string());
+    }
+    let rows = ((lat1 - lat0) / dlat).round() as usize + 1;
+    let cols = ((lon1 - lon0) / dlon).round() as usize + 1;
+    let bands = match v.get("freqsMhz") {
+        Some(Json::Arr(a)) => a.len(),
+        _ => 1,
+    };
+    let cells = rows.checked_mul(cols).and_then(|n| n.checked_mul(bands)).filter(|&n| n <= 4_000_000)
+        .ok_or("area grid too large")?;
+    let mut buf = Vec::with_capacity(28 + cells);
+    for x in [lat0, dlat, rows as f64, lon0, dlon, cols as f64, bands as f64] {
+        buf.extend_from_slice(&(x as f32).to_le_bytes());
+    }
+    buf.resize(28 + cells, 0);
+    let Some(Json::Arr(points)) = v.get("points") else { return Err("area answer has no points".to_string()) };
+    for p in points {
+        let (Some(Json::Num(lat)), Some(Json::Num(lon))) = (p.get("lat"), p.get("lon")) else { continue };
+        let r = ((lat - lat0) / dlat).round();
+        let c = ((lon - lon0) / dlon).round();
+        if r < 0.0 || c < 0.0 || r as usize >= rows || c as usize >= cols {
+            continue;
+        }
+        let rel: Vec<f64> = match p.get("reliability") {
+            Some(Json::Arr(a)) => a.iter().map(|x| x.as_f64().unwrap_or(0.0)).collect(),
+            Some(Json::Num(n)) => vec![*n],
+            _ => continue,
+        };
+        let at = 28 + (r as usize * cols + c as usize) * bands;
+        for (i, x) in rel.iter().take(bands).enumerate() {
+            buf[at + i] = (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+        }
+    }
+    Ok(buf)
+}
+
+/// Runs [`area`] for C. On success returns the packed grid and sets `*len`; on failure returns
+/// null and sets `*err` to a message (release it with [`js8voacap_free`]). Release the grid with
+/// [`js8voacap_free_bytes`].
+///
+/// # Safety
+/// `request` must be null or a NUL-terminated string; `len` and `err` must be valid for writes.
+#[no_mangle]
+pub unsafe extern "C" fn js8voacap_area(request: *const c_char, len: *mut usize, err: *mut *mut c_char) -> *mut u8 {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if request.is_null() {
+            return Err("no request".to_string());
+        }
+        // SAFETY: non-null, and the caller promises a NUL-terminated string.
+        let bytes = unsafe { CStr::from_ptr(request) }.to_bytes();
+        let text = std::str::from_utf8(bytes).map_err(|_| "request is not UTF-8".to_string())?;
+        area(text)
+    }))
+    .unwrap_or_else(|_| Err("the prediction engine stopped on an internal error".to_string()));
+    match result {
+        Ok(buf) => {
+            let boxed = buf.into_boxed_slice();
+            // SAFETY: the caller promises len is writable.
+            unsafe { *len = boxed.len() };
+            Box::into_raw(boxed) as *mut u8
+        }
+        Err(e) => {
+            // SAFETY: the caller promises err is writable.
+            unsafe { *err = CString::new(e.replace('\0', " ")).map_or(std::ptr::null_mut(), CString::into_raw) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Releases a grid returned by [`js8voacap_area`]. Null is ignored.
+///
+/// # Safety
+/// `p` and `len` must be exactly what [`js8voacap_area`] returned, not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn js8voacap_free_bytes(p: *mut u8, len: usize) {
+    if !p.is_null() {
+        // SAFETY: rebuilt from Box::into_raw of a boxed slice of this length.
+        drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(p, len)) });
+    }
+}
+
 /// Runs [`run`] for C. Returns a new NUL-terminated string to release with
 /// [`js8voacap_free`]: the prediction when `*ok` is set to 1, an error message when it is 0.
 /// Returns null only if `request` is null or the answer can't be returned.
@@ -115,6 +215,22 @@ mod tests {
         let err = run(&request(",\"itshfbc\":\"/etc\"")).unwrap_err();
         assert!(err.contains("data root"), "{err}");
         assert!(run(&request(",\"itshfbc\":\"<embedded>\"")).is_ok());
+    }
+
+    #[test]
+    fn area_packs_a_world_grid() {
+        let req = "{\"mode\":\"area\",\"fromLat\":35.8,\"fromLon\":-78.6,\"month\":11,\"year\":2026,\
+                   \"ssn\":90,\"watts\":20,\"freqsMhz\":[7.078,14.078],\"requiredSnrDb\":10,\
+                   \"noiseDbw\":145,\"hour\":15,\"latStep\":10,\"lonStep\":10}";
+        let buf = area(req).expect("area");
+        let f = |i: usize| f32::from_le_bytes(buf[i * 4..i * 4 + 4].try_into().unwrap());
+        let (rows, cols, bands) = (f(2) as usize, f(5) as usize, f(6) as usize);
+        assert_eq!((rows, cols, bands), (18, 36, 2));
+        assert_eq!(buf.len(), 28 + rows * cols * bands);
+        assert!((f(0) + 85.0).abs() < 1e-3 && (f(3) + 175.0).abs() < 1e-3, "{} {}", f(0), f(3));
+        // Some of the world is reachable on 20 m from North Carolina at 15 UTC in November.
+        assert!(buf[28..].chunks(2).any(|c| c[1] > 128));
+        assert!(area("{\"fromLat\":1}").is_err());
     }
 
     #[test]
