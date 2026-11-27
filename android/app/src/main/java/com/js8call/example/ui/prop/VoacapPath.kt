@@ -38,6 +38,10 @@ object VoacapPath {
         return Voacap.Noise.entries.firstOrNull { it.name == name } ?: Voacap.Noise.RESIDENTIAL
     }
 
+    fun setNoise(ctx: android.content.Context, noise: Voacap.Noise) {
+        PreferenceManager.getDefaultSharedPreferences(ctx).edit { putString(PREF_NOISE, noise.name) }
+    }
+
     fun show(
         fragment: Fragment,
         me: LatLon,

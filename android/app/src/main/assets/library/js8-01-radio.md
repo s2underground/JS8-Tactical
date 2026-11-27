@@ -45,9 +45,13 @@ The ionosphere changes all the time, which is why a band that worked at noon can
 - **Sunrise and sunset** shift things quickly.
 - **The 11-year sun cycle** and solar storms raise or lower what's possible for days at a time.
 
-You don't have to memorise this. The **Prop tab** predicts which band works for which distance at which time, and it learns from what your own station hears.
+You don't have to memorise this. The **Prop tab** predicts which band works for which distance at which time.
 
-For a second opinion, tap any point on the Prop tab's map, then **VOACAP** in the message that appears. VOACAP is the standard HF prediction program (from the Voice of America and NTIA/ITS) that most operators know. It shows a whole day for every band on that path, as the chance the path is open by hour (UTC), for your power and JS8 speed. It runs on the phone with no internet. It is a monthly average, so the Prop tab's own chart, which also learns from recent traffic, is usually closer for today. Set the noise where you are (city, residential, rural, remote) with **Noise…**: it moves the answer a lot.
+Its map and band chart come from **VOACAP**, the standard HF prediction program (from the Voice of America and NTIA/ITS) that most operators know, run on the phone with no internet, for your power and JS8 speed. VOACAP gives the monthly average for plain reference antennas. Set the noise where you are (city, residential, rural, remote) with the **Model** chip, then **Noise…**: it moves the answer a lot. Tested on real WSPR reception reports from 2021 to 2023 that neither model was built from, VOACAP ranked open and closed paths best.
+
+The **Model** chip switches to JS8-Tactical's own model. It is fitted to those reception reports, follows today's solar numbers, and **learns from what your station actually hears**: your antenna, your noise, your quirks. Use it when your log has a few days in it, or to see today rather than the month's average.
+
+Tap any point on the map, then **VOACAP** in the message that appears, for a whole day on that path: every band, hour by hour (UTC).
 
 [[app:prop|Open the Prop tab]]
 

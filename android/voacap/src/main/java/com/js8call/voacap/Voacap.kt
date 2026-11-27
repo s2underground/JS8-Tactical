@@ -94,6 +94,92 @@ object Voacap {
             cells.firstOrNull { it.hourUtc == hourUtc && kotlin.math.abs(it.freqMhz - freqMhz) < 0.005 }
     }
 
+    /**
+     * A coverage map from one station: VOACAP's area method, every band at one UTC hour, on a
+     * grid of cell centres. A whole-world run is used unless [box] (south, north, west, east) is
+     * given; the engine snaps the grid to the world lattice, so a bounded run lines up with it.
+     */
+    data class AreaRequest(
+        val txLat: Double,
+        val txLon: Double,
+        val month: Int,
+        val year: Int,
+        val ssn: Double,
+        val watts: Double,
+        val bandsMhz: List<Double>,
+        val js8ThresholdDb: Double,
+        val noise: Noise,
+        /** 0 to 23. */
+        val hourUtc: Int,
+        val stepDeg: Double,
+        val box: DoubleArray? = null,
+        /** Worker threads; 0 lets the engine use every core. */
+        val threads: Int = 0,
+    ) {
+        init {
+            require(txLat in -90.0..90.0 && txLon in -180.0..180.0) { "position out of range" }
+            require(month in 1..12 && hourUtc in 0..23) { "month or hour out of range" }
+            require(ssn in 0.0..400.0 && watts > 0.0) { "sunspot number or power out of range" }
+            require(bandsMhz.isNotEmpty() && bandsMhz.size <= 12 && bandsMhz.zipWithNext().all { (a, b) -> b > a }) {
+                "1 to 12 increasing frequencies"
+            }
+            require(stepDeg in 0.1..30.0) { "grid step out of range" }
+            box?.let { require(it.size == 4 && it[0] < it[1] && it[2] < it[3]) { "box is south, north, west, east" } }
+        }
+
+        fun toJson(): String {
+            fun n(v: Double) = String.format(Locale.US, "%.4f", v)
+            val bands = bandsMhz.joinToString(",") { n(it) }
+            val bounds = box?.let { ",\"latMin\":${n(it[0])},\"latMax\":${n(it[1])},\"lonMin\":${n(it[2])},\"lonMax\":${n(it[3])}" } ?: ""
+            return "{\"mode\":\"area\",\"fromLat\":${n(txLat)},\"fromLon\":${n(txLon)},\"month\":$month,\"year\":$year," +
+                "\"ssn\":${n(ssn)},\"watts\":${n(watts)},\"freqsMhz\":[$bands]," +
+                "\"requiredSnrDb\":${n(js8ThresholdDb + JS8_BANDWIDTH_DB)},\"noiseDbw\":${n(noise.dbw)}," +
+                "\"hour\":$hourUtc,\"latStep\":${n(stepDeg)},\"lonStep\":${n(stepDeg)},\"threads\":$threads$bounds}"
+        }
+    }
+
+    /** Reliability (0..1) per cell centre and band, rows south to north, columns west to east. */
+    class AreaGrid(
+        val lat0: Double, val dLat: Double, val rows: Int,
+        val lon0: Double, val dLon: Double, val cols: Int,
+        val bands: Int, private val rel: ByteArray,
+    ) {
+        fun at(row: Int, col: Int, band: Int): Float =
+            (rel[(row * cols + col) * bands + band].toInt() and 0xFF) / 255f
+
+        /** Bilinear between cell centres; edges held, longitude wraps when the grid spans the world. */
+        fun sample(lat: Double, lon: Double, band: Int): Float {
+            val y = ((lat - lat0) / dLat).coerceIn(0.0, (rows - 1).toDouble())
+            val worldWide = cols * dLon >= 359.0
+            var x = (lon - lon0) / dLon
+            if (worldWide) x = ((x % cols) + cols) % cols else x = x.coerceIn(0.0, (cols - 1).toDouble())
+            val r0 = y.toInt().coerceAtMost(rows - 1); val r1 = (r0 + 1).coerceAtMost(rows - 1)
+            val c0 = x.toInt().coerceAtMost(cols - 1)
+            val c1 = if (worldWide) (c0 + 1) % cols else (c0 + 1).coerceAtMost(cols - 1)
+            val fy = (y - r0).toFloat(); val fx = (x - c0).toFloat()
+            val top = at(r0, c0, band) * (1 - fx) + at(r0, c1, band) * fx
+            val bottom = at(r1, c0, band) * (1 - fx) + at(r1, c1, band) * fx
+            return top * (1 - fy) + bottom * fy
+        }
+
+        companion object {
+            fun unpack(buf: ByteArray): AreaGrid {
+                require(buf.size >= 28) { "area grid too short" }
+                val b = java.nio.ByteBuffer.wrap(buf).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                val h = FloatArray(7) { b.getFloat(it * 4) }
+                val rows = h[2].toInt(); val cols = h[5].toInt(); val bands = h[6].toInt()
+                require(rows >= 1 && cols >= 1 && bands >= 1 && buf.size == 28 + rows * cols * bands) { "area grid size mismatch" }
+                return AreaGrid(h[0].toDouble(), h[1].toDouble(), rows, h[3].toDouble(), h[4].toDouble(), cols, bands, buf.copyOfRange(28, buf.size))
+            }
+        }
+    }
+
+    /** Runs one coverage map. Throws [IllegalArgumentException] for a request the engine refuses. */
+    fun area(request: AreaRequest): AreaGrid {
+        check(loaded) { "VOACAP engine not available: ${loadError?.message}" }
+        return AreaGrid.unpack(nativeArea(request.toJson()))
+    }
+
     @Volatile private var loadError: Throwable? = null
     private val loaded: Boolean by lazy {
         try {
@@ -134,4 +220,5 @@ object Voacap {
     }
 
     @JvmStatic private external fun nativeRun(request: String): String
+    @JvmStatic private external fun nativeArea(request: String): ByteArray
 }

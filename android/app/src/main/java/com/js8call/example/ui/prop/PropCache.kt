@@ -18,4 +18,7 @@ class PropCache : ViewModel() {
     @Volatile var bitmapKey: String? = null
     @Volatile var bitmap: Bitmap? = null
     @Volatile var rows: List<StoplightView.Row>? = null
+
+    /** VOACAP's maps, per hour (the default model). */
+    val voacap = com.js8call.example.prop.VoacapCoverage()
 }

@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.edit
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
@@ -27,6 +28,8 @@ import com.google.android.material.textfield.TextInputLayout
 import com.js8call.example.R
 import com.js8call.example.prop.Antenna
 import com.js8call.example.prop.Band
+import com.js8call.example.prop.SsnForecast
+import com.js8call.example.prop.VoacapCoverage
 import com.js8call.example.prop.Js8Speed
 import com.js8call.example.prop.NetPath
 import com.js8call.example.prop.Observation
@@ -154,6 +157,7 @@ class PropagationFragment : Fragment() {
         }
         view.findViewById<Chip>(R.id.prop_solar).setOnClickListener { showSolarDialog() }
         view.findViewById<Chip>(R.id.prop_station).setOnClickListener { showStationDialog() }
+        view.findViewById<Chip>(R.id.prop_model).setOnClickListener { showModelDialog() }
 
         val chartCard = view.findViewById<View>(R.id.prop_chart_card)
         chartCard.isVisible = prefs.getBoolean(PREF_CHART, resources.getBoolean(R.bool.prop_chart_open_default))
@@ -283,6 +287,25 @@ class PropagationFragment : Fragment() {
 
     private fun selectedTime(now: Long = System.currentTimeMillis()) = now + (hoursAhead * 3_600_000L).toLong()
 
+    /**
+     * Which model paints the map and the band chart: VOACAP (the default, issue #57) or this
+     * app's own model, which learns from what this station hears. Taps, scores elsewhere and the
+     * station learning always use the app's own model.
+     */
+    private fun usingVoacap(ctx: android.content.Context): Boolean =
+        com.js8call.voacap.Voacap.available() &&
+            PreferenceManager.getDefaultSharedPreferences(ctx).getString(PREF_MODEL, MODEL_VOACAP) == MODEL_VOACAP
+
+    private fun voacapInputs(me: LatLon, t: Long, profile: StationProfile, wx: SpaceWeather): VoacapCoverage.Inputs {
+        val utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = t }
+        val year = utc.get(java.util.Calendar.YEAR)
+        val month = utc.get(java.util.Calendar.MONTH) + 1
+        val ssn = SsnForecast.choose(weather.ssnForecast(), year, month, wx)
+        return VoacapCoverage.Inputs(me, month, year, ssn.ssn, profile.powerW, profile.speed.thresholdDb, VoacapPath.noise(this))
+    }
+
+    private fun hourUtc(t: Long) = ((t / 3_600_000L) % 24).toInt()
+
     private fun render() {
         val v = view ?: return
         val ctx = context ?: return
@@ -331,6 +354,13 @@ class PropagationFragment : Fragment() {
             all.forEach { o -> m[o.call] = o.grid ?: traffic.gridFor(o.call); o.by?.let { b -> m[b] = traffic.gridFor(b) } }
         }
         val gridFor: (String) -> String? = { grids[it] }
+        val voacap = me != null && usingVoacap(ctx)
+        val vIn = if (voacap && me != null) voacapInputs(me, t, profile, wx) else null
+        val vHour = hourUtc(t)
+        renderModelChip(v, voacap)
+        if (vIn != null && cache.voacap.cached(vIn, vHour) == null) {
+            v.findViewById<TextView>(R.id.prop_learning).text = getString(R.string.prop_voacap_working, vHour)
+        }
         submit(worker, "Prop render") {
             if (gen != generation) return@submit
             val key = "${all.size}|${listening.size}|$profile|$me"
@@ -346,7 +376,10 @@ class PropagationFragment : Fragment() {
             }
             predictor = p
             // Same band, same 5-minute slot, same inputs: reuse the last picture.
-            val picKey = listOf(key, band.name, t / 300_000L, wx.sfi, wx.kIndex, p.nowcast.phi).joinToString("|")
+            val maps = vIn?.let { runCatching { cache.voacap.maps(it, vHour) }.onFailure { e -> android.util.Log.w("PropFragment", "VOACAP map failed", e) }.getOrNull() }
+            if (gen != generation) return@submit
+            val picKey = if (maps != null) listOf("voacap", vIn?.key, vHour, band.name).joinToString("|")
+                else listOf(key, band.name, t / 300_000L, wx.sfi, wx.kIndex, p.nowcast.phi).joinToString("|")
             val reuse = cache.bitmapKey == picKey && cache.bitmap != null && cache.rows != null
             val heard = ObservationStore.relevant(all, band, t, now, gridFor)
                 .groupBy { it.obs.call }
@@ -359,14 +392,17 @@ class PropagationFragment : Fragment() {
                     ObservationStore.relevant(all, b, t, now, gridFor).map { it.obs.call to it.position }.distinctBy { it.first }
                         .forEach { (_, pos) -> counts[PropagationModel.CHART_EDGES_KM.indexOfFirst { Geo.distanceKm(me, pos) < it }]++ }
                 }
-                StoplightView.Row(b, p.stoplight(b, t), counts.toList())
+                val row = if (maps != null && me != null) cache.voacap.stoplight(maps, me, b.ordinal) else p.stoplight(b, t)
+                StoplightView.Row(b, row, counts.toList())
             }
             val bitmap = if (reuse) cache.bitmap else {
-                p.coverage(band, t, GRID_W, GRID_H, MAX_LAT, -MAX_LAT, -180.0, 180.0)?.let { toBitmap(it, GRID_W, GRID_H) }
+                (if (maps != null) cache.voacap.coverage(maps, band.ordinal, GRID_W, GRID_H, MAX_LAT, -MAX_LAT, -180.0, 180.0)
+                else p.coverage(band, t, GRID_W, GRID_H, MAX_LAT, -MAX_LAT, -180.0, 180.0))?.let { toBitmap(it, GRID_W, GRID_H) }
                     .also { bmp -> cache.bitmap = bmp; cache.rows = rows; cache.bitmapKey = picKey }
             }
             if (gen != generation) return@submit
-            main.post { if (gen == generation) guarded("Prop deliver") { deliver(heard, heardMe, net, rows, bitmap, t, p, listenedHours) } }
+            val vText = if (vIn != null) voacapStatus(vIn, maps != null) else null
+            main.post { if (gen == generation) guarded("Prop deliver") { deliver(heard, heardMe, net, rows, bitmap, t, p, listenedHours, vText) } }
         }
     }
 
@@ -379,6 +415,7 @@ class PropagationFragment : Fragment() {
         t: Long,
         p: Predictor,
         listenedHours: Double,
+        voacapText: String? = null,
     ) {
         val v = view ?: return
         val st = style
@@ -414,7 +451,7 @@ class PropagationFragment : Fragment() {
             heard.isEmpty() && net.isEmpty() -> getString(R.string.prop_heard_none)
             else -> getString(R.string.prop_heard_summary_net, heard.size, heardMe, net.size)
         }
-        v.findViewById<TextView>(R.id.prop_learning).text = learningText(p, listenedHours)
+        v.findViewById<TextView>(R.id.prop_learning).text = voacapText ?: learningText(p, listenedHours)
         v.findViewById<StoplightView>(R.id.prop_chart).apply {
             this.rows = rows
             selected = band
@@ -448,13 +485,24 @@ class PropagationFragment : Fragment() {
         val band = this.band
         val t = selectedTime()
         // Skip work when nothing changed (camera idle fires often).
-        val key = String.format(Locale.US, "%s|%d|%.3f|%.3f|%.3f|%.3f", band.name, t / 600_000L, north, south, west, east)
+        val ctx = context ?: return@guarded
+        val vIn = me?.takeIf { usingVoacap(ctx) }?.let { voacapInputs(it, t, p.profile, weather.effective(t)) }
+        val key = String.format(Locale.US, "%s|%d|%.3f|%.3f|%.3f|%.3f|%s", band.name, t / 600_000L, north, south, west, east, vIn?.key)
         if (key == detailKey) return@guarded
         detailKey = key
         val gen = ++detailGeneration
         submit(detailWorker, "Prop detail") {
             if (gen != detailGeneration) return@submit
-            val grid = p.coverage(band, t, DETAIL_W, DETAIL_H, north, south, west, east) ?: return@submit
+            val grid = if (vIn != null) {
+                // A bounded VOACAP run for what is on screen, about 60 points across.
+                val step = ((east - west) / 60.0).coerceIn(0.25, VoacapCoverage.WORLD_STEP_DEG)
+                val box = runCatching { cache.voacap.detail(vIn, hourUtc(t), south, north, west.coerceAtLeast(-180.0), east.coerceAtMost(180.0), step) }.getOrNull()
+                    ?: return@submit
+                val maps = VoacapCoverage.Maps(box, null, null)
+                cache.voacap.coverage(maps, band.ordinal, DETAIL_W, DETAIL_H, north, south, west, east)
+            } else {
+                p.coverage(band, t, DETAIL_W, DETAIL_H, north, south, west, east) ?: return@submit
+            }
             val bmp = toBitmap(grid, DETAIL_W, DETAIL_H)
             main.post {
                 if (gen != detailGeneration || view == null) return@post
@@ -474,6 +522,69 @@ class PropagationFragment : Fragment() {
                 }
             }
         }
+    }
+
+    private fun renderModelChip(v: View, voacap: Boolean) {
+        v.findViewById<Chip>(R.id.prop_model).text = getString(if (voacap) R.string.prop_model_voacap else R.string.prop_model_ours)
+    }
+
+    private fun voacapStatus(inputs: VoacapCoverage.Inputs, ok: Boolean): String {
+        if (!ok) return getString(R.string.prop_voacap_failed)
+        val noise = getString(when (inputs.noise) {
+            com.js8call.voacap.Voacap.Noise.INDUSTRIAL -> R.string.voacap_noise_industrial
+            com.js8call.voacap.Voacap.Noise.RESIDENTIAL -> R.string.voacap_noise_residential
+            com.js8call.voacap.Voacap.Noise.RURAL -> R.string.voacap_noise_rural
+            com.js8call.voacap.Voacap.Noise.REMOTE -> R.string.voacap_noise_remote
+        })
+        return getString(R.string.prop_voacap_status, inputs.ssn.roundToInt(), noise)
+    }
+
+    private fun showModelDialog() {
+        val ctx = context ?: return
+        val prefs = PreferenceManager.getDefaultSharedPreferences(ctx)
+        val available = com.js8call.voacap.Voacap.available()
+        val labels = arrayOf(getString(R.string.prop_model_voacap_long), getString(R.string.prop_model_ours_long))
+        val current = if (usingVoacap(ctx)) 0 else 1
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.prop_model_title)
+            .setSingleChoiceItems(labels, current) { d, which ->
+                if (which == 0 && !available) {
+                    d.dismiss()
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx).setMessage(R.string.voacap_unavailable)
+                        .setPositiveButton(android.R.string.ok, null).show()
+                    return@setSingleChoiceItems
+                }
+                prefs.edit { putString(PREF_MODEL, if (which == 0) MODEL_VOACAP else MODEL_OURS) }
+                d.dismiss()
+                detailKey = null
+                render()
+            }
+            .setNeutralButton(R.string.voacap_noise_button) { _, _ -> pickNoise() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun pickNoise() {
+        val ctx = context ?: return
+        val all = com.js8call.voacap.Voacap.Noise.entries
+        val labels = all.map {
+            getString(when (it) {
+                com.js8call.voacap.Voacap.Noise.INDUSTRIAL -> R.string.voacap_noise_industrial
+                com.js8call.voacap.Voacap.Noise.RESIDENTIAL -> R.string.voacap_noise_residential
+                com.js8call.voacap.Voacap.Noise.RURAL -> R.string.voacap_noise_rural
+                com.js8call.voacap.Voacap.Noise.REMOTE -> R.string.voacap_noise_remote
+            })
+        }.toTypedArray()
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.voacap_noise_title)
+            .setSingleChoiceItems(labels, all.indexOf(VoacapPath.noise(this))) { d, which ->
+                VoacapPath.setNoise(ctx, all[which])
+                d.dismiss()
+                detailKey = null
+                render()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun learningText(p: Predictor, listenedHours: Double): String {
@@ -527,18 +638,25 @@ class PropagationFragment : Fragment() {
         val to = LatLon(latLng.latitude, latLng.longitude)
         val path = p.path(to, t) ?: return
         val sky = PropagationModel.Sky(t)
-        val r = p.score(to, sky, band)
+        // The verdict follows the map on screen: VOACAP's when that is the model shown.
+        val vMaps = if (usingVoacap(v.context)) cache.voacap.cached(voacapInputs(me, t, p.profile, weather.effective(t)), hourUtc(t)) else null
+        val r = vMaps?.sample(to.lat, to.lon, band.ordinal)?.toDouble() ?: p.score(to, sky, band)
         val verdict = when {
             r >= 0.66 -> "likely"
             r >= 0.33 -> "possible"
             r >= 0.10 -> "marginal"
             else -> "unlikely"
         }
-        val best = Band.entries.maxBy { p.score(to, sky, it) }
+        val best = Band.entries.maxBy { vMaps?.sample(to.lat, to.lon, it.ordinal)?.toDouble() ?: p.score(to, sky, it) }
         val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
         val dir = dirs[(((Geo.bearingDeg(me, to) + 22.5) % 360) / 45).toInt()]
         val margin = StationModel.marginDb(p.profile, path, band)
-        val text = String.format(
+        val text = if (vMaps != null) {
+            String.format(
+                Locale.US, "%,d km %s on %s: %s (VOACAP %d%%) · best %s",
+                path.distanceKm.roundToInt(), dir, band.label, verdict, (r * 100).roundToInt(), best.label,
+            )
+        } else String.format(
             Locale.US, "%,d km %s on %s: %s · MUF %.1f MHz · best %s · your margin %+.0f dB",
             path.distanceKm.roundToInt(), dir, band.label, verdict, path.medianMufMHz, best.label, margin,
         )
@@ -794,6 +912,9 @@ class PropagationFragment : Fragment() {
     companion object {
         private const val PREF_BAND = "prop_band"
         private const val PREF_CHART = "prop_chart_open"
+        const val PREF_MODEL = "prop_model"
+        const val MODEL_VOACAP = "voacap"
+        const val MODEL_OURS = "ours"
         private const val GRID_W = 360
         private const val GRID_H = 270
         private const val MAX_LAT = 85.0
