@@ -50,6 +50,13 @@
             app:useSimpleSummaryProvider="true"
             app:iconSpaceReserved="false" />
 
+        <SwitchPreferenceCompat
+            app:key="traffic_auto_show_groups"
+            app:title="@string/settings_auto_show_groups"
+            app:summary="@string/settings_auto_show_groups_summary"
+            app:defaultValue="false"
+            app:iconSpaceReserved="false" />
+
         <EditTextPreference
             app:key="my_status"
             app:title="@string/settings_status"

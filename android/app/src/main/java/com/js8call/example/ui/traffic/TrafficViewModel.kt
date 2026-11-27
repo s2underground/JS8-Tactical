@@ -6,6 +6,7 @@ import android.os.Looper
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import com.js8call.example.prop.Band
 import com.js8call.example.prop.ListeningLog
@@ -156,6 +157,7 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
     /** Band/frequency changes clear the waterfall tags right away. */
     private val dialPrefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "last_frequency") handler.post { refreshMarkers(System.currentTimeMillis()) }
+        if (key == GroupList.PREF_AUTO_SHOW || key == "my_groups") handler.post { publish() }
     }
     private val _mapData = MutableLiveData(MapData(emptyList(), emptyList()))
     val mapData: LiveData<MapData> = _mapData
@@ -887,17 +889,27 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         if (norm.length < 2) return null
         val prefs = PreferenceManager.getDefaultSharedPreferences(getApplication())
         val list = prefs.getString("my_groups", "").orEmpty().split(',', ' ', ';').map { it.trim().uppercase() }.filter { it.isNotEmpty() }
-        if (norm !in list) prefs.edit().putString("my_groups", (list + norm).joinToString(",")).apply()
+        prefs.edit {
+            if (norm !in list) putString("my_groups", (list + norm).joinToString(","))
+            // Watching a group again undoes "Stop watching".
+            putString(GroupList.PREF_HIDDEN, GroupList.unhide(prefs.getString(GroupList.PREF_HIDDEN, null), norm))
+        }
         select(norm)
         return norm
     }
 
-    /** Stop watching an @group or #tag. */
+    /**
+     * Stop watching an @group or #tag: off My Groups, and an @group is hidden from the list even
+     * when "Show groups heard on the air" is on, until it is watched again.
+     */
     fun unwatch(entry: String) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(getApplication())
         val list = prefs.getString("my_groups", "").orEmpty().split(',', ' ', ';').map { it.trim().uppercase() }
             .filter { it.isNotEmpty() && it != entry && "@$it" != entry }
-        prefs.edit().putString("my_groups", list.joinToString(",")).apply()
+        prefs.edit {
+            putString("my_groups", list.joinToString(","))
+            if (entry.startsWith("@")) putString(GroupList.PREF_HIDDEN, GroupList.hide(prefs.getString(GroupList.PREF_HIDDEN, null), entry))
+        }
         if (selectedKey == entry) select(ALL) else publish()
     }
 
@@ -964,10 +976,15 @@ class TrafficViewModel(application: Application) : AndroidViewModel(application)
         val live = engine.live()
         val myGroups = myGroups()
 
-        // Groups: configured ones plus any heard as recipients.
-        val groupKeys = (myGroups + messages.mapNotNull { it.recipient }.filter { it.startsWith("@") })
-            .filterNot { it == "@HB" }
-            .distinct()
+        // Groups: watched ones, plus those heard on the air when the operator wants them shown.
+        val prefs = PreferenceManager.getDefaultSharedPreferences(getApplication())
+        val groupKeys = GroupList.visible(
+            watched = myGroups,
+            heard = messages.mapNotNull { it.recipient }.filter { it.startsWith("@") }.distinct(),
+            hidden = GroupList.parse(prefs.getString(GroupList.PREF_HIDDEN, null)).toSet(),
+            autoShow = prefs.getBoolean(GroupList.PREF_AUTO_SHOW, false),
+            selected = selectedKey,
+        )
         // Watched #tags (e.g. #SITREP, #SWX): every message that carries the tag.
         val tagRows = myTags().map { t ->
             val tagged = messages.filter { hasTag(it, t) }
