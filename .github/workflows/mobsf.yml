@@ -1,0 +1,84 @@
+name: MobSF scan
+
+# Static scan of a published APK with MobSF (Mobile Security Framework). Findings are triaged in
+# docs/MASVS.md. Runs on every published release, on demand for any release tag (the rolling
+# test build by default), and on changes to this workflow.
+on:
+  release:
+    types: [ published ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose APK to scan
+        required: false
+        default: test-build
+  pull_request:
+    paths:
+      - '.github/workflows/mobsf.yml'
+      - 'tools/mobsf/**'
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: MobSF static scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MOBSF_IMAGE: opensecurity/mobile-security-framework-mobsf:latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag || 'test-build' }}
+        run: |
+          mkdir -p apk
+          gh release download "$TAG" --pattern '*.apk' --dir apk
+          ls -l apk
+          echo "APK=$(ls apk/*.apk | head -1)" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      # A throwaway key for this run only: the server listens on localhost and is gone when the job ends.
+      - name: Start MobSF
+        run: |
+          KEY=$(openssl rand -hex 32)
+          echo "::add-mask::$KEY"
+          echo "MOBSF_KEY=$KEY" >> "$GITHUB_ENV"
+          docker pull "$MOBSF_IMAGE"
+          docker inspect --format 'MobSF image: {{index .RepoDigests 0}}' "$MOBSF_IMAGE"
+          docker run -d --name mobsf -p 127.0.0.1:8000:8000 -e MOBSF_API_KEY="$KEY" "$MOBSF_IMAGE"
+          for i in $(seq 1 60); do
+            curl -fs -o /dev/null http://127.0.0.1:8000/api_docs && exit 0
+            sleep 5
+          done
+          docker logs mobsf | tail -50
+          exit 1
+
+      - name: Scan
+        run: |
+          H="Authorization: $MOBSF_KEY"
+          HASH=$(curl -fsS -H "$H" -F "file=@$APK" http://127.0.0.1:8000/api/v1/upload | python3 -c 'import json,sys; print(json.load(sys.stdin)["hash"])')
+          curl -fsS --max-time 3000 -H "$H" --data "hash=$HASH" http://127.0.0.1:8000/api/v1/scan -o /dev/null
+          curl -fsS -H "$H" --data "hash=$HASH" http://127.0.0.1:8000/api/v1/scorecard -o scorecard.json
+          curl -fsS -H "$H" --data "hash=$HASH" http://127.0.0.1:8000/api/v1/report_json -o report.json
+          curl -fsS -H "$H" --data "hash=$HASH" http://127.0.0.1:8000/api/v1/download_pdf -o report.pdf || true
+
+      - name: Summary
+        run: python3 tools/mobsf/summarize.py scorecard.json report.json "$TAG" "$APK" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reports
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mobsf-${{ env.TAG }}
+          path: |
+            scorecard.json
+            report.json
+            report.pdf
+          if-no-files-found: warn
