@@ -164,6 +164,10 @@ Library.
 
 Bug reports, on-air testing and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
 for how changes are proposed, tested and reviewed.
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). How decisions are made
+and who does what: [GOVERNANCE.md](GOVERNANCE.md). How the app is put together:
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); why we believe it is secure, and the known gaps:
+[docs/ASSURANCE_CASE.md](docs/ASSURANCE_CASE.md).
 
 ## Building
 
