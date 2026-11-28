@@ -37,6 +37,20 @@ Issues and pull requests are in English.
   assistant (see "How this software is made" in the [README](README.md)), so the same standard of
   tests and on-air checks applies to everyone.
 
+## Dependencies
+
+Every library and Gradle plugin the build downloads is checked against a SHA-256 recorded in
+`android/gradle/verification-metadata.xml` (Gradle dependency verification); a download that
+doesn't match fails the build. When a pull request in this repository adds or updates a
+dependency, the **Dependency checksums** workflow records the new checksums and commits them to
+the pull request, where they are reviewed with the rest of the diff. To record them yourself (for
+example in a fork):
+
+```
+cd android
+./gradlew --write-verification-metadata sha256 assembleDebug testDebugUnitTest lintDebug
+```
+
 ## Building and testing
 
 See [android/README.md](android/README.md) for the full setup. In short:

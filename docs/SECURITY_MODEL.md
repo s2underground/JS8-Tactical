@@ -53,6 +53,10 @@ multicast on the local network, readable by any device on that network).
   CQ only ever carries the station's 4-character square, and a PSK Reporter spot is never of the
   station itself; unit-test line coverage
   (JaCoCo) reported on every build.
+- Gradle dependencies and plugins are pinned by version and by SHA-256 (Gradle dependency
+  verification, `android/gradle/verification-metadata.xml`); new checksums are recorded by a
+  workflow that runs the build with a read-only token and committed by a separate job that runs no
+  build code.
 - Third-party native code is pinned: JS8Core, llama.cpp and the VOACAP engine (hfcast) as git
   submodules at fixed commits, Hamlib at a fixed commit in the build workflow.
 - An OWASP MASVS self-assessment ([MASVS.md](MASVS.md)), with a MobSF static scan of every published
