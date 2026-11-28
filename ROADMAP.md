@@ -34,7 +34,7 @@ readable by every standard JS8 station, never limit the operator, and keep secur
 - Test coverage of the app logic towards 80%, by moving logic out of the screens and the service
   into tested, fuzzed code.
 - Reproducible builds (anyone can rebuild a byte-identical APK), then F-Droid.
-- Gradle dependencies pinned by checksum; automatic formatting checks.
+- Automatic formatting checks (ktlint).
 - Target SDK raised once the layouts are tested on Android 15.
 - OpenSSF Best Practices Silver badge; an independent security audit when the project is ready
   for one.
