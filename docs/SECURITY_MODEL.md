@@ -33,7 +33,7 @@ screen, with links back to the original transmissions.
 
 The callsign, grid square, settings, received traffic, stored and posted messages, and logs live in
 the app's private storage. Of your location, only the 4-character grid square is ever transmitted. Diagnostic reports
-leave out the callsign and grid but include recent received traffic. Optional network features are
+leave out callsigns, cut grid squares to 4 characters and include recent received traffic. Optional network features are
 off by default: PSK Reporter spotting (UDP) and the ATAK feed (unauthenticated UDP, unicast or
 multicast on the local network, readable by any device on that network).
 
@@ -48,7 +48,7 @@ multicast on the local network, readable by any device on that network).
   (`scripts/fuzz-core.sh`, libFuzzer with AddressSanitizer and UndefinedBehaviorSanitizer);
   weekly fuzzing of the Kotlin code that reads received text (`scripts/fuzz-kotlin.sh`, Jazzer),
   with property checks: a message held for one station is only handed to that station, and the
-  diagnostics scrub leaves no callsign, grid or IP address behind; unit-test line coverage
+  diagnostics scrub leaves no callsign, fine grid characters or IP address behind; unit-test line coverage
   (JaCoCo) reported on every build.
 - Third-party native code is pinned: JS8Core, llama.cpp and the VOACAP engine (hfcast) as git
   submodules at fixed commits, Hamlib at a fixed commit in the build workflow.

@@ -7,8 +7,9 @@ package com.js8call.example
  * is full of them: the operator's own in every transmission, everyone else's in everything heard.
  * Each callsign becomes a label that stays the same throughout the report (the operator's own is
  * MY-STATION, others STATION-1, STATION-2, …), so traffic still reads correctly for debugging.
- * Grid squares (4, 6 or 8 characters), MGRS references, latitude/longitude pairs, Bluetooth
- * addresses, IP addresses and email addresses are masked too.
+ * Grid squares are cut to their first 4 characters, the precision JS8 sends over the air (EM96ab12
+ * becomes EM96****), so propagation and map problems can still be followed. MGRS references,
+ * latitude/longitude pairs, Bluetooth addresses, IP addresses and email addresses are masked.
  */
 object DiagnosticsPrivacy {
 
@@ -21,8 +22,8 @@ object DiagnosticsPrivacy {
     private val CALL = Regex("(?<![A-Za-z0-9])((?:[A-Z]{1,2}|[0-9][A-Z]|[A-Z][0-9])[0-9][A-Z]{1,4})(?:/[A-Z0-9]{1,4})?(?![A-Za-z0-9])")
     /** Upper-case words of that shape that aren't callsigns. */
     private val NOT_CALLS = setOf("JS8CALL", "JS8CORE", "JS8LIB", "UTF8", "MP3", "H264")
-    /** Maidenhead locators: 4, 6 or 8 characters (EM96, EM96ab, EM96ab12; GPS fills in all 8). */
-    private val GRID = Regex("(?<![A-Za-z0-9])[A-Ra-r]{2}[0-9]{2}(?:[A-Xa-x]{2}(?:[0-9]{2})?)?(?![A-Za-z0-9])")
+    /** 6- or 8-character Maidenhead locators (EM96ab, EM96ab12; GPS fills in all 8). Group 1 is the 4 kept. */
+    private val FINE_GRID = Regex("(?<![A-Za-z0-9])([A-Ra-r]{2}[0-9]{2})([A-Xa-x]{2}(?:[0-9]{2})?)(?![A-Za-z0-9])")
     /**
      * MGRS references as the report forms write them: zone and band, 100 km square, then an
      * easting and northing of 1 to 5 digits each, with or without spaces (17S MV 12345 67890,
@@ -43,7 +44,6 @@ object DiagnosticsPrivacy {
     private val IPV4 = Regex("(?<![0-9A-Za-z.])(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?![0-9.])")
     private val EMAIL = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
 
-    /** The report with personal details replaced. [myCall] and [myGrid] are the operator's own. */
     /**
      * Message text the app logs (what was sent and heard) becomes its length only: free text can
      * hold names, places and report details no pattern can recognise (second audit, N8). The
@@ -60,7 +60,8 @@ object DiagnosticsPrivacy {
     /** "Decoded: … (SNR: -12 dB)" and "Sending Heartbeat: … at 1500Hz" style lines. */
     private val DECODED_LINE = Regex("(Decoded: |Auto HB ACK: )([^\\n]*?)( \\(SNR: [^\\n]*\\)|$)", RegexOption.MULTILINE)
 
-    fun scrub(report: String, myCall: String, myGrid: String): String {
+    /** The report with personal details replaced. [myCall] is the operator's own callsign. */
+    fun scrub(report: String, myCall: String): String {
         val labels = LinkedHashMap<String, String>()
         val me = base(myCall)
         if (me.isNotEmpty()) labels[me] = MY_LABEL
@@ -78,12 +79,9 @@ object DiagnosticsPrivacy {
         t = COORD.replace(t) { m -> m.groupValues[1] + "[COORD]" }
         t = LAT_LON.replace(t, "[LATLON]")
         t = MGRS.replace(t, "[MGRS]")
-        // The operator's own grid, even written in lower case or as part of a 6- or 8-character locator.
-        if (myGrid.length >= 4) {
-            t = Regex("(?<![A-Za-z0-9])" + Regex.escape(myGrid.take(4)) + "(?:[A-Xa-x]{2}(?:[0-9]{2})?)?(?![A-Za-z0-9])", RegexOption.IGNORE_CASE)
-                .replace(t, "[GRID]")
-        }
-        t = GRID.replace(t, "[GRID]")
+        // Grids keep their 4-character square, which is all JS8 ever transmits; the finer characters
+        // (down to a few hundred metres when GPS fills them in) become stars, so the length still shows.
+        t = FINE_GRID.replace(t) { m -> m.groupValues[1] + "*".repeat(m.groupValues[2].length) }
         // The operator's own call in any case or with a suffix, then every other call-shaped word.
         if (me.isNotEmpty()) {
             t = Regex("(?<![A-Za-z0-9])(?:[A-Za-z0-9]{1,4}/)?" + Regex.escape(me) + "(?:/[A-Za-z0-9]{1,4})?(?![A-Za-z0-9])", RegexOption.IGNORE_CASE)

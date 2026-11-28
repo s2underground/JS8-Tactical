@@ -267,7 +267,7 @@ object CrashReporter {
 
     /**
      * Everything useful for a bug report, built on demand (Settings → Diagnostics):
-     * app and device, radio setup (no callsign or grid), past crash/ANR reports,
+     * app and device, radio setup (no callsign; grid to 4 characters), past crash/ANR reports,
      * anything pending, and the app's own recent log lines (Android only lets an
      * app read its own). Shared only when the user chooses to.
      */
@@ -277,8 +277,10 @@ object CrashReporter {
         val sb = StringBuilder()
         sb.append("JS8-Tactical ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.GIT_SHA}) · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}\n")
         sb.append("Report made ${stamp(System.currentTimeMillis())}\n\n")
-        sb.append("Personal details removed: callsigns are MY-STATION / STATION-n; grids, positions and addresses masked; message text replaced by its length.\n\n")
-        sb.append("== Setup (no callsign or grid)\n")
+        sb.append("Personal details removed: callsigns are MY-STATION / STATION-n; grids cut to 4 characters; positions and addresses masked; message text replaced by its length.\n\n")
+        sb.append("== Setup (no callsign)\n")
+        // The 4-character grid is what goes out over the air anyway, and helps with propagation and map reports.
+        p.getString("grid", "").orEmpty().trim().take(4).takeIf { it.length == 4 }?.let { sb.append("grid (4 characters) = $it\n") }
         // Every setting except ones that identify the operator or their team.
         val private = Regex("(?i)call|grid|info|status|group|roster|host|sent_uids|location|lat|lon|token")
         // Each section is guarded: one that fails says why and the rest of the report still comes out.
@@ -337,9 +339,9 @@ object CrashReporter {
             }
         }.getOrElse { "(log unavailable: ${it.message})" }
         sb.append(com.js8call.example.util.tailLines(log, 220_000))
-        // Callsigns (own and heard), grids, Bluetooth/IP/email addresses out before it can be shared.
+        // Callsigns (own and heard), fine grid characters, Bluetooth/IP/email addresses out before it can be shared.
         return runCatching {
-            DiagnosticsPrivacy.scrub(sb.toString(), p.getString("callsign", "").orEmpty(), p.getString("grid", "").orEmpty())
+            DiagnosticsPrivacy.scrub(sb.toString(), p.getString("callsign", "").orEmpty())
         }.getOrElse {
             // Never share an unscrubbed report: say what failed, nothing else.
             "JS8-Tactical ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.GIT_SHA}) · Android ${Build.VERSION.RELEASE} · ${Build.MANUFACTURER} ${Build.MODEL}\n" +

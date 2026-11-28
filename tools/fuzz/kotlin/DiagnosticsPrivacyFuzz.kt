@@ -6,8 +6,9 @@ import com.js8call.example.DiagnosticsPrivacy
 /**
  * The scrub that takes personal details out of a diagnostics report before a user shares it.
  * Hides the operator's own callsign (any case), another station's callsign (upper case, as the
- * app logs them), the operator's grid (4 and 8 characters), an MGRS reference and an IP address
- * among arbitrary text, then checks none of them survives, whatever surrounds them.
+ * app logs them), the operator's 8-character grid, an MGRS reference and an IP address among
+ * arbitrary text, then checks none of them survives, whatever surrounds them. (Grids are cut to the
+ * 4 characters JS8 transmits, so only the finer characters have to go.)
  */
 object DiagnosticsPrivacyFuzz {
     private const val LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -58,19 +59,17 @@ object DiagnosticsPrivacyFuzz {
             append(d.consumeString(40)); append(sep())
             append(otherCall); append(sep())
             append(d.consumeString(40)); append(sep())
-            append(anyCase(d, myGrid)); append(sep())
             append(anyCase(d, myFullGrid)); append(sep())
             append(position); append(sep())
             append(d.consumeString(40)); append(" ")
             append(ip); append(" ")
             append(d.consumeRemainingAsString())
         }
-        val out = DiagnosticsPrivacy.scrub(report, myCall, myGrid)
+        val out = DiagnosticsPrivacy.scrub(report, myCall)
         check(!visible(out, myCall)) { "own callsign $myCall survived in: $out" }
         // Other stations' calls are masked as the app logs them, in upper case. (A lower-case word of
         // that shape is left alone by design: in a log it is far more often an id or a file name.)
         check(!visible(out, otherCall, exactCase = true)) { "callsign $otherCall survived in: $out" }
-        check(!visible(out, myGrid)) { "own grid $myGrid survived in: $out" }
         check(!visible(out, myFullGrid)) { "own 8-character grid $myFullGrid survived in: $out" }
         // As a whole reference: the same characters glued inside a longer word ("A1C1C AA 0 0", which
         // the fuzzer built from its own random text) aren't an MGRS position.
