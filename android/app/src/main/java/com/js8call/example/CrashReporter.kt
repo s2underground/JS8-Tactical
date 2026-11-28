@@ -104,7 +104,16 @@ object CrashReporter {
      * The report dialog: a big Copy button first (field use: one tap, paste anywhere),
      * then the report with the newest problem at the top.
      */
-    private fun showReport(activity: AppCompatActivity, text: String) {
+    private fun showReport(activity: AppCompatActivity, raw: String) {
+        // Copy and Share send this anywhere, so it gets the same scrub as a shared diagnostics report:
+        // an exception message can carry received text, a callsign or a locator. Never shown unscrubbed.
+        val text = runCatching {
+            val call = androidx.preference.PreferenceManager.getDefaultSharedPreferences(activity).getString("callsign", "").orEmpty()
+            DiagnosticsPrivacy.scrub(raw, call)
+        }.getOrElse {
+            "JS8-Tactical ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.GIT_SHA})\n" +
+                "The privacy scrub failed, so the error report was withheld: ${failure(it)}\n"
+        }
         val entries = text.split("\n===== ").map { it.trim() }.filter { it.isNotEmpty() }
         val head = entries.firstOrNull { it.startsWith("JS8-Tactical") }
         val problems = entries.filterNot { it.startsWith("JS8-Tactical") }

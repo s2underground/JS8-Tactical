@@ -52,8 +52,9 @@ object AiWork {
         PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(PREF_DOUBLE_CHECK, true)
 
     private fun checkKey(message: String, claim: String): String {
-        val md = java.security.MessageDigest.getInstance("SHA-1").digest("c1:$message\u0001$claim".toByteArray())
-        return md.take(10).joinToString("") { "%02x".format(it) }
+        // SHA-256, 128 bits: see AiPrompt.key.
+        val md = java.security.MessageDigest.getInstance("SHA-256").digest("c1:$message\u0001$claim".toByteArray())
+        return md.take(16).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
     }
 
     /** Result of the model's check of [claim] against [message] (OFF when the setting is off). */
