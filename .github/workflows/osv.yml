@@ -10,12 +10,12 @@ on:
       - 'android/gradle/verification-metadata.xml'
       - '.github/workflows/osv.yml'
       - 'tools/osv/**'
-      - 'osv-scanner.toml'
+      - '**/osv-scanner.toml'
   push:
     branches: [ master ]
     paths:
       - 'android/gradle/verification-metadata.xml'
-      - 'osv-scanner.toml'
+      - '**/osv-scanner.toml'
   schedule:
     - cron: '23 5 * * 3'   # weekly, Wednesday 05:23 UTC
   workflow_dispatch:
@@ -50,7 +50,11 @@ jobs:
 
       - name: Scan
         run: |
-          osv-scanner scan source --recursive --format json --output osv.json . || true
+          # --config overrides the local exception file, so this report shows every finding.
+          osv-scanner scan source --recursive --config tools/osv/report-all.toml --format json --output osv.json . || true
+          # And what Scorecard sees, with the reviewed build-tooling exceptions applied:
+          osv-scanner scan source --recursive . > with-exceptions.txt 2>&1 || true
+          tail -5 with-exceptions.txt
           test -s osv.json
 
       - name: Triage
