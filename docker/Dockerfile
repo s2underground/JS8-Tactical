@@ -57,7 +57,7 @@ RUN EXEC_PATH=$(find AppDir -type f -name "js8call" -executable | head -1) && \
     --icon-file AppDir/usr/share/icons/hicolor/128x128/apps/js8call_icon.png
 
 # Final output stage - using minimal image with shell for extraction
-FROM busybox:latest AS output
+FROM busybox:latest@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4 AS output
 COPY --from=js8call-builder /js8call-prefix/build/*.deb /
 COPY --from=appimage-builder /appimage/*.AppImage /
 

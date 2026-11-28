@@ -404,11 +404,21 @@ jobs:
           path: publish
 
       - name: Attest build provenance
+        id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             publish/*.apk
             publish/*.cdx.json
+
+      # The signed provenance (Sigstore bundle with the in-toto SLSA statement) also goes on the
+      # release, so it can be checked offline: gh attestation verify <apk> --bundle <apk>.intoto.jsonl
+      - name: Keep the provenance with the release
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          APK=$(ls publish/*.apk | head -1)
+          cp "$BUNDLE" "$APK.intoto.jsonl"
 
       - name: Publish
         env:
@@ -418,10 +428,10 @@ jobs:
         run: |
           gh release view test-build >/dev/null 2>&1 || gh release create test-build --prerelease --title "Latest test build" --notes "Rolling test build from master."
           # Only the newest test build is kept on the release.
-          for old in $(gh release view test-build --json assets --jq '.assets[].name' | grep -E '\.(apk|cdx\.json)$'); do
+          for old in $(gh release view test-build --json assets --jq '.assets[].name' | grep -E '\.(apk|cdx\.json|intoto\.jsonl)$'); do
             gh release delete-asset test-build "$old" -y
           done
-          gh release upload test-build "publish/$NAME" "publish/${NAME%.apk}.cdx.json" --clobber
+          gh release upload test-build "publish/$NAME" "publish/${NAME%.apk}.cdx.json" "publish/$NAME.intoto.jsonl" --clobber
           gh release edit test-build --notes "Rolling test build from master. Commit ${GITHUB_SHA::8}, run #${GITHUB_RUN_NUMBER}, built $(date -u +%Y-%m-%dT%H:%MZ)."
 
   # Puts the signed APK and its .sha256 on the release for the tag.
@@ -442,11 +452,21 @@ jobs:
           path: publish
 
       - name: Attest build provenance
+        id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             publish/*.apk
             publish/*.cdx.json
+
+      # The signed provenance (Sigstore bundle with the in-toto SLSA statement) also goes on the
+      # release, so it can be checked offline: gh attestation verify <apk> --bundle <apk>.intoto.jsonl
+      - name: Keep the provenance with the release
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          APK=$(ls publish/*.apk | head -1)
+          cp "$BUNDLE" "$APK.intoto.jsonl"
 
       - name: Publish
         env:
@@ -457,7 +477,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           PRE=""; case "$TAG" in *alpha*|*beta*|*rc*) PRE="--prerelease";; esac
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" $PRE --title "JS8-Tactical ${TAG}" --notes "Signed build of ${TAG} (commit ${GITHUB_SHA::8})."
-          gh release upload "$TAG" "publish/$NAME" "publish/${NAME}.sha256" "publish/${NAME%.apk}.cdx.json" --clobber
+          gh release upload "$TAG" "publish/$NAME" "publish/${NAME}.sha256" "publish/${NAME%.apk}.cdx.json" "publish/$NAME.intoto.jsonl" --clobber
 
 #  lint:
 #    name: Lint
