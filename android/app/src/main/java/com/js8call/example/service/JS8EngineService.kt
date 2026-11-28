@@ -130,6 +130,7 @@ class JS8EngineService : Service() {
             val now = System.currentTimeMillis()
             val txNow = isTransmitActive() || txSessionActive
             UsbDropouts.record(this@JS8EngineService, name, now, lastTxActivityMs, txNow)
+            reconnectStartPending = false
             stopEngine()
             broadcastAudioDeviceLost(name)
             // Field case Nov 19: the interface kept dropping and coming back; the receiver
@@ -168,9 +169,12 @@ class JS8EngineService : Service() {
         override fun run() {
         val id = reconnectDeviceId
         if (engine != null || engineStartInProgress || id < 0) return
-        // The previous engine may still be releasing its audio; try again shortly.
-        if (engineStoppingSinceMs > 0 && System.currentTimeMillis() < reconnectDeadlineMs) {
-            mainHandler.postDelayed(this, 2_000L)
+        // The previous engine may still be releasing its audio, or its rig control still shutting
+        // down; try again shortly. Field report (build 360): the restart came 3 s after the radio
+        // returned, rig teardown was still retrying the PTT release, and the start was refused, so
+        // the receiver stayed off until the operator restarted it.
+        if (restartBlocked() && System.currentTimeMillis() < reconnectDeadlineMs) {
+            mainHandler.postDelayed(this, 1_000L)
             return
         }
         reconnectName = null
@@ -179,7 +183,7 @@ class JS8EngineService : Service() {
         PreferenceManager.getDefaultSharedPreferences(this@JS8EngineService).edit().putInt("last_audio_device_id", id).apply()
         holdTxUntilMs = System.currentTimeMillis() + RECONNECT_TX_HOLD_MS
         mainHandler.postDelayed({ broadcastProcessTxQueue() }, RECONNECT_TX_HOLD_MS + 500L)
-        UsbDropouts.recordRecovery(this@JS8EngineService, System.currentTimeMillis())
+        reconnectStartPending = true
         broadcastWarning(
             "The radio's USB audio dropped out and came back. The receiver has restarted. " +
                 "Anything waiting to be sent goes out after ${RECONNECT_TX_HOLD_MS / 1000} s of stable connection.",
@@ -188,6 +192,13 @@ class JS8EngineService : Service() {
         startEngine()
         }
     }
+
+    /** Set when a dropout restart is under way; the dropout log records the recovery once the engine is up. */
+    @Volatile private var reconnectStartPending = false
+
+    /** Something from the previous run that startEngine waits for is still shutting down. */
+    private fun restartBlocked(): Boolean =
+        engineStoppingSinceMs > 0 || rigTeardownPending || trusdxStartupWorkerActive || qmxStartupWorkerActive
 
     private val reconnectGiveUp = Runnable {
         if (reconnectName == null || engine != null || engineStartInProgress) return@Runnable
@@ -1077,6 +1088,10 @@ class JS8EngineService : Service() {
             // Start engine
             if (engine?.start() == true) {
                 Log.i(TAG, "Engine started successfully")
+                if (reconnectStartPending) {
+                    reconnectStartPending = false
+                    UsbDropouts.recordRecovery(this, System.currentTimeMillis())
+                }
                 spectrumEventCount = 0
 
                 applyTxBoostSetting()
@@ -2302,7 +2317,12 @@ class JS8EngineService : Service() {
                             Log.e(TAG, "PTT release failed during shutdown", t)
                             false
                         }
-                        var released = releaseOnce()
+                        // Not keyed by us and its USB device already gone: a release can't arrive, and
+                        // Hamlib would spend ~8 s timing out on it (build 360), holding up the restart.
+                        val linkGone = !couldBeKeyed && shutdownMode == "hamlib_usb" &&
+                            shutdownUsb?.isDeviceAttached() == false
+                        if (linkGone) Log.i(TAG, "Radio USB device gone and the radio was not keyed; skipping the PTT release")
+                        var released = if (linkGone) false else releaseOnce()
                         for (waitMs in longArrayOf(250, 500, 1_000, 2_000, 3_000)) {
                             if (released || !couldBeKeyed) break
                             Log.w(TAG, "PTT release failed during shutdown; trying again in $waitMs ms")
