@@ -1,0 +1,57 @@
+name: OSV vulnerability scan
+
+# Scans the repository's dependency lists (including the Gradle checksum file, which names every
+# build tool as well as every library) with OSV-Scanner, and sorts the findings into "shipped in
+# the APK" (from the SBOM of the latest test build) and "build tooling only". Fails when a shipped
+# component has a known vulnerability. Scorecard's Vulnerabilities check uses the same database.
+on:
+  pull_request:
+    paths:
+      - 'android/gradle/verification-metadata.xml'
+      - '.github/workflows/osv.yml'
+      - 'tools/osv/**'
+      - 'osv-scanner.toml'
+  push:
+    branches: [ master ]
+    paths:
+      - 'android/gradle/verification-metadata.xml'
+      - 'osv-scanner.toml'
+  schedule:
+    - cron: '23 5 * * 3'   # weekly, Wednesday 05:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: OSV scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Built from source at a fixed version; Go checks every module against its checksum database.
+      - name: Install OSV-Scanner v2.7.1
+        env:
+          GOTOOLCHAIN: auto
+        run: |
+          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: SBOM of the latest test build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release download test-build --pattern '*.cdx.json' --output sbom.cdx.json
+
+      - name: Scan
+        run: |
+          osv-scanner scan source --recursive --format json --output osv.json . || true
+          test -s osv.json
+
+      - name: Triage
+        run: python3 tools/osv/triage.py osv.json sbom.cdx.json | tee -a "$GITHUB_STEP_SUMMARY"
