@@ -108,7 +108,7 @@ object InterferenceUi {
             val show = a != null && a.level != Level.NONE && Interference.enabled(ctx)
             pill.isVisible = show
             if (!show) return@observe
-            val likely = a!!.level == Level.LIKELY
+            val likely = a.level == Level.LIKELY
             pill.text = ctx.getString(
                 when {
                     likely -> R.string.interference_pill

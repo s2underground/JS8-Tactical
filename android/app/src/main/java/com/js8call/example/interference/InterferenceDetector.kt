@@ -303,7 +303,7 @@ class InterferenceDetector(
         // Noise floor against this dial's normal for the hour.
         var above: Float? = null
         if (ready) {
-            val diffs = last.takeLast(3).map { it.floorDb - base!!.floorDb[hour] }
+            val diffs = last.takeLast(3).map { it.floorDb - base.floorDb[hour] }
             above = diffs.sorted()[1]
             if (diffs.all { it >= NOISE_DB }) kinds += Kind.NOISE
         }
