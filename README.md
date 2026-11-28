@@ -171,7 +171,8 @@ See [android/README.md](android/README.md). In short: Android SDK with NDK 28.2.
 CMake 3.22.1, then `cd android && ./gradlew assembleDebug`. The GitHub Actions workflow builds
 every push to `master` and publishes it as the rolling `test-build` release. Pushing a version
 tag (for example `v1.2.0-alpha.1`) builds a signed release APK and publishes it as a GitHub
-release; the signing key is created once with `scripts/make-release-key.sh`.
+release; the signing key is created once with `scripts/make-release-key.sh`. Each release goes
+through [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
 
 APK names follow the app version: releases are `JS8-Tactical-<version>.apk` (for example
 `JS8-Tactical-1.2.0-alpha.3.apk`, from tag `v1.2.0-alpha.3`; the tag must match `versionName` in
