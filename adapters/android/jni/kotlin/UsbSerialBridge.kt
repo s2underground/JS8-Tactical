@@ -248,6 +248,19 @@ class UsbSerialBridge(private val context: Context) {
         }
     }
 
+    /**
+     * False once the USB device this port was opened on has left the bus (unplugged, or the radio's
+     * USB hub reset). Nothing sent to it can arrive then, so callers can skip retries.
+     */
+    fun isDeviceAttached(): Boolean {
+        val id = activeDeviceId ?: return false
+        return try {
+            usbManager.deviceList.values.any { it.deviceId == id }
+        } catch (e: Exception) {
+            true // can't tell: assume it's there
+        }
+    }
+
     fun close() {
         withWriteLock {
             closeLocked()
