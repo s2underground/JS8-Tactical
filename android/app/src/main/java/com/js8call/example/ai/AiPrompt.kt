@@ -69,8 +69,10 @@ object AiPrompt {
     /** Stable key for a bulletin's text (repeats and relays of the same text share one summary). */
     fun key(body: String): String {
         val norm = "v4:" + body.uppercase().replace(Regex("[^A-Z0-9]"), "")
-        val md = java.security.MessageDigest.getInstance("SHA-1").digest(norm.toByteArray())
-        return md.take(10).joinToString("") { "%02x".format(it) }
+        // SHA-256, 128 bits kept: bulletins come off the air, and with a short or weak hash two
+        // crafted bulletins could share a key and one would be shown the other's summary.
+        val md = java.security.MessageDigest.getInstance("SHA-256").digest(norm.toByteArray())
+        return md.take(16).joinToString("") { "%02x".format(java.util.Locale.ROOT, it) }
     }
 
     // ---- Overview of the whole digest, built from the rule-based digest (not the raw log).

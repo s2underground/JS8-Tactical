@@ -55,6 +55,8 @@ multicast on the local network, readable by any device on that network).
   (JaCoCo) reported on every build.
 - Third-party native code is pinned: JS8Core, llama.cpp and the VOACAP engine (hfcast) as git
   submodules at fixed commits, Hamlib at a fixed commit in the build workflow.
+- An OWASP MASVS self-assessment ([MASVS.md](MASVS.md)), with a MobSF static scan of every published
+  release (`.github/workflows/mobsf.yml`) and its findings triaged there.
 - The engine is only ever handed the station's 4-character grid square (`OnAirText.grid4`), even
   when GPS has filled in an 8-character locator; JS8 frames carry no more than that anyway.
 - Weekly fuzzing of the VOACAP engine's entry points (`scripts/fuzz-voacap.sh`).

@@ -77,12 +77,8 @@ def main():
 
     secrets = report.get("secrets") or []
     if secrets:
-        print(f"#### Possible hardcoded secrets: {len(secrets)}\n")
-        for item in secrets[:30]:
-            text = str(item)
-            name = text.split(":", 1)[0].split("=", 1)[0].strip().strip('"')
-            print(f"- `{clean(name, 60)}` (value not shown, {len(text)} characters)")
-        print()
+        # Values are not printed here (the run log is public); they are in report.json.
+        print(f"Possible hardcoded secrets: {len(secrets)} high-entropy strings (see report.json)\n")
 
     trackers = report.get("trackers") or {}
     if isinstance(trackers, dict) and "detected_trackers" in trackers:
