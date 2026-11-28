@@ -53,9 +53,10 @@ ctest --test-dir "$BUILD" --output-on-failure --timeout 300
 
 echo "==> running JSC codeword parity check"
 CXX="${CXX:-c++}"
-PARITY="$BUILD/jsc-codeword-parity"
-# CXXFLAGS/LDFLAGS as for the CMake build (the sanitizer job sets them); split on purpose.
+# The hand-built tests below take CXXFLAGS/LDFLAGS like the CMake build (the sanitizer job sets
+# them), split into words on purpose.
 # shellcheck disable=SC2086
+PARITY="$BUILD/jsc-codeword-parity"
 "$CXX" -std=c++20 -O2 -pthread ${CXXFLAGS:-} \
   -I "$CORE/include" \
   -I "$CORE/src/protocol" \
@@ -67,29 +68,32 @@ PARITY="$BUILD/jsc-codeword-parity"
 
 echo "==> running the Sending bar's frame text test"
 OWN_FRAMES="$BUILD/own-frame-text-test"
-"$CXX" -std=c++20 -O2 -pthread \
+"$CXX" -std=c++20 -O2 -pthread ${CXXFLAGS:-} \
   -I "$CORE/include" \
   -I "$ROOT/adapters/android/jni" \
   "$ROOT/tools/own_frame_text_test.cpp" \
   "$BUILD/libjs8core.a" \
+  ${LDFLAGS:-} \
   -o "$OWN_FRAMES"
 "$OWN_FRAMES"
 
 echo "==> running the JNI text conversion test"
 JNI_TEXT="$BUILD/jni-text-test"
-"$CXX" -std=c++20 -O2 -pthread \
+"$CXX" -std=c++20 -O2 -pthread ${CXXFLAGS:-} \
   -I "$CORE/include" \
   -I "$ROOT/adapters/android/jni" \
   "$ROOT/tools/jni_text_test.cpp" \
   "$BUILD/libjs8core.a" \
+  ${LDFLAGS:-} \
   -o "$JNI_TEXT"
 "$JNI_TEXT"
 
 echo "==> running the RTL-SDR receiver (SSB DSP) test"
 SSB_RX="$BUILD/ssb-rx-test"
-"$CXX" -std=c++17 -O2 -Wall \
+"$CXX" -std=c++17 -O2 -Wall ${CXXFLAGS:-} \
   -I "$ROOT/android/sdr/src/main/cpp" \
   "$ROOT/android/sdr/src/test/cpp/ssb_rx_test.cpp" \
+  ${LDFLAGS:-} \
   -o "$SSB_RX"
 "$SSB_RX"
 
