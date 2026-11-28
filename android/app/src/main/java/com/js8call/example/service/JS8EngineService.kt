@@ -287,7 +287,6 @@ class JS8EngineService : Service() {
     private val heardLock = Any()
     /** Relays addressed to us, collected frame by frame (see [RelayAssembler]). */
     private val relayAssembler = RelayAssembler()
-    private val gridRegex = Regex("\\b[A-R]{2}[0-9]{2}([A-X]{2})?\\b", RegexOption.IGNORE_CASE)
     private val txMonitorRunnable = object : Runnable {
         override fun run() {
             val generation = txPttGeneration
@@ -3414,13 +3413,14 @@ class JS8EngineService : Service() {
 
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val callsign = getConfiguredCallsign() ?: return
-        val grid = prefs.getString("grid", "")?.trim().orEmpty().uppercase()
+        // Only the 4-character square goes to the engine (OnAirText).
+        val grid = OnAirText.grid4(prefs.getString("grid", ""))
 
         val freq = heartbeatOffsetHz(getPreferredTxSubmode())
         
         // Message format: CALL: @HB HEARTBEAT GRID
         // Note: JS8Call desktop constructs it as: CALL: @HB HEARTBEAT GRID
-        // My buildTxMessage handles adding the "CALL: " part if we pass "@HB HEARTBEAT GRID" as text and directedCall as ""?
+        // My OnAirText.withDirected handles adding the "CALL: " part if we pass "@HB HEARTBEAT GRID" as text and directedCall as ""?
         // Wait, handleTransmitMessage uses:
         // text = payloadText
         // myCall = callsign
@@ -3429,7 +3429,7 @@ class JS8EngineService : Service() {
         // Let's use transmitMessage directly
         
         val message = "@HB HEARTBEAT $grid"
-        // If I pass selectedCall as empty, buildTxMessage logic:
+        // If I pass selectedCall as empty, OnAirText.withDirected logic:
         // if directedCall is empty, return text.
         // So I need to construct the full line myself?
         // nativeTransmitMessage expects "text" (payload) and "selectedCall".
@@ -3445,7 +3445,7 @@ class JS8EngineService : Service() {
         // Let's stick to what the JS8Call guide says or what works.
         // Usually: "CALL: @HB HEARTBEAT GRID4"
         
-        val payload = "@HB HEARTBEAT ${grid.take(4)}"
+        val payload = if (grid.isEmpty()) "@HB HEARTBEAT" else "@HB HEARTBEAT $grid"
         
         Log.i(TAG, "Sending Heartbeat: $payload at ${freq}Hz")
 
@@ -3537,7 +3537,8 @@ class JS8EngineService : Service() {
             txHeldForRig = true
             return
         }
-        val grid = prefs.getString("grid", "")?.trim().orEmpty().uppercase()
+        // Only the 4-character square goes to the engine (OnAirText).
+        val grid = OnAirText.grid4(prefs.getString("grid", ""))
 
         val directed = intent.getStringExtra(EXTRA_TX_DIRECTED)?.trim().orEmpty()
         val submode = if (intent.hasExtra(EXTRA_TX_SUBMODE)) {
@@ -3559,7 +3560,7 @@ class JS8EngineService : Service() {
         val forceData = intent.getBooleanExtra(EXTRA_TX_FORCE_DATA, false)
         val automatic = intent.getBooleanExtra(EXTRA_TX_AUTOMATIC, false)
         val effectiveForceIdentify = forceIdentify || callsign.isNotBlank()
-        val payloadText = applyGridIfHeartbeat(text, grid)
+        val payloadText = OnAirText.withHeartbeatGrid(text, grid)
 
         // Set transmit mode if configured (before queuing TX)
         val modeSet = setTransmitMode()
@@ -4405,7 +4406,7 @@ class JS8EngineService : Service() {
         val enabled = prefs.getBoolean(PREF_PSK_REPORTER, false)
         val callsign = prefs.getString("callsign", "")?.trim().orEmpty().uppercase()
         val grid = prefs.getString("grid", "")?.trim().orEmpty().uppercase()
-        Log.d(TAG, "PSKReporter state: enabled=$enabled callsign='$callsign' grid='$grid'")
+        Log.d(TAG, "PSKReporter state: enabled=$enabled callsign set=${callsign.isNotBlank()} grid set=${grid.isNotBlank()}")
         currentCallsign = callsign
         currentGrid = grid
         if (!enabled || callsign.isBlank() || grid.isBlank()) {
@@ -4426,65 +4427,9 @@ class JS8EngineService : Service() {
 
     private fun maybeReportToPskReporter(utc: Int, snr: Int, freq: Float, text: String) {
         if (!pskReporterEnabled) return
-        if (currentDialHz <= 0) {
-            Log.d(TAG, "PSKReporter skip: dialHz=$currentDialHz")
-            return
-        }
-        val call = extractHeardCallsign(text)
-        if (call == null) {
-            Log.d(TAG, "PSKReporter skip: no callsign in '$text'")
-            return
-        }
-        if (currentCallsign.isNotBlank() && isSelfCallsign(currentCallsign, call)) {
-            Log.d(TAG, "PSKReporter skip: self call=$call")
-            return
-        }
-        val grid = extractGrid(text)
-        if (grid == null) {
-            Log.d(TAG, "PSKReporter skip: no grid in '$text'")
-            return
-        }
-        val rfHz = currentDialHz + freq.toInt()
-        if (rfHz <= 0) {
-            Log.d(TAG, "PSKReporter skip: rfHz=$rfHz dialHz=$currentDialHz freq=$freq")
-            return
-        }
-        val timestamp = decodeUtcToEpochSeconds(utc)
-        Log.d(TAG, "PSKReporter spot: call=$call grid=$grid snr=$snr rfHz=$rfHz ts=$timestamp")
-        pskReporterClient?.addSpot(call, grid, snr, rfHz, "JS8", timestamp)
-    }
-
-    private fun extractGrid(text: String): String? {
-        val match = gridRegex.find(text) ?: return null
-        return match.value.uppercase(Locale.US)
-    }
-
-    private fun decodeUtcToEpochSeconds(utc: Int): Long {
-        val hours = utc / 10000
-        val minutes = (utc / 100) % 100
-        val seconds = utc % 100
-        val nowMillis = System.currentTimeMillis()
-        val nowUtc = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-            timeInMillis = nowMillis
-        }
-        val candidate = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-            set(Calendar.YEAR, nowUtc.get(Calendar.YEAR))
-            set(Calendar.MONTH, nowUtc.get(Calendar.MONTH))
-            set(Calendar.DAY_OF_MONTH, nowUtc.get(Calendar.DAY_OF_MONTH))
-            set(Calendar.HOUR_OF_DAY, hours)
-            set(Calendar.MINUTE, minutes)
-            set(Calendar.SECOND, seconds)
-            set(Calendar.MILLISECOND, 0)
-        }
-        var candidateMillis = candidate.timeInMillis
-        val diff = candidateMillis - nowMillis
-        val twelveHoursMs = 12L * 60L * 60L * 1000L
-        if (diff > twelveHoursMs) {
-            candidateMillis -= 24L * 60L * 60L * 1000L
-        } else if (diff < -twelveHoursMs) {
-            candidateMillis += 24L * 60L * 60L * 1000L
-        }
-        return candidateMillis / 1000L
+        val spot = OnAirText.pskSpot(text, currentCallsign, currentDialHz, freq, utc, System.currentTimeMillis()) ?: return
+        // Not logged: the spot is someone's callsign and location (CodeQL java/sensitive-log).
+        pskReporterClient?.addSpot(spot.call, spot.grid, snr, spot.rfHz, "JS8", spot.timestampS)
     }
 
     private fun isTransmitActive(): Boolean {
@@ -4506,7 +4451,7 @@ class JS8EngineService : Service() {
 
     private fun logRxDecode(text: String, snr: Int, freq: Float, mode: Int) {
         val logger = messageLogger ?: return
-        logger.logRx(text, snr, freq, mode, extractHeardCallsign(text))
+        logger.logRx(text, snr, freq, mode, OnAirText.heardCallsign(text))
     }
 
     private fun logTxStarted() {
@@ -4564,7 +4509,7 @@ class JS8EngineService : Service() {
     }
 
     private fun updateHeardCallsign(text: String) {
-        val callsign = extractHeardCallsign(text) ?: return
+        val callsign = OnAirText.heardCallsign(text) ?: return
         val now = System.currentTimeMillis()
         synchronized(heardLock) {
             heardCallsigns[callsign] = now
@@ -4596,56 +4541,19 @@ class JS8EngineService : Service() {
         }
     }
 
-    private fun extractHeardCallsign(text: String): String? {
-        val trimmed = text.trim()
-        if (trimmed.isBlank()) return null
-        val firstToken = trimmed.split(Regex("\\s+"), limit = 2)[0]
-        var token = firstToken.trimEnd(':').uppercase()
-        if (token.contains(">")) {
-            token = token.substringBefore(">").trimEnd(':')
-        }
-        if (token.startsWith("@")) return null
-        if (token in HEARD_EXCLUDE_TOKENS) return null
-        return token.takeIf(CallsignValidator::isAmateurCallsign)
-    }
-
     private fun updateLastTxMessage(
         text: String,
         directedCall: String,
         submode: Int,
         frequencyHz: Double
     ) {
-        val built = buildTxMessage(text, directedCall)
+        val built = OnAirText.withDirected(text, directedCall)
         if (built.isNotBlank()) {
             lastTxMessage = built
             lastTxDirected = directedCall.trim().uppercase()
             lastTxSubmode = submode
             lastTxFrequencyHz = frequencyHz
         }
-    }
-
-    private fun buildTxMessage(text: String, directedCall: String): String {
-        val trimmed = text.trim()
-        if (trimmed.isEmpty()) return ""
-        val selected = directedCall.trim().uppercase()
-        if (selected.isEmpty()) return trimmed
-        if (trimmed.startsWith("`")) return trimmed
-
-        if (TxMessageClassifier.isBaseMessage(trimmed)) return trimmed
-        if (trimmed.startsWith(selected, ignoreCase = true)) return trimmed
-
-        val sep = if (trimmed.startsWith(" ")) "" else " "
-        return selected + sep + trimmed
-    }
-
-    private fun applyGridIfHeartbeat(text: String, grid: String): String {
-        val trimmed = text.trim()
-        if (grid.length < 4) return trimmed
-        val grid4 = grid.substring(0, 4).uppercase()
-        if (!TxMessageClassifier.shouldAppendGrid(trimmed)) return trimmed
-        val gridRegex = Regex("\\b[A-R]{2}[0-9]{2}\\b", RegexOption.IGNORE_CASE)
-        if (gridRegex.containsMatchIn(trimmed)) return trimmed
-        return "$trimmed $grid4".trim()
     }
 
     private fun isRigControlConnected(): Boolean {
@@ -4808,7 +4716,6 @@ class JS8EngineService : Service() {
         private const val PREF_TRUSDX_DIAGNOSTICS_ENABLED = "trusdx_diagnostics_enabled"
         private const val HEARD_LIMIT = 4
         private const val HEARD_WINDOW_MS = 15 * 60 * 1000L
-        private val HEARD_EXCLUDE_TOKENS = setOf("CQ", "HB", "HEARTBEAT", "ALLCALL", "@ALLCALL")
         const val SUBMODE_NORMAL = 0
         const val SUBMODE_FAST = 1
         const val SUBMODE_TURBO = 2
