@@ -39,6 +39,33 @@ env:
   ANDROID_NDK_VERSION: 28.2.13676358
 
 jobs:
+  # The same native tests built with AddressSanitizer + UndefinedBehaviorSanitizer (and LeakSanitizer):
+  # out-of-bounds reads/writes, use-after-free, leaks and undefined behaviour fail the job. The frame
+  # decoders take bytes straight off the air, so this matters most there.
+  core-sanitizers:
+    name: Core native tests (ASan + UBSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libeigen3-dev
+
+      - name: Run js8core tests under sanitizers
+        env:
+          CXXFLAGS: -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g1
+          LDFLAGS: -fsanitize=address,undefined
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1:detect_stack_use_after_return=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ./scripts/test-core.sh "$RUNNER_TEMP/core-asan"
+
   core-tests:
     name: Core native tests
     runs-on: ubuntu-latest

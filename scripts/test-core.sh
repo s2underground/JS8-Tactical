@@ -4,6 +4,10 @@
 # Usage: scripts/test-core.sh [build-dir]
 #        (default: core/build)
 #
+# Sanitizers: set CXXFLAGS/LDFLAGS before a fresh build dir, e.g.
+#   CXXFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer" \
+#   LDFLAGS="-fsanitize=address,undefined" scripts/test-core.sh /tmp/core-asan
+#
 # Runs the native CTest suite (including the Android compatibility tests) and
 # the exhaustive JSC codeword parity check against the pre-cleanroom reference.
 set -euo pipefail
@@ -50,11 +54,14 @@ ctest --test-dir "$BUILD" --output-on-failure --timeout 300
 echo "==> running JSC codeword parity check"
 CXX="${CXX:-c++}"
 PARITY="$BUILD/jsc-codeword-parity"
-"$CXX" -std=c++20 -O2 -pthread \
+# CXXFLAGS/LDFLAGS as for the CMake build (the sanitizer job sets them); split on purpose.
+# shellcheck disable=SC2086
+"$CXX" -std=c++20 -O2 -pthread ${CXXFLAGS:-} \
   -I "$CORE/include" \
   -I "$CORE/src/protocol" \
   "$ROOT/tools/jsc_codeword_parity_test.cpp" \
   "$BUILD/libjs8core.a" \
+  ${LDFLAGS:-} \
   -o "$PARITY"
 "$PARITY"
 

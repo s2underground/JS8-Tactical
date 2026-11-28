@@ -42,7 +42,8 @@ multicast on the local network, readable by any device on that network).
 - Every push to `master` is built and tested by GitHub Actions; release APKs are built from tags in
   the same workflow and signed with the project's release key (fingerprint in
   [SECURITY.md](../SECURITY.md)).
-- Automated checks: Kotlin unit tests and native core tests on every push; CodeQL static analysis
+- Automated checks: Kotlin unit tests and native core tests on every push, the native tests a second
+  time under AddressSanitizer, UndefinedBehaviorSanitizer and LeakSanitizer; CodeQL static analysis
   of the native code; Android lint, which fails on any new finding; OpenSSF Scorecard; Dependabot for
   GitHub Actions and Gradle dependencies; weekly fuzzing of the JS8 frame decoders
   (`scripts/fuzz-core.sh`, libFuzzer with AddressSanitizer and UndefinedBehaviorSanitizer);
