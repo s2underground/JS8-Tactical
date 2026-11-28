@@ -19,6 +19,9 @@ What happens next:
 3. The fix ships in a release whose notes name the problem (and its CVE, if one was assigned),
    and credit you unless you would rather stay anonymous.
 
+How the project handles reports and other security incidents (bad releases, leaked secrets, a
+compromised key or account) is written down in [docs/INCIDENT_RESPONSE.md](docs/INCIDENT_RESPONSE.md).
+
 ## Supported versions
 
 JS8-Tactical is in early alpha. Only the newest release on the
