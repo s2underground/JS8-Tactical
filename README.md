@@ -37,7 +37,7 @@ and decides what goes into each release.
 - All of the source code is public, and every release APK is built by GitHub Actions from the
   tagged source, not on a personal computer. How to verify a download: [SECURITY.md](SECURITY.md).
 - Automated tests (Kotlin unit tests and native core tests) run on every change.
-- Static analysis: CodeQL on the native code and Android lint on the app.
+- Static analysis: CodeQL on the native code and on the app's Kotlin/Java, and Android lint on the app.
 - The JS8 frame decoders, which handle everything received over the air, are fuzz-tested with
   sanitizers ([scripts/fuzz-core.sh](scripts/fuzz-core.sh)), and so is the app code that reads
   received text: store-and-forward commands, report lines, message rollup

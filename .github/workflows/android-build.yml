@@ -37,6 +37,8 @@ permissions:
 env:
   HAMLIB_VERSION: 1b2461aba99f0dde0531e1732c00e60aeee40657
   ANDROID_NDK_VERSION: 28.2.13676358
+  # Any Kotlin compiler warning fails the build (android/build.gradle.kts).
+  ORG_GRADLE_PROJECT_js8KotlinWarningsAsErrors: 'true'
 
 jobs:
   # The same native tests built with AddressSanitizer + UndefinedBehaviorSanitizer (and LeakSanitizer):

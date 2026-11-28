@@ -355,7 +355,7 @@ class PropagationFragment : Fragment() {
         }
         val gridFor: (String) -> String? = { grids[it] }
         val voacap = me != null && usingVoacap(ctx)
-        val vIn = if (voacap && me != null) voacapInputs(me, t, profile, wx) else null
+        val vIn = if (voacap) voacapInputs(me, t, profile, wx) else null
         val vHour = hourUtc(t)
         renderModelChip(v, voacap)
         if (vIn != null && cache.voacap.cached(vIn, vHour) == null) {
@@ -378,7 +378,7 @@ class PropagationFragment : Fragment() {
             // Same band, same 5-minute slot, same inputs: reuse the last picture.
             val maps = vIn?.let { runCatching { cache.voacap.maps(it, vHour) }.onFailure { e -> android.util.Log.w("PropFragment", "VOACAP map failed", e) }.getOrNull() }
             if (gen != generation) return@submit
-            val picKey = if (maps != null) listOf("voacap", vIn?.key, vHour, band.name).joinToString("|")
+            val picKey = if (maps != null) listOf("voacap", vIn.key, vHour, band.name).joinToString("|")
                 else listOf(key, band.name, t / 300_000L, wx.sfi, wx.kIndex, p.nowcast.phi).joinToString("|")
             val reuse = cache.bitmapKey == picKey && cache.bitmap != null && cache.rows != null
             val heard = ObservationStore.relevant(all, band, t, now, gridFor)

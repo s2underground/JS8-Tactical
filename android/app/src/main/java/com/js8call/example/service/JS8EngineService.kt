@@ -1934,7 +1934,7 @@ class JS8EngineService : Service() {
                 if (!preopenOk) continue
                 anyPreopen = true
 
-                val resolvedPortIndex = bridge?.getActivePortIndex() ?: port
+                val resolvedPortIndex = bridge.getActivePortIndex() ?: port
                 serialPath = "android-usb:$deviceId:$resolvedPortIndex"
                 ok = hamlib?.openSerialPath(
                     rigModel,

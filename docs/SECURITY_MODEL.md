@@ -44,7 +44,7 @@ multicast on the local network, readable by any device on that network).
   [SECURITY.md](../SECURITY.md)).
 - Automated checks: Kotlin unit tests and native core tests on every push, the native tests a second
   time under AddressSanitizer, UndefinedBehaviorSanitizer and LeakSanitizer; CodeQL static analysis
-  of the native code; Android lint, which fails on any new finding; OpenSSF Scorecard; Dependabot for
+  (security-extended queries) of the native code and of the app's Java/Kotlin; Android lint, which fails on any new finding; OpenSSF Scorecard; Dependabot for
   GitHub Actions and Gradle dependencies; weekly fuzzing of the JS8 frame decoders
   (`scripts/fuzz-core.sh`, libFuzzer with AddressSanitizer and UndefinedBehaviorSanitizer);
   weekly fuzzing of the Kotlin code that reads received text (`scripts/fuzz-kotlin.sh`, Jazzer),
