@@ -1,0 +1,2 @@
+# Empty OSV-Scanner config: the weekly triage reports every finding, including the build-tooling
+# exceptions in android/gradle/osv-scanner.toml, and sorts them by what ships.
