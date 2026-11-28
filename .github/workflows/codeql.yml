@@ -1,7 +1,8 @@
 name: CodeQL
 
-# Static analysis of the native code that handles untrusted input: the JS8 core (frame decoders,
-# protocol), the Android JNI bridge and the on-device AI bridge. Results appear under
+# Static analysis of the code that handles untrusted input. C/C++: the JS8 core (frame decoders,
+# protocol), the Android JNI bridge and the on-device AI bridge. Java/Kotlin: the app itself (received
+# text, reports, relays, rig control, diagnostics) and its library modules. Results appear under
 # Security → Code scanning.
 on:
   push:
@@ -14,6 +15,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  ANDROID_NDK_VERSION: 28.2.13676358
 
 jobs:
   analyze:
@@ -51,3 +55,74 @@ jobs:
         uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           category: /language:c-cpp
+
+  # CodeQL can read Java without building it, but not Kotlin (almost all of this app), so the Kotlin
+  # and Java of every module is compiled here under CodeQL's tracer. Only the JVM code is compiled:
+  # no native libraries, no APK, no signing key.
+  analyze-kotlin:
+    name: Analyze Java/Kotlin
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install Android SDK packages
+        run: |
+          SDKMANAGER=""
+          for candidate in "${ANDROID_HOME}"/cmdline-tools/*/bin/sdkmanager; do
+            if [ -x "${candidate}" ]; then SDKMANAGER="${candidate}"; break; fi
+          done
+          test -n "${SDKMANAGER}"
+          yes | "${SDKMANAGER}" --licenses > /dev/null
+          "${SDKMANAGER}" --install "platforms;android-34" "platforms;android-36" \
+            "build-tools;34.0.0" "build-tools;35.0.0" "ndk;${ANDROID_NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+
+      # Restore only: this job never writes the cache the build jobs read.
+      - name: Restore Gradle dependencies
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          queries: security-extended
+
+      # No Gradle or Kotlin daemon, no build cache, no incremental compilation: CodeQL has to see
+      # every compiler run.
+      - name: Compile Java and Kotlin
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --no-build-cache --stacktrace \
+            -Pkotlin.compiler.execution.strategy=in-process -Pkotlin.incremental=false \
+            compileDebugKotlin compileDebugJavaWithJavac
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          category: /language:java-kotlin
