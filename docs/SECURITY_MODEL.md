@@ -57,6 +57,10 @@ multicast on the local network, readable by any device on that network).
   verification, `android/gradle/verification-metadata.xml`); new checksums are recorded by a
   workflow that runs the build with a read-only token and committed by a separate job that runs no
   build code.
+- A weekly OSV-Scanner run (`osv.yml`) checks every Gradle artifact against known vulnerabilities
+  and sorts the findings into shipped (from the APK's SBOM) and build-tooling only; it fails if a
+  shipped package is affected. Build-tooling findings are recorded as reviewed, expiring exceptions
+  in `android/gradle/osv-scanner.toml`.
 - Third-party native code is pinned: JS8Core, llama.cpp and the VOACAP engine (hfcast) as git
   submodules at fixed commits, Hamlib at a fixed commit in the build workflow.
 - An OWASP MASVS self-assessment ([MASVS.md](MASVS.md)), with a MobSF static scan of every published
