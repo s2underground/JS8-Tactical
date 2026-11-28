@@ -64,6 +64,25 @@ def main():
         for sev, rule, desc, n, masvs in sorted(rows):
             print(f"| {sev} | `{rule}` | {n} | {masvs} | {desc} |")
         print()
+        # Where, so each finding can be triaged (the source is public anyway).
+        for rule, f in sorted(code.items()):
+            sev = str((f.get("metadata") or {}).get("severity", "")).lower()
+            if sev not in ("high", "warning", "error"):
+                continue
+            files = f.get("files") or {}
+            print(f"<details><summary><code>{rule}</code>: {len(files)} file(s)</summary>\n")
+            for path, lines in sorted(files.items())[:25]:
+                print(f"- `{path}` lines {clean(lines, 60)}")
+            print("\n</details>\n")
+
+    secrets = report.get("secrets") or []
+    if secrets:
+        print(f"#### Possible hardcoded secrets: {len(secrets)}\n")
+        for item in secrets[:30]:
+            text = str(item)
+            name = text.split(":", 1)[0].split("=", 1)[0].strip().strip('"')
+            print(f"- `{clean(name, 60)}` (value not shown, {len(text)} characters)")
+        print()
 
     trackers = report.get("trackers") or {}
     if isinstance(trackers, dict) and "detected_trackers" in trackers:

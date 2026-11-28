@@ -26,7 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      MOBSF_IMAGE: opensecurity/mobile-security-framework-mobsf:latest
+      # MobSF v4.6.9, pinned by digest (update deliberately, like any other tool).
+      MOBSF_IMAGE: opensecurity/mobile-security-framework-mobsf@sha256:815bb96de3c78a22e0a0996c667c164a227239c9d8a4aba80f188d247b928954
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
