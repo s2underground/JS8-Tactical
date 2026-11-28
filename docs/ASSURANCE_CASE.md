@@ -93,8 +93,9 @@ Summarised from [SECURITY_MODEL.md](SECURITY_MODEL.md), which has the full table
   least-privilege workflow tokens, actions pinned by SHA, Gradle wrapper validated, signing key
   confined to one build step and never given to pull requests (PRs #13, #38, #44); release
   checklist ([RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)); SBOM and SLSA build-provenance
-  attestation for every APK (PR #73); signer fingerprint published in SECURITY.md; release builds
-  not debuggable (PR #47).
+  attestation for every APK (PR #73), also attached to each release as `<apk>.intoto.jsonl`
+  (PR #85); every Gradle dependency and plugin checked against a recorded SHA-256 (PR #84);
+  signer fingerprint published in SECURITY.md; release builds not debuggable (PR #47).
 
 ## Secure design principles applied
 
@@ -133,7 +134,6 @@ Summarised from [SECURITY_MODEL.md](SECURITY_MODEL.md), which has the full table
   covered and fuzzed, much of the UI and the service is not.
 - rigctld has no authentication (a protocol limit); use it on a trusted network.
 - Builds are not yet reproducible bit for bit.
-- Gradle dependencies are pinned by version but not yet by checksum.
 
 ## Keeping it current
 
