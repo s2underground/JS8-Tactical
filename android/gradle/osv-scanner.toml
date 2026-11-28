@@ -22,56 +22,56 @@ name = "com.google.protobuf:protobuf-java"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin (aapt2 and build tooling)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "com.google.protobuf:protobuf-kotlin"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin (build tooling)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "io.netty:netty-codec"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin / test platform tooling (gRPC)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "io.netty:netty-codec-http"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin / test platform tooling (gRPC)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "io.netty:netty-codec-http2"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin / test platform tooling (gRPC)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "io.netty:netty-common"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin / test platform tooling (gRPC)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "io.netty:netty-handler"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin / test platform tooling (gRPC)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "io.netty:netty-handler-proxy"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin / test platform tooling (gRPC)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "org.apache.commons:commons-compress"
@@ -85,28 +85,28 @@ name = "org.apache.httpcomponents:httpclient"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin (SDK download tooling)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "org.bitbucket.b_c:jose4j"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin (build tooling)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "org.bouncycastle:bcpkix-jdk18on"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin (APK signing tooling)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "org.bouncycastle:bcprov-jdk18on"
 ecosystem = "Maven"
 vulnerability.ignore = true
 effectiveUntil = 2027-03-01
-reason = "Build tooling only (Android Gradle Plugin (APK signing tooling)); not in the APK (checked against the release SBOM)."
+reason = "Build tooling only (pulled in by the Android Gradle Plugin, lint or the Kotlin compiler); not in the APK (checked against the release SBOM)."
 
 [[PackageOverrides]]
 name = "org.jdom:jdom2"
