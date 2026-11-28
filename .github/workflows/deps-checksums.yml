@@ -105,9 +105,12 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon --write-verification-metadata sha256 \
-            assembleDebug assembleRelease bundleRelease testDebugUnitTest lintDebug \
+            assembleDebug assembleRelease bundleRelease test :app:lintDebug \
             :app:createDebugUnitTestCoverageReport compileDebugKotlin compileDebugJavaWithJavac \
             :app:dependencies
+          # Lint of the library modules, as the dependency-cache workflow runs it (their findings
+          # don't matter here, only what lint downloads).
+          ./gradlew --no-daemon --continue --write-verification-metadata sha256 lintDebug > /dev/null 2>&1 || true
           ls -l gradle/verification-metadata.xml
           grep -c '<component ' gradle/verification-metadata.xml
 
