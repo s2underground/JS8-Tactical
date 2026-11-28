@@ -64,6 +64,10 @@ and commit it was built from. With the GitHub CLI:
 gh attestation verify JS8-Tactical-<version>.apk -R s2underground/JS8-Tactical
 ```
 
+The same signed provenance is attached to the release as `<apk>.intoto.jsonl`, so it can also be
+checked without contacting GitHub's attestation store:
+`gh attestation verify <apk> -R s2underground/JS8-Tactical --bundle <apk>.intoto.jsonl`.
+
 The matching `.cdx.json` file is a CycloneDX software bill of materials listing every library and
 native component in that APK, with versions and commits; it is attested the same way.
 

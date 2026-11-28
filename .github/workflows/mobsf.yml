@@ -65,7 +65,8 @@ jobs:
       - name: Scan
         run: |
           H="Authorization: $MOBSF_KEY"
-          HASH=$(curl -fsS -H "$H" -F "file=@$APK" http://127.0.0.1:8000/api/v1/upload | python3 -c 'import json,sys; print(json.load(sys.stdin)["hash"])')
+          curl -fsS -H "$H" -F "file=@$APK" http://127.0.0.1:8000/api/v1/upload -o upload.json
+          HASH=$(jq -r .hash upload.json)
           curl -fsS --max-time 3000 -H "$H" --data "hash=$HASH" http://127.0.0.1:8000/api/v1/scan -o /dev/null
           curl -fsS -H "$H" --data "hash=$HASH" http://127.0.0.1:8000/api/v1/scorecard -o scorecard.json
           curl -fsS -H "$H" --data "hash=$HASH" http://127.0.0.1:8000/api/v1/report_json -o report.json
