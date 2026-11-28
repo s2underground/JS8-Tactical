@@ -51,6 +51,8 @@ cd android
 
 # Native JS8 core (cmake, a C++20 compiler, Eigen)
 scripts/test-core.sh             # native unit tests
+CXXFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined" LDFLAGS="-fsanitize=address,undefined" \
+  scripts/test-core.sh /tmp/core-asan   # the same under sanitizers (fresh build dir)
 scripts/fuzz-core.sh 300         # fuzz the frame decoders for 5 minutes (needs clang)
 
 # Kotlin parsers of received text (a JDK; downloads Kotlin and Jazzer, checksum-verified)
