@@ -4406,7 +4406,7 @@ class JS8EngineService : Service() {
         val enabled = prefs.getBoolean(PREF_PSK_REPORTER, false)
         val callsign = prefs.getString("callsign", "")?.trim().orEmpty().uppercase()
         val grid = prefs.getString("grid", "")?.trim().orEmpty().uppercase()
-        Log.d(TAG, "PSKReporter state: enabled=$enabled callsign='$callsign' grid='$grid'")
+        Log.d(TAG, "PSKReporter state: enabled=$enabled callsign set=${callsign.isNotBlank()} grid set=${grid.isNotBlank()}")
         currentCallsign = callsign
         currentGrid = grid
         if (!enabled || callsign.isBlank() || grid.isBlank()) {
@@ -4428,7 +4428,7 @@ class JS8EngineService : Service() {
     private fun maybeReportToPskReporter(utc: Int, snr: Int, freq: Float, text: String) {
         if (!pskReporterEnabled) return
         val spot = OnAirText.pskSpot(text, currentCallsign, currentDialHz, freq, utc, System.currentTimeMillis()) ?: return
-        Log.d(TAG, "PSKReporter spot: call=${spot.call} grid=${spot.grid} snr=$snr rfHz=${spot.rfHz} ts=${spot.timestampS}")
+        // Not logged: the spot is someone's callsign and location (CodeQL java/sensitive-log).
         pskReporterClient?.addSpot(spot.call, spot.grid, snr, spot.rfHz, "JS8", spot.timestampS)
     }
 
