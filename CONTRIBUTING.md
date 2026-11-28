@@ -59,10 +59,30 @@ scripts/fuzz-core.sh 300         # fuzz the frame decoders for 5 minutes (needs 
 scripts/fuzz-kotlin.sh 120       # every Jazzer target for 2 minutes each
 ```
 
-## Coding style
+## Coding standards
 
-Follow the style of the surrounding code: Kotlin official style for the app, the existing
-formatting in C++. Prefer small, readable functions and comments that explain *why*.
+Contributions must follow these style guides:
+
+- **Kotlin** (the app and its modules): the official
+  [Kotlin coding conventions](https://kotlinlang.org/docs/coding-conventions.html) and the
+  [Android Kotlin style guide](https://developer.android.com/kotlin/style-guide); indentation and
+  line length as set in [.editorconfig](.editorconfig).
+- **C++** (`adapters/`, `android/*/src/main/cpp`, `tools/`): C++20, formatted like the surrounding
+  file, following the [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/) for safety:
+  no owning raw pointers in new code, bounds-checked access in anything that parses input, no
+  undefined behaviour (the sanitizer job will find it). `core/` is upstream JS8Core and is never
+  changed here.
+- **Rust** (`android/voacap/rust`): `rustfmt` formatting; no `unsafe` outside the C entry point; no
+  panic may cross it.
+- **Shell and Python** (`scripts/`, `tools/`): `set -euo pipefail` in shell scripts; Python 3 with
+  the standard library where possible.
+
+Prefer small, readable functions and comments that explain *why*.
+
+Enforced automatically on every pull request: Kotlin compiler warnings fail the build
+(`allWarningsAsErrors` in CI); Android lint fails on any new finding (`warningsAsErrors` with a
+baseline); CodeQL security queries on C/C++ and Kotlin; sanitizers on the native tests. Automatic
+formatting checks (ktlint) are planned.
 
 ## Releases
 
