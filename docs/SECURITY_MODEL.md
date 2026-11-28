@@ -49,10 +49,14 @@ multicast on the local network, readable by any device on that network).
   (`scripts/fuzz-core.sh`, libFuzzer with AddressSanitizer and UndefinedBehaviorSanitizer);
   weekly fuzzing of the Kotlin code that reads received text (`scripts/fuzz-kotlin.sh`, Jazzer),
   with property checks: a message held for one station is only handed to that station, and the
-  diagnostics scrub leaves no callsign, fine grid characters or IP address behind; unit-test line coverage
+  diagnostics scrub leaves no callsign, fine grid characters or IP address behind, a heartbeat or
+  CQ only ever carries the station's 4-character square, and a PSK Reporter spot is never of the
+  station itself; unit-test line coverage
   (JaCoCo) reported on every build.
 - Third-party native code is pinned: JS8Core, llama.cpp and the VOACAP engine (hfcast) as git
   submodules at fixed commits, Hamlib at a fixed commit in the build workflow.
+- The engine is only ever handed the station's 4-character grid square (`OnAirText.grid4`), even
+  when GPS has filled in an 8-character locator; JS8 frames carry no more than that anyway.
 - Weekly fuzzing of the VOACAP engine's entry points (`scripts/fuzz-voacap.sh`).
 - Every published APK (releases and the rolling test build) comes with a CycloneDX software bill
   of materials (`.cdx.json`: the Gradle libraries resolved for that build, the native code built
